@@ -1,0 +1,128 @@
+server:
+  host: 0.0.0.0
+  port: 3000
+  grpc_port: 50051
+database:
+  url: postgresql://root:password@localhost:5432/backbonedb
+  max_connections: 20
+  min_connections: 5
+  connect_timeout: 30
+  idle_timeout: 600
+module:
+  name: inventory
+  enabled: true
+features:
+  soft_delete: true
+  state_machines: true
+  workflows: true
+logging:
+  level: info
+  format: json
+  file: logs/inventory.log
+tracing:
+  enabled: true
+  exporter: otlp
+  endpoint: http://localhost:4317
+metrics:
+  enabled: true
+  endpoint: /metrics
+  port: 9090
+entities:
+  goods_receipt:
+    collection: goods_receipts
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  goods_receipt_item:
+    collection: goods_receipt_items
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  product_category:
+    collection: product_categories
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  product:
+    collection: products
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  purchase_order:
+    collection: purchase_orders
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  purchase_order_item:
+    collection: purchase_order_items
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  stock:
+    collection: stocks
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  stock_adjustment:
+    collection: stock_adjustments
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  stock_adjustment_item:
+    collection: stock_adjustment_items
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  stock_batch:
+    collection: stock_batches
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  stock_movement:
+    collection: stock_movements
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  stock_transfer:
+    collection: stock_transfers
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  stock_transfer_item:
+    collection: stock_transfer_items
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  warehouse:
+    collection: warehouses
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
