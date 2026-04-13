@@ -1,0 +1,219 @@
+# =============================================================================
+# Module: Inventory
+# Entity: StockBatch
+# Description: Batch/lot tracking for FIFO and expiry management
+# =============================================================================
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: BatchStatus
+    description: "Batch status"
+    variants:
+      - name: available
+        description: "Available for use"
+        default: true
+      - name: quarantine
+        description: "In quarantine"
+      - name: expired
+        description: "Expired"
+      - name: depleted
+        description: "Fully consumed"
+
+# =============================================================================
+# Models
+# =============================================================================
+
+models:
+  - name: StockBatch
+    collection: stock_batches
+    description: "Batch/lot tracking for inventory"
+    config:
+      generators:
+        disabled: [handler, usecase, cqrs, projection, bulk-operations]
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique batch identifier"
+
+      provider_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Provider owner - logical FK to bersihir.Provider.id"
+
+      product_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Product.id)"]
+        description: "Product"
+
+      warehouse_id:
+        type: uuid?
+        attributes: ["@foreign_key(Warehouse.id)"]
+        description: "Warehouse location"
+
+      # =======================================================================
+      # Batch Identification
+      # =======================================================================
+      batch_number:
+        type: string
+        attributes: ["@required", "@max(50)"]
+        description: "Batch/lot number"
+
+      supplier_batch:
+        type: string?
+        attributes: ["@max(50)"]
+        description: "Supplier's batch number"
+
+      # =======================================================================
+      # Dates
+      # =======================================================================
+      manufacture_date:
+        type: date?
+        description: "Manufacturing date"
+
+      received_date:
+        type: date
+        attributes: ["@required"]
+        description: "Date received"
+
+      expiry_date:
+        type: date?
+        description: "Expiry date"
+
+      # =======================================================================
+      # Quantities
+      # =======================================================================
+      initial_quantity:
+        type: decimal
+        attributes: ["@required", "@precision(12,4)", "@non_negative"]
+        description: "Initial quantity received"
+
+      current_quantity:
+        type: decimal
+        attributes: ["@required", "@precision(12,4)", "@non_negative"]
+        description: "Current available quantity"
+
+      reserved_quantity:
+        type: decimal
+        attributes: ["@default(0)", "@precision(12,4)", "@non_negative"]
+        description: "Reserved quantity"
+
+      quarantine_quantity:
+        type: decimal
+        attributes: ["@default(0)", "@precision(12,4)", "@non_negative"]
+        description: "Quantity in quarantine"
+
+      uom:
+        type: string
+        attributes: ["@required", "@max(20)"]
+        description: "Unit of measure"
+
+      # =======================================================================
+      # Costing
+      # =======================================================================
+      unit_cost:
+        type: decimal
+        attributes: ["@required", "@precision(14,4)", "@non_negative"]
+        description: "Unit cost"
+
+      total_value:
+        type: decimal
+        attributes: ["@precision(14,2)", "@non_negative"]
+        description: "Current total value"
+
+      currency:
+        type: string
+        attributes: ["@default('IDR')", "@length(3)"]
+        description: "Currency"
+
+      # =======================================================================
+      # Source
+      # =======================================================================
+      source_type:
+        type: string?
+        attributes: ["@max(30)"]
+        description: "Source type (purchase, production, transfer)"
+
+      source_document:
+        type: string?
+        attributes: ["@max(50)"]
+        description: "Source document reference"
+
+      goods_receipt_id:
+        type: uuid?
+        attributes: ["@foreign_key(GoodsReceipt.id)"]
+        description: "Related goods receipt"
+
+      supplier_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Supplier - logical FK to external supplier module"
+
+      # =======================================================================
+      # Storage
+      # =======================================================================
+      bin_location:
+        type: string?
+        attributes: ["@max(50)"]
+        description: "Bin/shelf location"
+
+      storage_conditions:
+        type: json
+        attributes: ["@default('{}')"]
+        description: "Storage conditions"
+
+      # =======================================================================
+      # Status
+      # =======================================================================
+      status:
+        type: BatchStatus
+        attributes: ["@default(available)"]
+        description: "Batch status"
+
+      is_active:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Is active"
+
+      # =======================================================================
+      # Notes
+      # =======================================================================
+      notes:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "Batch notes"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata (created_at, updated_at, deleted_at, created_by, updated_by, deleted_by)"
+
+    relations:
+      product:
+        type: Product
+        attributes: ["@one", "@foreign_key(product_id)"]
+        description: "Product"
+        inverse: stock_batches
+
+      warehouse:
+        type: Warehouse?
+        attributes: ["@one", "@foreign_key(warehouse_id)"]
+        description: "Warehouse"
+        inverse: stock_batches
+
+    indexes:
+      - type: unique
+        fields: [provider_id, product_id, batch_number]
+        where: "deleted_at IS NULL"
+      - type: index
+        fields: [provider_id, product_id, status]
+      - type: index
+        fields: [provider_id, expiry_date]
+      - type: index
+        fields: [warehouse_id, product_id, status]
+      - type: index
+        fields: [received_date]

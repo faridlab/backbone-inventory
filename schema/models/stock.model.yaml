@@ -1,0 +1,165 @@
+# =============================================================================
+# Module: Bersihir
+# Entity: Stock
+# Description: Current stock levels per product per warehouse
+# =============================================================================
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: QualityStatus
+    description: "Quality check status"
+    variants:
+      - name: pending
+        description: "Pending QC"
+      - name: passed
+        description: "QC passed"
+        default: true
+      - name: failed
+        description: "QC failed"
+      - name: conditional
+        description: "Conditionally approved"
+
+# =============================================================================
+# Models
+# =============================================================================
+
+models:
+  # ===========================================================================
+  # Stock - Current stock level per product per warehouse
+  # ===========================================================================
+  - name: Stock
+    collection: stocks
+    description: "Stock level by product and warehouse"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique stock record identifier"
+
+      provider_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Provider - logical FK to bersihir.Provider.id"
+
+      product_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Product.id)"]
+        description: "Product"
+
+      warehouse_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Warehouse.id)"]
+        description: "Warehouse location"
+
+      # Quantities
+      quantity_on_hand:
+        type: decimal
+        attributes: ["@default(0)", "@precision(14,4)"]
+        description: "Physical quantity on hand"
+
+      quantity_reserved:
+        type: decimal
+        attributes: ["@default(0)", "@precision(14,4)", "@non_negative"]
+        description: "Reserved for orders/transfers"
+
+      quantity_on_order:
+        type: decimal
+        attributes: ["@default(0)", "@precision(14,4)", "@non_negative"]
+        description: "On purchase order"
+
+      quantity_in_transit:
+        type: decimal
+        attributes: ["@default(0)", "@precision(14,4)", "@non_negative"]
+        description: "In transit (transfer)"
+
+      quantity_quarantine:
+        type: decimal
+        attributes: ["@default(0)", "@precision(14,4)", "@non_negative"]
+        description: "In quarantine"
+
+      quantity_damaged:
+        type: decimal
+        attributes: ["@default(0)", "@precision(14,4)", "@non_negative"]
+        description: "Damaged stock"
+
+      # Valuation
+      currency:
+        type: string
+        attributes: ["@default('IDR')", "@length(3)"]
+        description: "Currency"
+
+      unit_cost:
+        type: decimal
+        attributes: ["@default(0)", "@precision(14,4)", "@non_negative"]
+        description: "Current unit cost (weighted average)"
+
+      total_value:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,2)", "@non_negative"]
+        description: "Total stock value"
+
+      # =======================================================================
+      # Denormalized stats (JSONB)
+      # =======================================================================
+      data:
+        type: json
+        attributes: ["@default('{\"quantity_available\":0,\"is_below_min\":false,\"is_above_max\":false,\"reorder_needed\":false,\"reorder_quantity\":null,\"has_expiring_stock\":false,\"earliest_expiry_date\":null,\"quantity_expiring_soon\":null,\"batch_count\":0,\"last_receipt_date\":null,\"last_receipt_quantity\":null,\"last_issue_date\":null,\"last_issue_quantity\":null,\"last_count_date\":null,\"last_count_quantity\":null,\"avg_daily_usage\":null,\"days_of_stock\":null}')"]
+        description: "Denormalized stats: quantity_available, is_below_min, is_above_max, reorder_needed, reorder_quantity, has_expiring_stock, earliest_expiry_date, quantity_expiring_soon, batch_count, last_receipt_date, last_receipt_quantity, last_issue_date, last_issue_quantity, last_count_date, last_count_quantity, avg_daily_usage, days_of_stock"
+
+      # Notes
+      bin_location:
+        type: string?
+        attributes: ["@max(50)"]
+        description: "Bin/shelf location"
+
+      notes:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "Notes"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata (created_at, updated_at, deleted_at, created_by, updated_by, deleted_by)"
+
+    relations:
+      product:
+        type: Product
+        attributes: ["@one", "@foreign_key(product_id)"]
+        description: "Product"
+        inverse: stocks
+
+      warehouse:
+        type: Warehouse
+        attributes: ["@one", "@foreign_key(warehouse_id)"]
+        description: "Warehouse"
+        inverse: stocks
+
+      batches:
+        type: StockBatch[]
+        attributes: ["@one_to_many"]
+        description: "Stock batches"
+        inverse: stock
+
+      movements:
+        type: StockMovement[]
+        attributes: ["@one_to_many"]
+        description: "Stock movements"
+        inverse: stock
+
+    indexes:
+      - type: unique
+        fields: [provider_id, product_id, warehouse_id]
+        where: "deleted_at IS NULL"
+      - type: index
+        fields: [provider_id, warehouse_id]
+      - type: index
+        fields: [provider_id, "(data->>'is_below_min')"]
+      - type: index
+        fields: [provider_id, "(data->>'reorder_needed')"]
+      - type: index
+        fields: [provider_id, "(data->>'has_expiring_stock')"]

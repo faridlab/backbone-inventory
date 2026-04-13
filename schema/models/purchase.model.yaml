@@ -1,0 +1,513 @@
+# =============================================================================
+# Module: Bersihir
+# Entity: PurchaseOrder, PurchaseOrderItem
+# Description: Purchase order management for supplier orders
+# =============================================================================
+
+external_imports:
+  - module: sapiens
+    types: [User]
+
+imports:
+  - from: product
+    types: [Product, UnitOfMeasure]
+  - from: warehouse
+    types: [Warehouse]
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: PurchaseOrderType
+    description: "Type of purchase order"
+    variants:
+      - name: standard
+        description: "Standard one-time PO"
+        default: true
+      - name: urgent
+        description: "Urgent/emergency PO"
+
+  - name: PurchaseOrderStatus
+    description: "Purchase order workflow status"
+    variants:
+      - name: draft
+        description: "Draft PO"
+        default: true
+      - name: pending_approval
+        description: "Pending approval"
+      - name: approved
+        description: "Approved"
+      - name: rejected
+        description: "Rejected"
+      - name: sent
+        description: "Sent to supplier"
+      - name: partial_received
+        description: "Partially received"
+      - name: received
+        description: "Fully received"
+      - name: completed
+        description: "Completed"
+      - name: cancelled
+        description: "Cancelled"
+
+# =============================================================================
+# Models
+# =============================================================================
+
+models:
+  # ===========================================================================
+  # PurchaseOrder - Header (simplified)
+  # ===========================================================================
+  - name: PurchaseOrder
+    collection: purchase_orders
+    soft_delete: true
+    description: "Purchase order header"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique PO identifier"
+
+      provider_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Provider placing the order - logical FK to bersihir.Provider.id"
+
+      # =======================================================================
+      # Reference
+      # =======================================================================
+      po_number:
+        type: string
+        attributes: ["@required", "@max(30)"]
+        description: "Purchase order number (PO-YYYYMMDD-XXXX)"
+
+      reference_number:
+        type: string?
+        attributes: ["@max(50)"]
+        description: "External reference"
+
+      po_type:
+        type: PurchaseOrderType
+        attributes: ["@default(standard)"]
+        description: "PO type"
+
+      # =======================================================================
+      # Supplier
+      # =======================================================================
+      supplier_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Supplier ID (if managed) - logical FK to external supplier module"
+
+      supplier_name:
+        type: string
+        attributes: ["@required", "@max(150)"]
+        description: "Supplier name"
+
+      supplier_contact_person:
+        type: string?
+        attributes: ["@max(100)"]
+        description: "Contact person"
+
+      # =======================================================================
+      # Delivery
+      # =======================================================================
+      warehouse_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Warehouse.id)"]
+        description: "Delivery warehouse"
+
+      delivery_address:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "Delivery address (if different)"
+
+      # =======================================================================
+      # Dates
+      # =======================================================================
+      order_date:
+        type: date
+        attributes: ["@required"]
+        description: "Order date"
+
+      expected_date:
+        type: date?
+        description: "Expected delivery date"
+
+      delivery_date:
+        type: date?
+        description: "Actual delivery date"
+
+      expiry_date:
+        type: date?
+        description: "PO expiry date"
+
+      # =======================================================================
+      # Amounts
+      # =======================================================================
+      currency:
+        type: string
+        attributes: ["@default('IDR')", "@length(3)"]
+        description: "Currency"
+
+      subtotal:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,2)", "@non_negative"]
+        description: "Subtotal before tax/discount"
+
+      discount_percent:
+        type: decimal
+        attributes: ["@default(0)", "@precision(5,2)", "@range(0, 100)"]
+        description: "Discount %"
+
+      discount_amount:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,2)", "@non_negative"]
+        description: "Discount amount"
+
+      tax_percent:
+        type: decimal
+        attributes: ["@default(0)", "@precision(5,2)", "@range(0, 100)"]
+        description: "Tax/PPN %"
+
+      tax_amount:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,2)", "@non_negative"]
+        description: "Tax amount"
+
+      shipping_cost:
+        type: decimal
+        attributes: ["@default(0)", "@precision(14,2)", "@non_negative"]
+        description: "Shipping cost"
+
+      other_cost:
+        type: decimal
+        attributes: ["@default(0)", "@precision(14,2)", "@non_negative"]
+        description: "Other costs"
+
+      total_amount:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,2)", "@non_negative"]
+        description: "Total amount"
+
+      # =======================================================================
+      # Payment Terms
+      # =======================================================================
+      payment_terms:
+        type: string?
+        attributes: ["@max(50)"]
+        description: "Payment terms (NET30, COD, etc.)"
+
+      payment_due_date:
+        type: date?
+        description: "Payment due date"
+
+      # =======================================================================
+      # Status & Workflow
+      # =======================================================================
+      status:
+        type: PurchaseOrderStatus
+        attributes: ["@default(draft)"]
+        description: "PO status"
+
+      requires_approval:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Requires approval"
+
+      submitted_at:
+        type: datetime?
+        description: "Submitted for approval"
+
+      submitted_by:
+        type: uuid?
+        description: "Submitted by"
+
+      approved_at:
+        type: datetime?
+        description: "Approval timestamp"
+
+      approved_by:
+        type: uuid?
+        description: "Approved by"
+
+      rejected_at:
+        type: datetime?
+        description: "Rejection timestamp"
+
+      rejected_by:
+        type: uuid?
+        description: "Rejected by"
+
+      rejection_reason:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "Rejection reason"
+
+      cancelled_at:
+        type: datetime?
+        description: "Cancelled timestamp"
+
+      cancelled_by:
+        type: uuid?
+        description: "Cancelled by"
+
+      cancellation_reason:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "Cancellation reason"
+
+      completed_at:
+        type: datetime?
+        description: "Completed timestamp"
+
+      # =======================================================================
+      # Documents & Notes
+      # =======================================================================
+      attachments:
+        type: json
+        attributes: ["@default('[]')"]
+        description: "Attached documents"
+
+      supplier_notes:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "Notes to supplier"
+
+      internal_notes:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "Internal notes"
+
+      # =======================================================================
+      # Denormalized stats (JSONB)
+      # =======================================================================
+      data:
+        type: json
+        attributes: ["@default('{\"total_items\":0,\"total_quantity\":0,\"quantity_received\":0,\"quantity_outstanding\":0,\"is_fully_received\":false,\"receipt_count\":0}')"]
+        description: "Denormalized stats and supplier contact details"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata (created_at, updated_at, deleted_at, created_by, updated_by, deleted_by)"
+
+    relations:
+      warehouse:
+        type: Warehouse
+        attributes: ["@one", "@foreign_key(warehouse_id)"]
+        description: "Delivery warehouse"
+        inverse: purchase_orders
+
+      items:
+        type: PurchaseOrderItem[]
+        attributes: ["@one_to_many", "@on_delete(cascade)", "@on_update(cascade)"]
+        description: "PO line items"
+        inverse: purchase_order
+
+      goods_receipts:
+        type: GoodsReceipt[]
+        attributes: ["@one_to_many"]
+        description: "Goods receipts"
+        inverse: purchase_order
+
+      submitted_by_user:
+        type: sapiens.User?
+        attributes: ["@one", "@foreign_key(submitted_by)"]
+        description: "Submitted by user"
+
+      approved_by_user:
+        type: sapiens.User?
+        attributes: ["@one", "@foreign_key(approved_by)"]
+        description: "Approved by user"
+
+      rejected_by_user:
+        type: sapiens.User?
+        attributes: ["@one", "@foreign_key(rejected_by)"]
+        description: "Rejected by user"
+
+      cancelled_by_user:
+        type: sapiens.User?
+        attributes: ["@one", "@foreign_key(cancelled_by)"]
+        description: "Cancelled by user"
+
+    indexes:
+      - type: unique
+        fields: [provider_id, po_number]
+        where: "deleted_at IS NULL"
+      - type: index
+        fields: [provider_id, status, order_date]
+      - type: index
+        fields: [provider_id, supplier_name]
+      - type: index
+        fields: [provider_id, warehouse_id]
+      - type: index
+        fields: [provider_id, "(data->>'is_fully_received')"]
+
+  # ===========================================================================
+  # PurchaseOrderItem - Line items
+  # ===========================================================================
+  - name: PurchaseOrderItem
+    collection: purchase_order_items
+    soft_delete: true
+    description: "Purchase order line item"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique item identifier"
+
+      purchase_order_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(PurchaseOrder.id)"]
+        description: "Parent PO"
+
+      provider_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Provider (denormalized) - logical FK to bersihir.Provider.id"
+
+      # Line Number
+      line_number:
+        type: int
+        attributes: ["@required", "@positive"]
+        description: "Line sequence"
+
+      # Product
+      product_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Product.id)"]
+        description: "Product"
+
+      description:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "Line description"
+
+      # Quantity
+      uom:
+        type: UnitOfMeasure
+        attributes: ["@required"]
+        description: "Order unit of measure"
+
+      quantity_ordered:
+        type: decimal
+        attributes: ["@required", "@precision(14,4)", "@positive"]
+        description: "Quantity ordered"
+
+      base_uom:
+        type: UnitOfMeasure
+        attributes: ["@required"]
+        description: "Base unit"
+
+      base_quantity:
+        type: decimal
+        attributes: ["@required", "@precision(14,4)", "@positive"]
+        description: "Quantity in base UOM"
+
+      # Pricing
+      currency:
+        type: string
+        attributes: ["@default('IDR')", "@length(3)"]
+        description: "Currency"
+
+      unit_price:
+        type: decimal
+        attributes: ["@required", "@precision(14,4)", "@non_negative"]
+        description: "Unit price"
+
+      discount_percent:
+        type: decimal
+        attributes: ["@default(0)", "@precision(5,2)", "@range(0, 100)"]
+        description: "Line discount %"
+
+      discount_amount:
+        type: decimal
+        attributes: ["@default(0)", "@precision(14,2)", "@non_negative"]
+        description: "Line discount amount"
+
+      subtotal:
+        type: decimal
+        attributes: ["@required", "@precision(18,2)", "@non_negative"]
+        description: "Line subtotal"
+
+      tax_percent:
+        type: decimal
+        attributes: ["@default(0)", "@precision(5,2)", "@range(0, 100)"]
+        description: "Tax %"
+
+      tax_amount:
+        type: decimal
+        attributes: ["@default(0)", "@precision(14,2)", "@non_negative"]
+        description: "Tax amount"
+
+      total_amount:
+        type: decimal
+        attributes: ["@required", "@precision(18,2)", "@non_negative"]
+        description: "Line total"
+
+      # Delivery
+      expected_date:
+        type: date?
+        description: "Expected delivery date"
+
+      warehouse_id:
+        type: uuid?
+        attributes: ["@foreign_key(Warehouse.id)"]
+        description: "Delivery warehouse (if different from header)"
+
+      # Status
+      is_cancelled:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Line cancelled"
+
+      cancellation_reason:
+        type: string?
+        attributes: ["@max(255)"]
+        description: "Cancellation reason"
+
+      # Notes
+      notes:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "Line notes"
+
+      # =======================================================================
+      # Denormalized stats (JSONB)
+      # =======================================================================
+      data:
+        type: json
+        attributes: ["@default('{\"sku\":null,\"product_name\":null,\"supplier_sku\":null,\"quantity_received\":0,\"quantity_outstanding\":0,\"quantity_rejected\":0,\"is_fully_received\":false}')"]
+        description: "Denormalized stats: sku, product_name, supplier_sku, quantity_received, quantity_outstanding, quantity_rejected, is_fully_received"
+
+    relations:
+      purchase_order:
+        type: PurchaseOrder
+        attributes: ["@one", "@foreign_key(purchase_order_id)"]
+        description: "Parent PO"
+        inverse: items
+
+      product:
+        type: Product
+        attributes: ["@one", "@foreign_key(product_id)"]
+        description: "Product"
+        inverse: purchase_order_items
+
+      warehouse:
+        type: Warehouse?
+        attributes: ["@one", "@foreign_key(warehouse_id)"]
+        description: "Delivery warehouse"
+        inverse: purchase_order_items
+
+    indexes:
+      - type: unique
+        fields: [purchase_order_id, line_number]
+        where: "deleted_at IS NULL"
+      - type: index
+        fields: [purchase_order_id, product_id]
+      - type: index
+        fields: [product_id, "(data->>'is_fully_received')"]

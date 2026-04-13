@@ -1,0 +1,222 @@
+# =============================================================================
+# Module: Bersihir
+# Entity: GoodsReceipt
+# Description: Goods receipt from purchase
+# =============================================================================
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: GoodsReceiptStatus
+    description: "Goods receipt workflow status"
+    variants:
+      - name: draft
+        description: "Draft receipt"
+        default: true
+      - name: receiving
+        description: "Receiving in progress"
+      - name: partial
+        description: "Partially completed"
+      - name: completed
+        description: "Completed"
+      - name: cancelled
+        description: "Cancelled"
+
+# =============================================================================
+# Models
+# =============================================================================
+
+models:
+  # ===========================================================================
+  # GoodsReceipt - Header
+  # ===========================================================================
+  - name: GoodsReceipt
+    collection: goods_receipts
+    description: "Goods receipt header"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique receipt identifier"
+
+      provider_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Provider - logical FK to bersihir.Provider.id"
+
+      # Reference
+      receipt_number:
+        type: string
+        attributes: ["@required", "@max(30)"]
+        description: "Receipt number (GR-YYYYMMDD-XXXX)"
+
+      # Purchase Order
+      purchase_order_id:
+        type: uuid?
+        attributes: ["@foreign_key(PurchaseOrder.id)"]
+        description: "Related PO (optional for non-PO receipts)"
+
+      # Supplier
+      supplier_name:
+        type: string
+        attributes: ["@required", "@max(150)"]
+        description: "Supplier name"
+
+      delivery_note:
+        type: string?
+        attributes: ["@max(50)"]
+        description: "Supplier delivery note number"
+
+      # Warehouse
+      warehouse_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Warehouse.id)"]
+        description: "Receiving warehouse"
+
+      # Dates
+      receipt_date:
+        type: date
+        attributes: ["@required"]
+        description: "Receipt date"
+
+      # Amounts
+      currency:
+        type: string
+        attributes: ["@default('IDR')", "@length(3)"]
+        description: "Currency"
+
+      # Quality Check
+      requires_qc:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Requires quality check"
+
+      qc_date:
+        type: datetime?
+        description: "QC date"
+
+      qc_by:
+        type: uuid?
+        description: "QC by user"
+
+      qc_notes:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "QC notes"
+
+      # Status
+      status:
+        type: GoodsReceiptStatus
+        attributes: ["@default(draft)"]
+        description: "Receipt status"
+
+      # Workflow
+      received_by:
+        type: uuid?
+        description: "Received by user"
+
+      received_at:
+        type: datetime?
+        description: "Received timestamp"
+
+      posted_at:
+        type: datetime?
+        description: "Posted to stock"
+
+      posted_by:
+        type: uuid?
+        description: "Posted by user"
+
+      cancelled_at:
+        type: datetime?
+        description: "Cancelled timestamp"
+
+      cancelled_by:
+        type: uuid?
+        description: "Cancelled by user"
+
+      cancellation_reason:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "Cancellation reason"
+
+      # Documents
+      attachments:
+        type: json
+        attributes: ["@default('[]')"]
+        description: "Attached documents (photos, delivery note)"
+
+      # Notes
+      notes:
+        type: string?
+        attributes: ["@max(1000)"]
+        description: "Receipt notes"
+
+      # =======================================================================
+      # Denormalized stats (JSONB)
+      # =======================================================================
+      data:
+        type: json
+        attributes: ["@default('{\"total_items\":0,\"total_quantity_expected\":0,\"total_quantity_received\":0,\"total_quantity_accepted\":0,\"total_quantity_rejected\":0,\"total_value\":0,\"qc_completed\":false}')"]
+        description: "Denormalized stats: total_items, total_quantity_expected, total_quantity_received, total_quantity_accepted, total_quantity_rejected, total_value, qc_completed"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata (created_at, updated_at, deleted_at, created_by, updated_by, deleted_by)"
+
+    relations:
+      purchase_order:
+        type: PurchaseOrder?
+        attributes: ["@one", "@foreign_key(purchase_order_id)"]
+        description: "Related PO"
+        inverse: goods_receipts
+
+      warehouse:
+        type: Warehouse
+        attributes: ["@one", "@foreign_key(warehouse_id)"]
+        description: "Receiving warehouse"
+        inverse: goods_receipts
+
+      items:
+        type: GoodsReceiptItem[]
+        attributes: ["@one_to_many", "@on_delete(cascade)", "@on_update(cascade)"]
+        description: "Receipt items"
+        inverse: goods_receipt
+
+      received_by_user:
+        type: sapiens.User?
+        attributes: ["@one", "@foreign_key(received_by)"]
+        description: "Received by user"
+
+      posted_by_user:
+        type: sapiens.User?
+        attributes: ["@one", "@foreign_key(posted_by)"]
+        description: "Posted by user"
+
+      cancelled_by_user:
+        type: sapiens.User?
+        attributes: ["@one", "@foreign_key(cancelled_by)"]
+        description: "Cancelled by user"
+
+      qc_by_user:
+        type: sapiens.User?
+        attributes: ["@one", "@foreign_key(qc_by)"]
+        description: "QC by user"
+
+    indexes:
+      - type: unique
+        fields: [provider_id, receipt_number]
+        where: "deleted_at IS NULL"
+      - type: index
+        fields: [provider_id, receipt_date]
+      - type: index
+        fields: [provider_id, status]
+      - type: index
+        fields: [purchase_order_id]
+        where: "purchase_order_id IS NOT NULL"
+      - type: index
+        fields: [provider_id, warehouse_id]

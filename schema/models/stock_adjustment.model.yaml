@@ -1,0 +1,424 @@
+# =============================================================================
+# Module: Bersihir
+# Entity: StockAdjustment, StockAdjustmentItem
+# Description: Stock adjustment/count (stock opname)
+# =============================================================================
+
+external_imports:
+  - module: sapiens
+    types: [User]
+
+imports:
+  - from: product
+    types: [Product, UnitOfMeasure]
+  - from: warehouse
+    types: [Warehouse]
+  - from: stock
+    types: [Stock, StockBatch, StockMovement]
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: AdjustmentType
+    description: "Type of stock adjustment"
+    variants:
+      - name: stock_count
+        description: "Physical stock count (opname)"
+        default: true
+      - name: damage
+        description: "Damage write-off"
+      - name: expiry
+        description: "Expiry write-off"
+      - name: loss
+        description: "Loss/shrinkage"
+      - name: correction
+        description: "Data correction"
+
+  - name: AdjustmentStatus
+    description: "Stock adjustment workflow status"
+    variants:
+      - name: draft
+        description: "Draft adjustment"
+        default: true
+      - name: counting
+        description: "Counting in progress"
+      - name: verified
+        description: "Count verified"
+      - name: pending_approval
+        description: "Pending approval"
+      - name: approved
+        description: "Approved"
+      - name: rejected
+        description: "Rejected"
+      - name: posted
+        description: "Posted to stock"
+      - name: cancelled
+        description: "Cancelled"
+
+# =============================================================================
+# Models
+# =============================================================================
+
+models:
+  # ===========================================================================
+  # StockAdjustment - Header
+  # ===========================================================================
+  - name: StockAdjustment
+    collection: stock_adjustments
+    soft_delete: true
+    description: "Stock adjustment header"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique adjustment identifier"
+
+      provider_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Provider - logical FK to bersihir.Provider.id"
+
+      # Reference
+      adjustment_number:
+        type: string
+        attributes: ["@required", "@max(30)"]
+        description: "Adjustment reference (ADJ-YYYYMMDD-XXXX)"
+
+      # Location
+      warehouse_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Warehouse.id)"]
+        description: "Warehouse being adjusted"
+
+      # Type
+      adjustment_type:
+        type: AdjustmentType
+        attributes: ["@default(stock_count)"]
+        description: "Type of adjustment"
+
+      # Date
+      adjustment_date:
+        type: date
+        attributes: ["@required"]
+        description: "Adjustment date"
+
+      # Scope
+      is_full_count:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Full inventory count"
+
+      product_filter:
+        type: json
+        attributes: ["@default('[]')"]
+        description: "Product IDs to count (if partial)"
+
+      # Summary
+      total_items:
+        type: int
+        attributes: ["@default(0)", "@non_negative"]
+        description: "Total items in adjustment"
+
+      items_with_variance:
+        type: int
+        attributes: ["@default(0)", "@non_negative"]
+        description: "Items with quantity variance"
+
+      # Quantities
+      total_system_quantity:
+        type: decimal
+        attributes: ["@default(0)", "@precision(14,4)"]
+        description: "Total system quantity"
+
+      total_counted_quantity:
+        type: decimal
+        attributes: ["@default(0)", "@precision(14,4)"]
+        description: "Total counted quantity"
+
+      total_variance_quantity:
+        type: decimal
+        attributes: ["@default(0)", "@precision(14,4)"]
+        description: "Total variance (counted - system)"
+
+      # Values
+      currency:
+        type: string
+        attributes: ["@default('IDR')", "@length(3)"]
+        description: "Currency"
+
+      total_system_value:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,2)"]
+        description: "Total system value"
+
+      total_adjustment_value:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,2)"]
+        description: "Total adjustment value (+/-)"
+
+      # Status
+      status:
+        type: AdjustmentStatus
+        attributes: ["@default(draft)"]
+        description: "Adjustment status"
+
+      # Approval
+      requires_approval:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Requires approval"
+
+      approved_at:
+        type: datetime?
+        description: "Approval timestamp"
+
+      approved_by:
+        type: uuid?
+        description: "Approved by user"
+
+      rejection_reason:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "Rejection reason"
+
+      # Posting
+      posted_at:
+        type: datetime?
+        description: "Posted timestamp"
+
+      posted_by:
+        type: uuid?
+        description: "Posted by user"
+
+      # Reason
+      reason:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "Adjustment reason"
+
+      # Notes
+      notes:
+        type: string?
+        attributes: ["@max(1000)"]
+        description: "Adjustment notes"
+
+      # Workflow audit (counting, verification, submission details)
+      data:
+        type: json
+        attributes: ["@default('{}')"]
+        description: "Workflow audit: counting_started_at, counting_completed_at, counted_by, verified_at, verified_by, submitted_at, submitted_by, rejected_at"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata (created_at, updated_at, deleted_at, created_by, updated_by, deleted_by)"
+
+    relations:
+      warehouse:
+        type: Warehouse
+        attributes: ["@one", "@foreign_key(warehouse_id)"]
+        description: "Warehouse"
+        inverse: stock_adjustments
+
+      items:
+        type: StockAdjustmentItem[]
+        attributes: ["@one_to_many", "@on_delete(cascade)", "@on_update(cascade)"]
+        description: "Adjustment items"
+        inverse: adjustment
+
+      approved_by_user:
+        type: sapiens.User?
+        attributes: ["@one", "@foreign_key(approved_by)"]
+        description: "Approved by user"
+
+      posted_by_user:
+        type: sapiens.User?
+        attributes: ["@one", "@foreign_key(posted_by)"]
+        description: "Posted by user"
+
+    indexes:
+      - type: unique
+        fields: [provider_id, adjustment_number]
+        where: "deleted_at IS NULL"
+      - type: index
+        fields: [provider_id, warehouse_id, adjustment_date]
+      - type: index
+        fields: [provider_id, status]
+      - type: index
+        fields: [provider_id, adjustment_type, adjustment_date]
+
+  # ===========================================================================
+  # StockAdjustmentItem - Line items
+  # ===========================================================================
+  - name: StockAdjustmentItem
+    collection: stock_adjustment_items
+    soft_delete: true
+    description: "Stock adjustment line item"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique item identifier"
+
+      adjustment_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(StockAdjustment.id)"]
+        description: "Parent adjustment"
+
+      provider_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Provider (denormalized) - logical FK to bersihir.Provider.id"
+
+      # Line Number
+      line_number:
+        type: int
+        attributes: ["@required", "@positive"]
+        description: "Line sequence"
+
+      # Product
+      product_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Product.id)"]
+        description: "Product"
+
+      stock_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Stock.id)"]
+        description: "Stock record"
+
+      # Batch (if batch tracked)
+      batch_id:
+        type: uuid?
+        attributes: ["@foreign_key(StockBatch.id)"]
+        description: "Batch/lot"
+
+      batch_number:
+        type: string?
+        attributes: ["@max(50)"]
+        description: "Batch number"
+
+      expiry_date:
+        type: date?
+        description: "Batch expiry"
+
+      # Quantities
+      uom:
+        type: UnitOfMeasure
+        attributes: ["@required"]
+        description: "Unit of measure"
+
+      system_quantity:
+        type: decimal
+        attributes: ["@required", "@precision(14,4)"]
+        description: "Quantity per system"
+
+      counted_quantity:
+        type: decimal
+        attributes: ["@required", "@precision(14,4)"]
+        description: "Physically counted quantity"
+
+      variance_quantity:
+        type: decimal
+        attributes: ["@required", "@precision(14,4)"]
+        description: "Variance (counted - system)"
+
+      # Costing
+      currency:
+        type: string
+        attributes: ["@default('IDR')", "@length(3)"]
+        description: "Currency"
+
+      unit_cost:
+        type: decimal
+        attributes: ["@required", "@precision(14,4)", "@non_negative"]
+        description: "Unit cost"
+
+      system_value:
+        type: decimal
+        attributes: ["@required", "@precision(18,2)"]
+        description: "System value"
+
+      adjustment_value:
+        type: decimal
+        attributes: ["@required", "@precision(18,2)"]
+        description: "Adjustment value (+/-)"
+
+      # Reason
+      variance_reason:
+        type: string?
+        attributes: ["@max(255)"]
+        description: "Reason for variance"
+
+      # Location
+      bin_location:
+        type: string?
+        attributes: ["@max(50)"]
+        description: "Bin/shelf location"
+
+      # Status
+      is_posted:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Posted to stock"
+
+      movement_id:
+        type: uuid?
+        attributes: ["@foreign_key(StockMovement.id)"]
+        description: "Created stock movement"
+
+      # Notes
+      notes:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "Item notes"
+
+      # Denormalized display fields
+      data:
+        type: json
+        attributes: ["@default('{\"sku\":null,\"product_name\":null}')"]
+        description: "Denormalized display: sku, product_name"
+
+    relations:
+      adjustment:
+        type: StockAdjustment
+        attributes: ["@one", "@foreign_key(adjustment_id)"]
+        description: "Parent adjustment"
+        inverse: items
+
+      product:
+        type: Product
+        attributes: ["@one", "@foreign_key(product_id)"]
+        description: "Product"
+        inverse: stock_adjustment_items
+
+      stock:
+        type: Stock
+        attributes: ["@one", "@foreign_key(stock_id)"]
+        description: "Stock record"
+        inverse: stock_adjustment_items
+
+      batch:
+        type: StockBatch?
+        attributes: ["@one", "@foreign_key(batch_id)"]
+        description: "Batch"
+        inverse: stock_adjustment_items
+
+      movement:
+        type: StockMovement?
+        attributes: ["@one", "@foreign_key(movement_id)"]
+        description: "Created movement"
+        inverse: stock_adjustment_items
+
+    indexes:
+      - type: unique
+        fields: [adjustment_id, line_number]
+        where: "deleted_at IS NULL"
+      - type: index
+        fields: [adjustment_id, product_id]
+      - type: index
+        fields: [product_id]

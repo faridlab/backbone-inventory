@@ -1,0 +1,196 @@
+# =============================================================================
+# Module: Bersihir
+# Entity: Warehouse
+# Description: Warehouse/storage location definition
+# =============================================================================
+
+# No external imports - cross-module FKs use @exclude_from_foreign_key_check
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: WarehouseType
+    description: "Type of warehouse/storage location"
+    variants:
+      - name: main
+        description: "Main/central warehouse"
+        default: true
+      - name: outlet
+        description: "Outlet storage"
+      - name: transit
+        description: "Transit/in-between location"
+      - name: production
+        description: "Production area"
+      - name: return_storage
+        description: "Return/RMA storage"
+      - name: quarantine
+        description: "Quarantine storage"
+
+  - name: WarehouseStatus
+    description: "Warehouse operational status"
+    variants:
+      - name: active
+        description: "Active and operational"
+        default: true
+      - name: inactive
+        description: "Temporarily inactive"
+      - name: maintenance
+        description: "Under maintenance"
+      - name: closed
+        description: "Permanently closed"
+
+# =============================================================================
+# Models
+# =============================================================================
+
+models:
+  - name: Warehouse
+    collection: warehouses
+    soft_delete: true
+    description: "Warehouse/storage location"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique warehouse identifier"
+
+      provider_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Provider who owns this warehouse - logical FK to bersihir.Provider.id"
+
+      outlet_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Associated outlet (if outlet storage) - logical FK to bersihir.ProviderOutlet.id"
+
+      # Identification
+      code:
+        type: string
+        attributes: ["@required", "@max(20)"]
+        description: "Warehouse code (e.g., WH-MAIN, WH-OUT1)"
+
+      name:
+        type: string
+        attributes: ["@required", "@max(100)"]
+        description: "Warehouse name"
+
+      description:
+        type: string?
+        attributes: ["@max(255)"]
+        description: "Description"
+
+      # Type
+      warehouse_type:
+        type: WarehouseType
+        attributes: ["@default(main)"]
+        description: "Type of warehouse"
+
+      is_main:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Is main/primary warehouse"
+
+      # Address
+      address_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Reference to address - logical FK to bersihir.Address.id"
+
+      # Contact
+      contact_name:
+        type: string?
+        attributes: ["@max(100)"]
+        description: "Contact person"
+
+      contact_phone:
+        type: phone?
+        description: "Contact phone"
+
+      contact_email:
+        type: email?
+        description: "Contact email"
+
+      # Capacity
+      total_capacity:
+        type: decimal?
+        attributes: ["@precision(12,2)", "@non_negative"]
+        description: "Total capacity (sqm or units)"
+
+      capacity_unit:
+        type: string?
+        attributes: ["@max(20)"]
+        description: "Capacity unit (sqm, pallet, etc.)"
+
+      # Operations
+      allow_receipt:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Allow goods receipt"
+
+      allow_issue:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Allow goods issue"
+
+      allow_transfer_in:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Allow transfer in"
+
+      allow_transfer_out:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Allow transfer out"
+
+      allow_adjustment:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Allow stock adjustment"
+
+      # Default Accounts
+      default_inventory_account_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Default inventory account - logical FK to accounting.Account.id"
+
+      # Status
+      status:
+        type: WarehouseStatus
+        attributes: ["@default(active)"]
+        description: "Warehouse status"
+
+      # Notes
+      notes:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "Internal notes"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata (created_at, updated_at, deleted_at, created_by, updated_by, deleted_by)"
+
+    relations:
+      stocks:
+        type: Stock[]
+        attributes: ["@one_to_many"]
+        description: "Stock items in warehouse"
+        inverse: warehouse
+
+    indexes:
+      - type: unique
+        fields: [provider_id, outlet_id, code]
+        where: "(metadata->>'deleted_at') IS NULL"
+        description: "Same code allowed across different provider+outlet combinations"
+      - type: index
+        fields: [provider_id, warehouse_type, status]
+      - type: index
+        fields: [provider_id, outlet_id]
+      - type: index
+        fields: [provider_id, is_main]
+      - type: index
+        fields: [address_id]

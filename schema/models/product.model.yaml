@@ -1,0 +1,481 @@
+# =============================================================================
+# Module: Bersihir
+# Entity: Product, ProductCategory
+# Description: Master product/item catalog and custom categories
+# =============================================================================
+
+external_imports:
+  - module: sapiens
+    types: [User]
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: ProductType
+    description: "Type of inventory product"
+    variants:
+      - name: raw_material
+        description: "Raw materials for production"
+        default: true
+      - name: finished_good
+        description: "Finished goods for sale"
+      - name: consumable
+        description: "Consumable supplies"
+      - name: spare_part
+        description: "Spare parts for equipment"
+      - name: packaging
+        description: "Packaging materials"
+
+  - name: UnitOfMeasure
+    description: "Unit of measure for products"
+    variants:
+      - name: pcs
+        description: "Pieces"
+        default: true
+      - name: kg
+        description: "Kilograms"
+      - name: g
+        description: "Grams"
+      - name: liter
+        description: "Liters"
+      - name: ml
+        description: "Milliliters"
+      - name: pack
+        description: "Packs"
+      - name: box
+        description: "Boxes"
+      - name: bottle
+        description: "Bottles"
+      - name: gallon
+        description: "Gallons"
+      - name: roll
+        description: "Rolls"
+      - name: sheet
+        description: "Sheets"
+
+  - name: CostingMethod
+    description: "Inventory costing method"
+    variants:
+      - name: standard
+        description: "Standard costing"
+      - name: last_purchase
+        description: "Last purchase cost"
+      - name: weighted_average
+        description: "Weighted average cost"
+        default: true
+      - name: fifo
+        description: "First in first out"
+
+  - name: ProductStatus
+    description: "Product lifecycle status"
+    variants:
+      - name: active
+        description: "Active product"
+        default: true
+      - name: inactive
+        description: "Temporarily inactive"
+      - name: discontinued
+        description: "Discontinued product"
+
+# =============================================================================
+# Models
+# =============================================================================
+
+models:
+  # ===========================================================================
+  # ProductCategory - Custom hierarchical category
+  # ===========================================================================
+  - name: ProductCategory
+    collection: product_categories
+    soft_delete: true
+    description: "Custom product category hierarchy"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique category identifier"
+
+      provider_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Provider who owns this category (NULL = platform template) - logical FK to bersihir.Provider.id"
+
+      # Identification
+      code:
+        type: string
+        attributes: ["@required", "@max(30)"]
+        description: "Category code"
+
+      name:
+        type: string
+        attributes: ["@required", "@max(100)"]
+        description: "Category name"
+
+      description:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "Category description"
+
+      # Hierarchy
+      parent_id:
+        type: uuid?
+        attributes: ["@foreign_key(ProductCategory.id)"]
+        description: "Parent category"
+
+      level:
+        type: int
+        attributes: ["@default(0)", "@non_negative"]
+        description: "Hierarchy level (0 = root)"
+
+      path:
+        type: string?
+        attributes: ["@max(255)"]
+        description: "Full path (code/code/...)"
+
+      # Display
+      sort_order:
+        type: int
+        attributes: ["@default(0)"]
+        description: "Display order"
+
+      # Defaults
+      default_uom:
+        type: UnitOfMeasure?
+        description: "Default UOM for new products"
+
+      default_costing_method:
+        type: CostingMethod?
+        description: "Default costing method"
+
+      # Accounting defaults
+      default_inventory_account_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Default inventory account - logical FK to accounting.Account.id"
+
+      default_cogs_account_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Default COGS account - logical FK to accounting.Account.id"
+
+      # Status
+      is_active:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Category is active"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata (created_at, updated_at, deleted_at, created_by, updated_by, deleted_by)"
+
+    relations:
+      parent:
+        type: ProductCategory?
+        attributes: ["@one", "@foreign_key(parent_id)"]
+        description: "Parent category"
+
+      children:
+        type: ProductCategory[]
+        attributes: ["@one_to_many"]
+        description: "Child categories"
+
+      products:
+        type: Product[]
+        attributes: ["@one_to_many"]
+        description: "Products in category"
+
+    indexes:
+      - type: unique
+        fields: [provider_id, code]
+        where: "deleted_at IS NULL"
+      - type: index
+        fields: [provider_id, parent_id, sort_order]
+      - type: index
+        fields: [provider_id, is_active]
+
+  # ===========================================================================
+  # Product - Master product catalog (simplified)
+  # ===========================================================================
+  - name: Product
+    collection: products
+    soft_delete: true
+    description: "Master product catalog"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique product identifier"
+
+      provider_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Provider who owns this product (NULL = platform template) - logical FK to bersihir.Provider.id"
+
+      # =======================================================================
+      # Identification
+      # =======================================================================
+      sku:
+        type: string
+        attributes: ["@required", "@max(50)"]
+        description: "Stock Keeping Unit (unique per provider)"
+
+      barcode:
+        type: string?
+        attributes: ["@max(50)"]
+        description: "Barcode (EAN/UPC)"
+
+      name:
+        type: string
+        attributes: ["@required", "@max(150)"]
+        description: "Product name"
+
+      description:
+        type: string?
+        attributes: ["@max(1000)"]
+        description: "Product description"
+
+      # =======================================================================
+      # Classification
+      # =======================================================================
+      product_type:
+        type: ProductType
+        attributes: ["@default(raw_material)"]
+        description: "Type of product"
+
+      category_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(ProductCategory.id)"]
+        description: "Product category"
+
+      brand:
+        type: string?
+        attributes: ["@max(100)"]
+        description: "Brand name"
+
+      manufacturer:
+        type: string?
+        attributes: ["@max(100)"]
+        description: "Manufacturer name"
+
+      # =======================================================================
+      # Unit of Measure
+      # =======================================================================
+      base_uom:
+        type: UnitOfMeasure
+        attributes: ["@required", "@default(pcs)"]
+        description: "Base unit of measure"
+
+      purchase_uom:
+        type: UnitOfMeasure?
+        description: "Purchase unit of measure"
+
+      purchase_uom_ratio:
+        type: decimal
+        attributes: ["@default(1)", "@precision(10,4)", "@positive"]
+        description: "Ratio: 1 purchase UOM = X base UOM"
+
+      secondary_uom:
+        type: UnitOfMeasure?
+        description: "Secondary unit (e.g., kg for liquid)"
+
+      secondary_uom_ratio:
+        type: decimal?
+        attributes: ["@precision(10,4)", "@positive"]
+        description: "Conversion ratio"
+
+      # =======================================================================
+      # Physical Attributes
+      # =======================================================================
+      weight_kg:
+        type: decimal?
+        attributes: ["@precision(10,4)", "@non_negative"]
+        description: "Weight per base UOM (kg)"
+
+      volume_liter:
+        type: decimal?
+        attributes: ["@precision(10,4)", "@non_negative"]
+        description: "Volume per base UOM (liter)"
+
+      # =======================================================================
+      # Costing
+      # =======================================================================
+      costing_method:
+        type: CostingMethod
+        attributes: ["@default(weighted_average)"]
+        description: "Inventory costing method"
+
+      standard_cost:
+        type: decimal
+        attributes: ["@default(0)", "@precision(14,4)", "@non_negative"]
+        description: "Standard cost per base UOM"
+
+      last_purchase_cost:
+        type: decimal
+        attributes: ["@default(0)", "@precision(14,4)", "@non_negative"]
+        description: "Last purchase cost"
+
+      average_cost:
+        type: decimal
+        attributes: ["@default(0)", "@precision(14,4)", "@non_negative"]
+        description: "Weighted average cost"
+
+      currency:
+        type: string
+        attributes: ["@default('IDR')", "@length(3)"]
+        description: "Cost currency"
+
+      # =======================================================================
+      # Inventory Settings
+      # =======================================================================
+      is_stockable:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Track inventory"
+
+      track_batches:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Track batch/lot numbers"
+
+      track_expiry:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Track expiry dates"
+
+      shelf_life_days:
+        type: int?
+        attributes: ["@non_negative"]
+        description: "Shelf life in days"
+
+      expiry_warning_days:
+        type: int?
+        attributes: ["@non_negative"]
+        description: "Days before expiry to warn"
+
+      # =======================================================================
+      # Reorder Settings
+      # =======================================================================
+      min_stock:
+        type: decimal
+        attributes: ["@default(0)", "@precision(12,4)", "@non_negative"]
+        description: "Minimum stock (reorder point)"
+
+      max_stock:
+        type: decimal?
+        attributes: ["@precision(12,4)", "@non_negative"]
+        description: "Maximum stock level"
+
+      reorder_quantity:
+        type: decimal?
+        attributes: ["@precision(12,4)", "@non_negative"]
+        description: "Economic order quantity"
+
+      safety_stock:
+        type: decimal
+        attributes: ["@default(0)", "@precision(12,4)", "@non_negative"]
+        description: "Safety stock buffer"
+
+      lead_time_days:
+        type: int
+        attributes: ["@default(0)", "@non_negative"]
+        description: "Supplier lead time"
+
+      # =======================================================================
+      # Usage Metrics (for laundry)
+      # =======================================================================
+      usage_per_kg:
+        type: decimal?
+        attributes: ["@precision(10,6)", "@non_negative"]
+        description: "Average usage per kg processed"
+
+      usage_per_order:
+        type: decimal?
+        attributes: ["@precision(10,6)", "@non_negative"]
+        description: "Average usage per order"
+
+      applicable_services:
+        type: json
+        attributes: ["@default('[]')"]
+        description: "Services that use this product"
+
+      # =======================================================================
+      # Storage
+      # =======================================================================
+      storage_conditions:
+        type: string?
+        attributes: ["@max(255)"]
+        description: "Storage requirements"
+
+      # =======================================================================
+      # Display
+      # =======================================================================
+      image_url:
+        type: url?
+        attributes: ["@max(500)"]
+        description: "Product image"
+
+      # =======================================================================
+      # Status & Meta
+      # =======================================================================
+      status:
+        type: ProductStatus
+        attributes: ["@default(active)"]
+        description: "Product status"
+
+      tags:
+        type: json
+        attributes: ["@default('[]')"]
+        description: "Search tags"
+
+      notes:
+        type: string?
+        attributes: ["@max(1000)"]
+        description: "Internal notes"
+
+      data:
+        type: json
+        attributes: ["@default('{}')"]
+        description: "Additional metadata"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata (created_at, updated_at, deleted_at, created_by, updated_by, deleted_by)"
+
+    relations:
+      product_category:
+        type: ProductCategory
+        attributes: ["@one", "@foreign_key(category_id)"]
+        description: "Product category"
+        inverse: products
+
+      stocks:
+        type: Stock[]
+        attributes: ["@one_to_many"]
+        description: "Stock levels"
+        inverse: product
+
+      movements:
+        type: StockMovement[]
+        attributes: ["@one_to_many"]
+        description: "Stock movements"
+        inverse: product
+
+    indexes:
+      - type: unique
+        fields: [provider_id, sku]
+        where: "deleted_at IS NULL"
+      - type: unique
+        fields: [provider_id, barcode]
+        where: "barcode IS NOT NULL AND deleted_at IS NULL"
+      - type: index
+        fields: [provider_id, product_type, status]
+      - type: index
+        fields: [provider_id, category_id, status]
+      - type: index
+        fields: [provider_id, name]

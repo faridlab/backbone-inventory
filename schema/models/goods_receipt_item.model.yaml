@@ -1,0 +1,282 @@
+# =============================================================================
+# Module: Inventory
+# Entity: GoodsReceiptItem
+# Description: Line items for goods receipt
+# =============================================================================
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: ReceiptItemStatus
+    description: "Receipt item status"
+    variants:
+      - name: pending
+        description: "Pending receipt"
+        default: true
+      - name: received
+        description: "Received"
+      - name: partial
+        description: "Partially received"
+      - name: rejected
+        description: "Rejected"
+      - name: returned
+        description: "Returned to supplier"
+
+  - name: QCResult
+    description: "Quality check result"
+    variants:
+      - name: pending
+        description: "Pending QC"
+        default: true
+      - name: passed
+        description: "Passed QC"
+      - name: failed
+        description: "Failed QC"
+      - name: conditional
+        description: "Conditional pass"
+
+# =============================================================================
+# Models
+# =============================================================================
+
+models:
+  - name: GoodsReceiptItem
+    collection: goods_receipt_items
+    soft_delete: true
+    description: "Line item in goods receipt"
+    config:
+      generators:
+        disabled: [handler, usecase, cqrs, projection, bulk-operations]
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique receipt item identifier"
+
+      goods_receipt_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(GoodsReceipt.id)"]
+        description: "Parent goods receipt"
+
+      product_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Product.id)"]
+        description: "Product being received"
+
+      # =======================================================================
+      # PO Reference
+      # =======================================================================
+      purchase_order_item_id:
+        type: uuid?
+        attributes: ["@foreign_key(PurchaseOrderItem.id)"]
+        description: "Related PO item"
+
+      # =======================================================================
+      # Quantities
+      # =======================================================================
+      ordered_quantity:
+        type: decimal
+        attributes: ["@required", "@precision(12,4)", "@non_negative"]
+        description: "Quantity ordered"
+
+      received_quantity:
+        type: decimal
+        attributes: ["@required", "@precision(12,4)", "@non_negative"]
+        description: "Quantity received"
+
+      accepted_quantity:
+        type: decimal
+        attributes: ["@default(0)", "@precision(12,4)", "@non_negative"]
+        description: "Quantity accepted after QC"
+
+      rejected_quantity:
+        type: decimal
+        attributes: ["@default(0)", "@precision(12,4)", "@non_negative"]
+        description: "Quantity rejected"
+
+      variance_quantity:
+        type: decimal
+        attributes: ["@precision(12,4)"]
+        description: "Variance (received - ordered)"
+
+      # =======================================================================
+      # Unit of Measure
+      # =======================================================================
+      uom:
+        type: string
+        attributes: ["@required", "@max(20)"]
+        description: "Unit of measure"
+
+      base_uom_quantity:
+        type: decimal?
+        attributes: ["@precision(12,4)", "@non_negative"]
+        description: "Quantity in base UOM"
+
+      conversion_factor:
+        type: decimal
+        attributes: ["@default(1)", "@precision(10,4)", "@positive"]
+        description: "UOM conversion factor"
+
+      # =======================================================================
+      # Pricing
+      # =======================================================================
+      unit_cost:
+        type: decimal
+        attributes: ["@required", "@precision(14,4)", "@non_negative"]
+        description: "Unit cost"
+
+      total_cost:
+        type: decimal
+        attributes: ["@required", "@precision(14,2)", "@non_negative"]
+        description: "Total cost (unit × accepted quantity)"
+
+      currency:
+        type: string
+        attributes: ["@default('IDR')", "@length(3)"]
+        description: "Currency"
+
+      # =======================================================================
+      # Batch/Lot Tracking
+      # =======================================================================
+      batch_number:
+        type: string?
+        attributes: ["@max(50)"]
+        description: "Batch/lot number"
+
+      serial_numbers:
+        type: json
+        attributes: ["@default('[]')"]
+        description: "Serial numbers (for tracked items)"
+
+      manufacture_date:
+        type: date?
+        description: "Manufacturing date"
+
+      expiry_date:
+        type: date?
+        description: "Expiry date"
+
+      # =======================================================================
+      # Storage
+      # =======================================================================
+      warehouse_id:
+        type: uuid?
+        attributes: ["@foreign_key(Warehouse.id)"]
+        description: "Target warehouse"
+
+      bin_location:
+        type: string?
+        attributes: ["@max(50)"]
+        description: "Bin/shelf location"
+
+      # =======================================================================
+      # Quality Check
+      # =======================================================================
+      requires_qc:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Requires quality check"
+
+      qc_result:
+        type: QCResult
+        attributes: ["@default(pending)"]
+        description: "QC result"
+
+      qc_date:
+        type: datetime?
+        description: "QC date"
+
+      qc_by:
+        type: uuid?
+        description: "QC performed by"
+
+      qc_notes:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "QC notes"
+
+      qc_parameters:
+        type: json
+        attributes: ["@default('{}')"]
+        description: "QC parameter results"
+
+      # =======================================================================
+      # Rejection Details
+      # =======================================================================
+      rejection_reason:
+        type: string?
+        attributes: ["@max(255)"]
+        description: "Rejection reason"
+
+      rejection_action:
+        type: string?
+        attributes: ["@max(30)"]
+        description: "Action taken (return, dispose, discount)"
+
+      # =======================================================================
+      # Status
+      # =======================================================================
+      status:
+        type: ReceiptItemStatus
+        attributes: ["@default(pending)"]
+        description: "Item status"
+
+      # =======================================================================
+      # Stock Movement
+      # =======================================================================
+      stock_movement_id:
+        type: uuid?
+        attributes: ["@foreign_key(StockMovement.id)"]
+        description: "Created stock movement"
+
+      is_posted:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Posted to inventory"
+
+      posted_at:
+        type: datetime?
+        description: "Posted timestamp"
+
+      # =======================================================================
+      # Notes
+      # =======================================================================
+      notes:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "Item notes"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata (created_at, updated_at, deleted_at, created_by, updated_by, deleted_by)"
+
+    relations:
+      goods_receipt:
+        type: GoodsReceipt
+        attributes: ["@one", "@foreign_key(goods_receipt_id)"]
+        description: "Parent receipt"
+        inverse: items
+
+      product:
+        type: Product
+        attributes: ["@one", "@foreign_key(product_id)"]
+        description: "Product"
+        inverse: goods_receipt_items
+
+    indexes:
+      - type: index
+        fields: [goods_receipt_id, status]
+      - type: index
+        fields: [product_id, goods_receipt_id]
+      - type: index
+        fields: [batch_number]
+        where: "batch_number IS NOT NULL"
+      - type: index
+        fields: [expiry_date]
+        where: "expiry_date IS NOT NULL"
+      - type: index
+        fields: [qc_result, requires_qc]

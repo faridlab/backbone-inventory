@@ -1,0 +1,459 @@
+# =============================================================================
+# Module: Inventory
+# Entity: StockTransfer, StockTransferItem
+# Description: Inter-location stock transfers
+# =============================================================================
+
+external_imports:
+  - module: sapiens
+    types: [User]
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: TransferType
+    description: "Type of transfer"
+    variants:
+      - name: internal
+        description: "Internal transfer (same provider)"
+        default: true
+      - name: inter_provider
+        description: "Inter-provider transfer"
+      - name: consignment_out
+        description: "Consignment out"
+      - name: consignment_return
+        description: "Consignment return"
+
+  - name: TransferStatus
+    description: "Transfer status"
+    variants:
+      - name: draft
+        description: "Draft"
+        default: true
+      - name: pending_approval
+        description: "Pending approval"
+      - name: approved
+        description: "Approved"
+      - name: in_transit
+        description: "In transit"
+      - name: partial_received
+        description: "Partially received"
+      - name: received
+        description: "Fully received"
+      - name: completed
+        description: "Completed"
+      - name: cancelled
+        description: "Cancelled"
+
+  - name: TransferItemStatus
+    description: "Transfer item status"
+    variants:
+      - name: pending
+        description: "Pending"
+        default: true
+      - name: shipped
+        description: "Shipped"
+      - name: partial_received
+        description: "Partially received"
+      - name: received
+        description: "Received"
+      - name: rejected
+        description: "Rejected"
+
+# =============================================================================
+# Models
+# =============================================================================
+
+models:
+  # ===========================================================================
+  # StockTransfer
+  # ===========================================================================
+  - name: StockTransfer
+    collection: stock_transfers
+    description: "Stock transfer between locations"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique transfer identifier"
+
+      provider_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Provider initiating transfer - logical FK to bersihir.Provider.id"
+
+      # =======================================================================
+      # Identity
+      # =======================================================================
+      transfer_number:
+        type: string
+        attributes: ["@required", "@max(30)"]
+        description: "Transfer document number"
+
+      # =======================================================================
+      # Type
+      # =======================================================================
+      transfer_type:
+        type: TransferType
+        attributes: ["@default(internal)"]
+        description: "Type of transfer"
+
+      # =======================================================================
+      # Source
+      # =======================================================================
+      from_warehouse_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Warehouse.id)"]
+        description: "Source warehouse"
+
+      from_location:
+        type: string?
+        attributes: ["@max(100)"]
+        description: "Source location detail"
+
+      # =======================================================================
+      # Destination
+      # =======================================================================
+      to_warehouse_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Warehouse.id)"]
+        description: "Destination warehouse"
+
+      to_location:
+        type: string?
+        attributes: ["@max(100)"]
+        description: "Destination location detail"
+
+      to_provider_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Destination provider (if inter-provider) - logical FK to bersihir.Provider.id"
+
+      # =======================================================================
+      # Dates
+      # =======================================================================
+      transfer_date:
+        type: date
+        attributes: ["@required"]
+        description: "Transfer date"
+
+      expected_arrival_date:
+        type: date?
+        description: "Expected arrival date"
+
+      shipped_at:
+        type: datetime?
+        description: "Shipped timestamp"
+
+      received_at:
+        type: datetime?
+        description: "Received timestamp"
+
+      # =======================================================================
+      # Totals
+      # =======================================================================
+      total_items:
+        type: int
+        attributes: ["@default(0)", "@non_negative"]
+        description: "Total line items"
+
+      total_quantity:
+        type: decimal
+        attributes: ["@default(0)", "@precision(12,4)", "@non_negative"]
+        description: "Total quantity"
+
+      total_value:
+        type: decimal
+        attributes: ["@default(0)", "@precision(14,2)", "@non_negative"]
+        description: "Total value"
+
+      currency:
+        type: string
+        attributes: ["@default('IDR')", "@length(3)"]
+        description: "Currency"
+
+      # =======================================================================
+      # Shipping
+      # =======================================================================
+      shipping_method:
+        type: string?
+        attributes: ["@max(50)"]
+        description: "Shipping method"
+
+      carrier:
+        type: string?
+        attributes: ["@max(100)"]
+        description: "Carrier/courier"
+
+      tracking_number:
+        type: string?
+        attributes: ["@max(100)"]
+        description: "Tracking number"
+
+      shipping_cost:
+        type: decimal?
+        attributes: ["@precision(12,2)", "@non_negative"]
+        description: "Shipping cost"
+
+      # =======================================================================
+      # Status
+      # =======================================================================
+      status:
+        type: TransferStatus
+        attributes: ["@default(draft)"]
+        description: "Transfer status"
+
+      # =======================================================================
+      # Approval
+      # =======================================================================
+      requires_approval:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Requires approval"
+
+      approved_by:
+        type: uuid?
+        description: "Approved by"
+
+      approved_at:
+        type: datetime?
+        description: "Approval timestamp"
+
+      # =======================================================================
+      # Personnel
+      # =======================================================================
+      requested_by:
+        type: uuid?
+        description: "Requested by"
+
+      shipped_by:
+        type: uuid?
+        description: "Shipped by"
+
+      received_by:
+        type: uuid?
+        description: "Received by"
+
+      # =======================================================================
+      # Notes
+      # =======================================================================
+      reason:
+        type: string?
+        attributes: ["@max(255)"]
+        description: "Transfer reason"
+
+      notes:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "Additional notes"
+
+      receiving_notes:
+        type: string?
+        attributes: ["@max(500)"]
+        description: "Receiving notes"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata (created_at, updated_at, deleted_at, created_by, updated_by, deleted_by)"
+
+    relations:
+      from_warehouse:
+        type: Warehouse
+        attributes: ["@one", "@foreign_key(from_warehouse_id)"]
+        description: "Source warehouse"
+        inverse: transfers_as_from
+
+      to_warehouse:
+        type: Warehouse
+        attributes: ["@one", "@foreign_key(to_warehouse_id)"]
+        description: "Destination warehouse"
+        inverse: transfers_as_to
+
+      requested_by_user:
+        type: sapiens.User?
+        attributes: ["@one", "@foreign_key(requested_by)"]
+        description: "Requested by"
+
+      approved_by_user:
+        type: sapiens.User?
+        attributes: ["@one", "@foreign_key(approved_by)"]
+        description: "Approved by"
+
+      items:
+        type: StockTransferItem[]
+        attributes: ["@one_to_many"]
+        description: "Transfer items"
+        inverse: transfer
+
+    indexes:
+      - type: unique
+        fields: [provider_id, transfer_number]
+        where: "deleted_at IS NULL"
+      - type: index
+        fields: [provider_id, status, transfer_date]
+      - type: index
+        fields: [from_warehouse_id, status]
+      - type: index
+        fields: [to_warehouse_id, status]
+      - type: index
+        fields: [transfer_date]
+
+  # ===========================================================================
+  # StockTransferItem
+  # ===========================================================================
+  - name: StockTransferItem
+    collection: stock_transfer_items
+    description: "Transfer line item"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique transfer item identifier"
+
+      transfer_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(StockTransfer.id)"]
+        description: "Parent transfer"
+
+      product_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Product.id)"]
+        description: "Product"
+
+      # =======================================================================
+      # Quantities
+      # =======================================================================
+      requested_quantity:
+        type: decimal
+        attributes: ["@required", "@precision(12,4)", "@non_negative"]
+        description: "Requested quantity"
+
+      shipped_quantity:
+        type: decimal
+        attributes: ["@default(0)", "@precision(12,4)", "@non_negative"]
+        description: "Shipped quantity"
+
+      received_quantity:
+        type: decimal
+        attributes: ["@default(0)", "@precision(12,4)", "@non_negative"]
+        description: "Received quantity"
+
+      rejected_quantity:
+        type: decimal
+        attributes: ["@default(0)", "@precision(12,4)", "@non_negative"]
+        description: "Rejected quantity"
+
+      variance_quantity:
+        type: decimal
+        attributes: ["@precision(12,4)"]
+        description: "Variance (received - shipped)"
+
+      uom:
+        type: string
+        attributes: ["@required", "@max(20)"]
+        description: "Unit of measure"
+
+      # =======================================================================
+      # Batch/Lot
+      # =======================================================================
+      batch_id:
+        type: uuid?
+        attributes: ["@foreign_key(StockBatch.id)"]
+        description: "Stock batch"
+
+      batch_number:
+        type: string?
+        attributes: ["@max(50)"]
+        description: "Batch/lot number"
+
+      expiry_date:
+        type: date?
+        description: "Expiry date"
+
+      # =======================================================================
+      # Costing
+      # =======================================================================
+      unit_cost:
+        type: decimal
+        attributes: ["@required", "@precision(14,4)", "@non_negative"]
+        description: "Unit cost"
+
+      total_cost:
+        type: decimal
+        attributes: ["@precision(14,2)", "@non_negative"]
+        description: "Total cost"
+
+      # =======================================================================
+      # Storage
+      # =======================================================================
+      from_bin:
+        type: string?
+        attributes: ["@max(50)"]
+        description: "Source bin location"
+
+      to_bin:
+        type: string?
+        attributes: ["@max(50)"]
+        description: "Destination bin location"
+
+      # =======================================================================
+      # Status
+      # =======================================================================
+      status:
+        type: TransferItemStatus
+        attributes: ["@default(pending)"]
+        description: "Item status"
+
+      # =======================================================================
+      # Rejection
+      # =======================================================================
+      rejection_reason:
+        type: string?
+        attributes: ["@max(255)"]
+        description: "Rejection reason"
+
+      # =======================================================================
+      # Notes
+      # =======================================================================
+      notes:
+        type: string?
+        attributes: ["@max(255)"]
+        description: "Item notes"
+
+      data:
+        type: json
+        attributes: ["@default('{}')"]
+        description: "Additional metadata"
+
+    relations:
+      transfer:
+        type: StockTransfer
+        attributes: ["@one", "@foreign_key(transfer_id)"]
+        description: "Parent transfer"
+        inverse: items
+
+      product:
+        type: Product
+        attributes: ["@one", "@foreign_key(product_id)"]
+        description: "Product"
+        inverse: transfer_items
+
+      batch:
+        type: StockBatch?
+        attributes: ["@one", "@foreign_key(batch_id)"]
+        description: "Stock batch"
+        inverse: transfer_items
+
+    indexes:
+      - type: index
+        fields: [transfer_id, status]
+      - type: index
+        fields: [product_id, transfer_id]
+      - type: index
+        fields: [batch_id]
+        where: "batch_id IS NOT NULL"
