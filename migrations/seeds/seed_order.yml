@@ -1,0 +1,23 @@
+# Seed Execution Order Configuration
+# Seeds are executed in the order defined in this file.
+# This ensures foreign key dependencies are satisfied.
+
+# Format: seed_name_seed (without .sql extension)
+#
+# Note: You can manually edit this file to customize the order.
+# Seeds not listed here will be executed after in alphabetical order.
+
+- goods_receipt_seed
+- goods_receipt_item_seed
+- product_seed
+- purchase_order_seed
+- purchase_order_item_seed
+- stock_seed
+- stock_adjustment_seed
+- stock_adjustment_item_seed
+- stock_batch_seed
+- stock_movement_seed
+- stock_transfer_seed
+- stock_transfer_item_seed
+- warehouse_seed
+- product_category_seed
