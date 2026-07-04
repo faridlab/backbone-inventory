@@ -1,0 +1,67 @@
+//! Inbound intake (hand-authored, user-owned) — the `DeliveryRequested` port the selling↔inventory
+//! delivery seam triggers on (`docs/erp/modules/backbone-inventory.md` §3, extension-guide).
+//!
+//! Selling, when a Sales Order is ready to ship, emits `DeliveryRequested`; inventory turns it into
+//! a **draft** Delivery Note (the physical move is a separate `submit_delivery_note(sink)` step, so
+//! the GL post + SLE happen under the composing service's control). The GL account ids are inventory
+//! config (resolved by the composing service / an item-account map), not selling's concern, so they
+//! ride on the intake DTO. This is the inventory-owned half of the seam — a consumer wires the event
+//! bus to `DeliveryIntake::on_delivery_requested`.
+
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+use uuid::Uuid;
+
+use super::inventory_write_service::{DeliveryLine, InventoryError, InventoryWriteService, NewDelivery};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DeliveryRequestLine {
+    pub item_id: Uuid,
+    pub quantity: Decimal,
+}
+
+/// The inbound request selling emits to have stock shipped for a confirmed order.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DeliveryRequested {
+    pub delivery_number: String,
+    pub company_id: Uuid,
+    pub branch_id: Option<Uuid>,
+    pub customer_id: Uuid,
+    pub source_so_id: Option<Uuid>,
+    pub warehouse_id: Uuid,
+    pub posting_date: chrono::NaiveDate,
+    /// GL accounts are inventory config, supplied by the composing service (not by selling).
+    pub cogs_account_id: Uuid,
+    pub inventory_account_id: Uuid,
+    pub lines: Vec<DeliveryRequestLine>,
+}
+
+/// The intake handler — a consumer subscribes the event bus to this.
+#[derive(Clone)]
+pub struct DeliveryIntake {
+    write: InventoryWriteService,
+}
+
+impl DeliveryIntake {
+    pub fn new(pool: PgPool) -> Self {
+        Self { write: InventoryWriteService::new(pool) }
+    }
+
+    /// Turn a `DeliveryRequested` into a DRAFT delivery note; returns its id. The caller then
+    /// `submit_delivery_note(id, sink)` to perform the physical move + COGS post.
+    pub async fn on_delivery_requested(&self, req: DeliveryRequested) -> Result<Uuid, InventoryError> {
+        self.write.create_delivery_note(NewDelivery {
+            delivery_number: req.delivery_number,
+            company_id: req.company_id,
+            branch_id: req.branch_id,
+            customer_id: req.customer_id,
+            source_so_id: req.source_so_id,
+            warehouse_id: req.warehouse_id,
+            posting_date: req.posting_date,
+            cogs_account_id: req.cogs_account_id,
+            inventory_account_id: req.inventory_account_id,
+            lines: req.lines.into_iter().map(|l| DeliveryLine { item_id: l.item_id, quantity: l.quantity }).collect(),
+        }).await
+    }
+}
