@@ -1,0 +1,155 @@
+# =============================================================================
+# Domain: Inventory
+# Entity: StockReconciliation (+ StockReconciliationItem)
+# Description: Adjust system stock to a physical count. On submit → one SLE per
+# line for the qty/value delta → Bin updated → emits AccountingPost for the net
+# stock_value_difference (Dr Inventory · Cr stock-adjustment, or the reverse).
+# =============================================================================
+
+models:
+  - name: StockReconciliation
+    collection: stock_reconciliations
+    description: "Physical-count adjustment; emits a value-difference post on submit"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique reconciliation identifier"
+
+      recon_number:
+        type: string
+        attributes: ["@required", "@max(40)"]
+        description: "Human reference (the post's voucher_no)"
+
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Owning company # logical FK to organization.Company.id"
+
+      warehouse_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Warehouse.id)"]
+        description: "Warehouse counted"
+
+      posting_date:
+        type: date
+        attributes: ["@required"]
+        description: "Count / posting date"
+
+      net_difference:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,2)"]
+        description: "Net stock-value difference across lines (signed; the posted amount)"
+
+      # ---- GL account refs (logical FKs to accounting.Account) ----
+      inventory_account_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Inventory (asset) account # logical FK to accounting.Account.id"
+
+      adjustment_account_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Stock-adjustment (P&L) account # logical FK to accounting.Account.id"
+
+      status:
+        type: DocStatus
+        attributes: ["@default(draft)"]
+        description: "Document lifecycle"
+
+      posting_state:
+        type: GlPostingState
+        attributes: ["@default(pending)"]
+        description: "GL reconciliation state"
+
+      journal_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Resulting journal # logical FK to accounting.Journal.id"
+
+      accounting_post_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "The AccountingPost record # logical FK to accounting.AccountingPost.id"
+
+      posted_at:
+        type: datetime?
+        description: "When the GL post was confirmed"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    relations:
+      items:
+        type: StockReconciliationItem[]
+        attributes: ["@one_to_many"]
+        description: "Counted lines"
+        inverse: reconciliation
+
+    indexes:
+      - type: unique
+        fields: [recon_number]
+        where: "deleted_at IS NULL"
+      - type: index
+        fields: [company_id, status]
+      - type: index
+        fields: [posting_state]
+
+  - name: StockReconciliationItem
+    collection: stock_reconciliation_items
+    description: "One counted line (system vs counted qty/rate)"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique line id"
+
+      reconciliation_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(StockReconciliation.id)"]
+        description: "Owning reconciliation"
+
+      item_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Catalog item # logical FK to catalog.Item.id"
+
+      counted_qty:
+        type: decimal
+        attributes: ["@required", "@precision(18,4)", "@non_negative"]
+        description: "Physically counted quantity"
+
+      counted_rate:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,6)", "@non_negative"]
+        description: "Valuation rate for the counted stock (0 = keep current)"
+
+      qty_difference:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,4)"]
+        description: "counted_qty - system qty (computed at post)"
+
+      value_difference:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,2)"]
+        description: "Value delta for this line (computed at post; signed)"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    relations:
+      reconciliation:
+        type: StockReconciliation
+        attributes: ["@one", "@foreign_key(reconciliation_id)"]
+        description: "Owning reconciliation"
+        inverse: items
+
+    indexes:
+      - type: index
+        fields: [reconciliation_id]

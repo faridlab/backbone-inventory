@@ -1,0 +1,61 @@
+# Goods-movement saga (inventory) — submit a movement: write the SLE, update the Bin (moving-average),
+# then emit the GL post. Implemented by InventoryWriteService; proven by valuation + seam golden cases.
+# The SLE+Bin write is one DB transaction; the GL post is emitted after commit (eventually consistent).
+
+name: GoodsMovement
+description: |
+  On submitting a Purchase Receipt / Delivery Note / Stock Reconciliation: append an immutable SLE
+  per line, update the per-(item,warehouse) Bin balance by the moving-average rule, then emit a
+  balanced AccountingPost and reconcile the voucher's posting_state.
+
+version: 2
+
+trigger:
+  event: MovementSubmitted
+  extract:
+    voucher_id: "event.voucher_id"
+
+config:
+  timeout: 30s
+  persistence: true
+
+context:
+  voucher_id: null
+  gl_amount: null
+
+steps:
+  - name: validate
+    type: action
+    action: validate            # non-empty, non-negative, sufficient stock, draft
+    on_success: { next: write_ledger }
+    on_failure: { next: rejected }
+
+  - name: write_ledger
+    type: action
+    action: write_sle_and_bin   # ONE transaction: append SLE + update Bin (moving-average)
+    on_success:
+      set: { gl_amount: "{{ result.gl_amount }}" }
+      next: emit_post
+    on_failure: { next: rejected }
+
+  - name: emit_post
+    type: action
+    action: emit_accounting_post # after commit; eventually consistent
+    idempotent: true
+    on_success: { next: done }
+    on_failure: { next: post_failed }
+
+  - name: done
+    type: terminal
+    status: completed
+    reason: "SLE+Bin committed; GL post posted; StockReceived/Delivered/Reconciled emitted"
+
+  - name: post_failed
+    type: terminal
+    status: failed
+    reason: "GL rejected; posting_state=failed but the physical movement stands (retryable)"
+
+  - name: rejected
+    type: terminal
+    status: failed
+    reason: "validation failed (empty/negative/insufficient_stock/same_warehouse/not_draft)"

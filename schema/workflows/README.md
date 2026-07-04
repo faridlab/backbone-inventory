@@ -1,58 +1,13 @@
-# Workflows
+# inventory Workflows
 
-This directory contains workflow definitions for the inventory module.
+Declarative specs of the module's multi-step sagas. The hand-authored Rust is the executable
+truth; these YAML files document the intended orchestration and are the readable companion to the
+golden cases in `docs/business-flows/`.
 
-## What are Workflows?
+| Workflow | Saga | Implemented in | Proven by |
+|----------|------|----------------|-----------|
+| `example.workflow.yaml` | (replace with your saga) | `src/application/service/…` | `tests/…` |
 
-Workflows define multi-step business processes that span multiple entities or require
-saga-like compensation logic.
-
-## Example Workflow
-
-```yaml
-# example.workflow.yaml
-name: ExampleWorkflow
-description: Example multi-step workflow
-
-trigger:
-  event: ExampleCreatedEvent
-
-steps:
-  - name: validate
-    type: action
-    action: validate_example
-    on_success:
-      next: process
-
-  - name: process
-    type: action
-    action: process_example
-    on_success:
-      next: notify
-    on_failure:
-      next: compensate
-
-  - name: notify
-    type: action
-    action: send_notification
-    terminal: true
-
-  - name: compensate
-    type: compensation
-    action: rollback_example
-    terminal: true
-
-config:
-  timeout: 30.minutes
-  retry:
-    max_attempts: 3
-    backoff: exponential
-```
-
-## Running Schema Generation
-
-After adding workflow files, run:
-
-```bash
-backbone schema generate inventory --target flow
-```
+Single-entity status transitions belong in `schema/hooks/*.hook.yaml` as state machines, not here.
+Use a workflow only for a **multi-step** saga (e.g. "create A then B atomically", "A → B → C").
+Delete `example.workflow.yaml` if this module has no sagas.

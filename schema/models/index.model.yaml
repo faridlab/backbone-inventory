@@ -1,17 +1,19 @@
 # =============================================================================
-# Inventory Module - Schema Index
+# inventory Module - Schema Index
 # =============================================================================
 # Version: 2.0
-# Description: Products, stock, warehouses, purchase orders, goods receipts
-#
-# Run `backbone schema generate inventory --target all` to generate code.
+# Description: Module schema index. `module:` and `schema:` are stamped from the
+# module name by `metaphor module create`. `schema:` gives this module its OWN
+# Postgres schema (migrations emit `CREATE SCHEMA inventory` and qualify tables
+# as `inventory.<table>`) — the convention every backbone module follows
+# (see backbone-sapiens, backbone-bucket). Do not remove it.
 # =============================================================================
 
 module: inventory
 version: 2
-description: "Products, stock, warehouses, purchase orders, goods receipts (extracted from bersihir)"
+schema: inventory
+description: "Inventory: append-only Stock Ledger (SLE) + moving-average valuation + Bin balances. Delivery Note emits COGS (Dr COGS - Cr Inventory) and Purchase Receipt emits asset (Dr Inventory - Cr GR/IR) AccountingPosts into backbone-accounting via the GL-posting contract."
 
-# Module-level configuration
 config:
   database: postgresql
   soft_delete: true
@@ -22,14 +24,13 @@ config:
       - graphql
       - grpc
       - proto
-      - openapi
 
-# External imports - reuse sapiens for user identity (same pattern as bersihir)
+# Reuse sapiens for user identity (actors) — logical refs, no DB constraint.
 external_imports:
   - module: sapiens
     types: [User]
 
-# Shared types available to all models in this module
+# Shared value-object types available to all models in this module.
 shared_types:
   Timestamps:
     created_at:
@@ -60,15 +61,11 @@ shared_types:
 
   Metadata: [Timestamps, Actors]
 
-# Import all model files
+# Import each entity model (parents before children).
 imports:
-  - product.model.yaml
   - warehouse.model.yaml
-  - stock.model.yaml
-  - stock_batch.model.yaml
-  - stock_movement.model.yaml
-  - stock_transfer.model.yaml
-  - stock_adjustment.model.yaml
-  - purchase.model.yaml
-  - goods_receipt.model.yaml
-  - goods_receipt_item.model.yaml
+  - stock_ledger.model.yaml
+  - stock_entry.model.yaml
+  - purchase_receipt.model.yaml
+  - delivery_note.model.yaml
+  - stock_reconciliation.model.yaml

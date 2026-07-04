@@ -1,55 +1,15 @@
 # =============================================================================
-# Module: Bersihir
-# Entity: Warehouse
-# Description: Warehouse/storage location definition
-# =============================================================================
-
-# No external imports - cross-module FKs use @exclude_from_foreign_key_check
-
-# =============================================================================
-# Enums
-# =============================================================================
-
-enums:
-  - name: WarehouseType
-    description: "Type of warehouse/storage location"
-    variants:
-      - name: main
-        description: "Main/central warehouse"
-        default: true
-      - name: outlet
-        description: "Outlet storage"
-      - name: transit
-        description: "Transit/in-between location"
-      - name: production
-        description: "Production area"
-      - name: return_storage
-        description: "Return/RMA storage"
-      - name: quarantine
-        description: "Quarantine storage"
-
-  - name: WarehouseStatus
-    description: "Warehouse operational status"
-    variants:
-      - name: active
-        description: "Active and operational"
-        default: true
-      - name: inactive
-        description: "Temporarily inactive"
-      - name: maintenance
-        description: "Under maintenance"
-      - name: closed
-        description: "Permanently closed"
-
-# =============================================================================
-# Models
+# Domain: Inventory
+# Entity: Warehouse (+ StockItem projection)
+# Description: Warehouse is the one master this pillar owns — a per-company tree
+# (parent/is_group). StockItem is a read-only ACL projection of catalog.Item
+# (never the god-entity), refreshed by ItemCreated/Updated events.
 # =============================================================================
 
 models:
   - name: Warehouse
     collection: warehouses
-    soft_delete: true
-    description: "Warehouse/storage location"
+    description: "A per-company storage location (tree). Group nodes hold no stock."
 
     fields:
       id:
@@ -57,140 +17,128 @@ models:
         attributes: ["@id", "@default(uuid)"]
         description: "Unique warehouse identifier"
 
-      provider_id:
+      company_id:
         type: uuid
         attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "Provider who owns this warehouse - logical FK to bersihir.Provider.id"
+        description: "Owning company # logical FK to organization.Company.id"
 
-      outlet_id:
-        type: uuid?
-        attributes: ["@exclude_from_foreign_key_check"]
-        description: "Associated outlet (if outlet storage) - logical FK to bersihir.ProviderOutlet.id"
-
-      # Identification
       code:
         type: string
-        attributes: ["@required", "@max(20)"]
-        description: "Warehouse code (e.g., WH-MAIN, WH-OUT1)"
+        attributes: ["@required", "@max(40)"]
+        description: "Short unique code"
 
       name:
         type: string
-        attributes: ["@required", "@max(100)"]
+        attributes: ["@required", "@max(150)"]
         description: "Warehouse name"
 
-      description:
-        type: string?
-        attributes: ["@max(255)"]
-        description: "Description"
-
-      # Type
       warehouse_type:
         type: WarehouseType
-        attributes: ["@default(main)"]
-        description: "Type of warehouse"
+        attributes: ["@default(stock)"]
+        description: "Functional type"
 
-      is_main:
+      parent_warehouse_id:
+        type: uuid?
+        attributes: ["@foreign_key(Warehouse.id)"]
+        description: "Parent node (tree); null = root"
+
+      is_group:
         type: bool
         attributes: ["@default(false)"]
-        description: "Is main/primary warehouse"
-
-      # Address
-      address_id:
-        type: uuid?
-        attributes: ["@exclude_from_foreign_key_check"]
-        description: "Reference to address - logical FK to bersihir.Address.id"
-
-      # Contact
-      contact_name:
-        type: string?
-        attributes: ["@max(100)"]
-        description: "Contact person"
-
-      contact_phone:
-        type: phone?
-        description: "Contact phone"
-
-      contact_email:
-        type: email?
-        description: "Contact email"
-
-      # Capacity
-      total_capacity:
-        type: decimal?
-        attributes: ["@precision(12,2)", "@non_negative"]
-        description: "Total capacity (sqm or units)"
-
-      capacity_unit:
-        type: string?
-        attributes: ["@max(20)"]
-        description: "Capacity unit (sqm, pallet, etc.)"
-
-      # Operations
-      allow_receipt:
-        type: bool
-        attributes: ["@default(true)"]
-        description: "Allow goods receipt"
-
-      allow_issue:
-        type: bool
-        attributes: ["@default(true)"]
-        description: "Allow goods issue"
-
-      allow_transfer_in:
-        type: bool
-        attributes: ["@default(true)"]
-        description: "Allow transfer in"
-
-      allow_transfer_out:
-        type: bool
-        attributes: ["@default(true)"]
-        description: "Allow transfer out"
-
-      allow_adjustment:
-        type: bool
-        attributes: ["@default(true)"]
-        description: "Allow stock adjustment"
-
-      # Default Accounts
-      default_inventory_account_id:
-        type: uuid?
-        attributes: ["@exclude_from_foreign_key_check"]
-        description: "Default inventory account - logical FK to accounting.Account.id"
-
-      # Status
-      status:
-        type: WarehouseStatus
-        attributes: ["@default(active)"]
-        description: "Warehouse status"
-
-      # Notes
-      notes:
-        type: string?
-        attributes: ["@max(500)"]
-        description: "Internal notes"
+        description: "A grouping node — holds no stock, only children"
 
       metadata:
         type: Metadata
         attributes: ["@audit_metadata"]
-        description: "Audit metadata (created_at, updated_at, deleted_at, created_by, updated_by, deleted_by)"
-
-    relations:
-      stocks:
-        type: Stock[]
-        attributes: ["@one_to_many"]
-        description: "Stock items in warehouse"
-        inverse: warehouse
+        description: "Audit metadata"
 
     indexes:
       - type: unique
-        fields: [provider_id, outlet_id, code]
-        where: "(metadata->>'deleted_at') IS NULL"
-        description: "Same code allowed across different provider+outlet combinations"
+        fields: [company_id, code]
+        where: "deleted_at IS NULL"
       - type: index
-        fields: [provider_id, warehouse_type, status]
-      - type: index
-        fields: [provider_id, outlet_id]
-      - type: index
-        fields: [provider_id, is_main]
-      - type: index
-        fields: [address_id]
+        fields: [parent_warehouse_id]
+
+  - name: StockItem
+    collection: stock_items
+    description: "ACL projection of catalog.Item — the stock-relevant slice (never owns the Item)"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique projection row id"
+
+      item_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Catalog item # logical FK to catalog.Item.id (unique per company)"
+
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Owning company # logical FK to organization.Company.id"
+
+      stock_uom:
+        type: string
+        attributes: ["@required", "@max(20)"]
+        description: "Stock-keeping unit of measure (from catalog)"
+
+      is_stock_item:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Tracked in the stock ledger (false = service/non-stock)"
+
+      has_batch:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Movements require a batch (batch tracking)"
+
+      valuation_method:
+        type: ValuationMethod
+        attributes: ["@default(moving_average)"]
+        description: "Cost method (moving-average default; FIFO opt-in)"
+
+      reorder_level:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,4)", "@non_negative"]
+        description: "Reorder trigger level (emits ReorderLevelBreached)"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    indexes:
+      - type: unique
+        fields: [company_id, item_id]
+        where: "deleted_at IS NULL"
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: WarehouseType
+    description: "Functional warehouse type"
+    variants:
+      - name: stock
+        description: "General stock"
+        default: true
+      - name: transit
+        description: "In-transit"
+      - name: wip
+        description: "Work in progress"
+      - name: finished_goods
+        description: "Finished goods"
+      - name: rejected
+        description: "Rejected / quarantine"
+
+  - name: ValuationMethod
+    description: "Inventory cost method"
+    variants:
+      - name: moving_average
+        description: "Weighted moving average (SMB default)"
+        default: true
+      - name: fifo
+        description: "First-in first-out lots"

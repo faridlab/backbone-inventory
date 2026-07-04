@@ -1,0 +1,205 @@
+# =============================================================================
+# Domain: Inventory
+# Entity: PurchaseReceipt (+ PurchaseReceiptItem)
+# Description: Inbound goods receipt. On submit → SLE incoming (qty +, at the
+# supplied receipt rate) → Bin updated (moving-average) → emits AccountingPost
+# (Dr Inventory · Cr GR/IR clearing). supplier_id / source PO / item are logical
+# FKs; inventory/grir accounts are logical FKs to accounting.Account.
+# =============================================================================
+
+models:
+  - name: PurchaseReceipt
+    collection: purchase_receipts
+    description: "Inbound goods receipt; emits an asset (Dr Inventory · Cr GR/IR) post on submit"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique receipt identifier"
+
+      receipt_number:
+        type: string
+        attributes: ["@required", "@max(40)"]
+        description: "Human reference (the post's voucher_no)"
+
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Books/stock owner # logical FK to organization.Company.id"
+
+      branch_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Branch # logical FK to organization.Branch.id"
+
+      supplier_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Supplier # logical FK to party.Party.id"
+
+      source_po_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Source purchase order # logical FK to buying.PurchaseOrder.id (when built)"
+
+      warehouse_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Warehouse.id)"]
+        description: "Receiving warehouse"
+
+      posting_date:
+        type: date
+        attributes: ["@required"]
+        description: "Receipt / posting date"
+
+      currency:
+        type: string
+        attributes: ["@default(\"IDR\")", "@max(3)"]
+        description: "ISO currency code"
+
+      total_value:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,2)", "@non_negative"]
+        description: "Σ line amounts (the inventory debit)"
+
+      # ---- GL account refs (logical FKs to accounting.Account) ----
+      inventory_account_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Inventory (asset) account to debit # logical FK to accounting.Account.id"
+
+      grir_account_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "GR/IR clearing account to credit # logical FK to accounting.Account.id"
+
+      status:
+        type: DocStatus
+        attributes: ["@default(draft)"]
+        description: "Document lifecycle"
+
+      posting_state:
+        type: GlPostingState
+        attributes: ["@default(pending)"]
+        description: "GL reconciliation state"
+
+      journal_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Resulting journal # logical FK to accounting.Journal.id"
+
+      accounting_post_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "The AccountingPost record # logical FK to accounting.AccountingPost.id"
+
+      posted_at:
+        type: datetime?
+        description: "When the GL post was confirmed"
+
+      notes:
+        type: string?
+        attributes: ["@max(1000)"]
+        description: "Free-text notes"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    relations:
+      items:
+        type: PurchaseReceiptItem[]
+        attributes: ["@one_to_many"]
+        description: "Received lines"
+        inverse: receipt
+
+    indexes:
+      - type: unique
+        fields: [receipt_number]
+        where: "deleted_at IS NULL"
+      - type: index
+        fields: [company_id, supplier_id, status]
+      - type: index
+        fields: [posting_state]
+
+  - name: PurchaseReceiptItem
+    collection: purchase_receipt_items
+    description: "One received line (qty at unit cost)"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique line id"
+
+      receipt_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(PurchaseReceipt.id)"]
+        description: "Owning receipt"
+
+      item_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Catalog item # logical FK to catalog.Item.id"
+
+      quantity:
+        type: decimal
+        attributes: ["@required", "@precision(18,4)", "@non_negative"]
+        description: "Received quantity"
+
+      rate:
+        type: decimal
+        attributes: ["@required", "@precision(18,6)", "@non_negative"]
+        description: "Unit cost (the incoming valuation rate)"
+
+      amount:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,2)", "@non_negative"]
+        description: "quantity * rate (computed, 2dp)"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    relations:
+      receipt:
+        type: PurchaseReceipt
+        attributes: ["@one", "@foreign_key(receipt_id)"]
+        description: "Owning receipt"
+        inverse: items
+
+    indexes:
+      - type: index
+        fields: [receipt_id]
+
+# =============================================================================
+# Enums (shared across inventory documents)
+# =============================================================================
+
+enums:
+  - name: DocStatus
+    description: "Inventory document lifecycle"
+    variants:
+      - name: draft
+        description: "Being prepared; no stock/GL effect yet"
+        default: true
+      - name: submitted
+        description: "Submitted; SLE written and GL post emitted"
+      - name: cancelled
+        description: "Reversed"
+
+  - name: GlPostingState
+    description: "GL-posting reconciliation state"
+    variants:
+      - name: pending
+        description: "Not yet posted"
+        default: true
+      - name: posted
+        description: "Confirmed posted"
+      - name: failed
+        description: "Rejected by accounting"
+      - name: not_applicable
+        description: "Movement has no GL effect (e.g. a same-value transfer)"

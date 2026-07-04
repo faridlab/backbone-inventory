@@ -1,0 +1,143 @@
+# =============================================================================
+# Domain: Inventory
+# Entity: StockEntry (+ StockEntryItem)
+# Description: Internal movement — transfer between warehouses, repack, or a bare
+# issue/receipt. A transfer writes a PAIRED SLE (out of `from`, into `to`) at the
+# same moving-average value → NO GL effect (value conserved). Issue/receipt legs
+# and repack that change value are Tier-3 (parked). company/item are logical FKs;
+# from/to warehouses are intra-module FKs.
+# =============================================================================
+
+models:
+  - name: StockEntry
+    collection: stock_entries
+    description: "Internal stock movement (transfer/repack/issue/receipt)"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique stock-entry identifier"
+
+      entry_number:
+        type: string
+        attributes: ["@required", "@max(40)"]
+        description: "Human reference (the post's voucher_no)"
+
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Owning company # logical FK to organization.Company.id"
+
+      stock_entry_type:
+        type: StockEntryType
+        attributes: ["@default(transfer)"]
+        description: "Kind of internal movement"
+
+      from_warehouse_id:
+        type: uuid?
+        attributes: ["@foreign_key(Warehouse.id)"]
+        description: "Source warehouse (null for a bare receipt)"
+
+      to_warehouse_id:
+        type: uuid?
+        attributes: ["@foreign_key(Warehouse.id)"]
+        description: "Target warehouse (null for a bare issue)"
+
+      posting_date:
+        type: date
+        attributes: ["@required"]
+        description: "Posting date"
+
+      status:
+        type: DocStatus
+        attributes: ["@default(draft)"]
+        description: "Document lifecycle"
+
+      posting_state:
+        type: GlPostingState
+        attributes: ["@default(not_applicable)"]
+        description: "GL reconciliation state (transfers are value-neutral: not_applicable)"
+
+      notes:
+        type: string?
+        attributes: ["@max(1000)"]
+        description: "Free-text notes"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    relations:
+      items:
+        type: StockEntryItem[]
+        attributes: ["@one_to_many"]
+        description: "Moved lines"
+        inverse: entry
+
+    indexes:
+      - type: unique
+        fields: [entry_number]
+        where: "deleted_at IS NULL"
+      - type: index
+        fields: [company_id, stock_entry_type, status]
+
+  - name: StockEntryItem
+    collection: stock_entry_items
+    description: "One moved line"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique line id"
+
+      entry_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(StockEntry.id)"]
+        description: "Owning stock entry"
+
+      item_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Catalog item # logical FK to catalog.Item.id"
+
+      quantity:
+        type: decimal
+        attributes: ["@required", "@precision(18,4)", "@non_negative"]
+        description: "Quantity moved"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    relations:
+      entry:
+        type: StockEntry
+        attributes: ["@one", "@foreign_key(entry_id)"]
+        description: "Owning stock entry"
+        inverse: items
+
+    indexes:
+      - type: index
+        fields: [entry_id]
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: StockEntryType
+    description: "Kind of internal stock movement"
+    variants:
+      - name: transfer
+        description: "Move between warehouses (value-neutral)"
+        default: true
+      - name: repack
+        description: "Consume + produce (Tier 3)"
+      - name: material_issue
+        description: "Issue out of stock (Tier 3)"
+      - name: material_receipt
+        description: "Receive into stock without a PO (Tier 3)"

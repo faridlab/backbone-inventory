@@ -1,0 +1,88 @@
+# =============================================================================
+# inventory Hooks — document lifecycle + valuation/GL write-path rules.
+# Declarative spec of behavior in src/application/service/inventory_write_service.rs,
+# proven by tests/valuation_golden_cases.rs + tests/gl_posting_seam.rs.
+# =============================================================================
+
+module: inventory
+version: 2
+
+# -----------------------------------------------------------------------------
+# State machines (movement documents)
+# -----------------------------------------------------------------------------
+state_machines:
+  - entity: PurchaseReceipt
+    field: status
+    initial: draft
+    states: [draft, submitted, cancelled]
+    transitions:
+      - { from: draft, to: submitted, on: submit }   # SLE in + Bin + asset post
+  - entity: DeliveryNote
+    field: status
+    initial: draft
+    states: [draft, submitted, cancelled]
+    transitions:
+      - { from: draft, to: submitted, on: submit }   # SLE out + Bin + COGS post
+  - entity: StockReconciliation
+    field: status
+    initial: draft
+    states: [draft, submitted, cancelled]
+    transitions:
+      - { from: draft, to: submitted, on: submit }   # SLE adjust + Bin + difference post
+
+# -----------------------------------------------------------------------------
+# Valuation + GL rules — each maps to a stable error_code + a golden case.
+# -----------------------------------------------------------------------------
+rules:
+  - id: R1
+    name: non_empty_document
+    when: create
+    assert: "count(lines) >= 1"
+    error_code: empty_document
+  - id: R2
+    name: non_negative
+    when: create
+    assert: "line.quantity >= 0 AND line.rate >= 0"
+    error_code: negative_quantity
+  - id: R3
+    name: sufficient_stock
+    when: submit
+    assert: "outgoing line.quantity <= bin.actual_qty"
+    error_code: insufficient_stock
+  - id: R4
+    name: distinct_transfer_warehouses
+    when: submit
+    assert: "from_warehouse_id != to_warehouse_id"
+    error_code: same_warehouse
+  - id: R5
+    name: submit_once
+    when: submit
+    assert: "document.status == 'draft'"
+    error_code: not_draft
+  - id: R6
+    name: moving_average
+    when: submit
+    assert: "receipt blends rate = value/qty; outflow keeps rate, cogs = qty*rate"
+    error_code: null
+  - id: R7
+    name: balanced_post
+    when: submit
+    assert: "sum(lines.debit) == sum(lines.credit)"
+    error_code: unbalanced
+
+# -----------------------------------------------------------------------------
+# Domain events (emitted via InventoryEventSink after commit).
+# -----------------------------------------------------------------------------
+events:
+  StockReceived:
+    when: "a purchase receipt is submitted"
+    payload: [receipt_id, company_id, warehouse_id, source_po_id, total_value]
+  StockDelivered:
+    when: "a delivery note is submitted"
+    payload: [delivery_id, company_id, warehouse_id, source_so_id, total_cogs]
+  StockMoved:
+    when: "a stock transfer is submitted"
+    payload: [entry_id, company_id, from_warehouse_id, to_warehouse_id]
+  StockReconciled:
+    when: "a stock reconciliation is submitted"
+    payload: [reconciliation_id, company_id, warehouse_id, net_difference]
