@@ -1,0 +1,194 @@
+//! Guarded route composition — the RECOMMENDED way to mount the inventory module.
+//!
+//! Hand-authored (user-owned). Read all stock documents + **validated create** (warehouse,
+//! stock-item, purchase-receipt draft, delivery-note draft); generic create/update/delete CRUD is
+//! NOT mounted, so no caller can write an SLE/Bin directly or persist an inconsistent document.
+//!
+//! Submitting a movement (which writes the SLE, updates the Bin, and emits the GL post) needs a
+//! `GlPostSink` from the composing service, so it is service/job-driven — proven by the seam test,
+//! not exposed as a bare HTTP route. `InventoryWriteService` is built from the pool (regen-safe).
+
+use std::sync::Arc;
+
+use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+use uuid::Uuid;
+
+use crate::application::service::inventory_write_service::{
+    InventoryError, InventoryWriteService, NewDelivery, NewReceipt, NewWarehouse, ReceiptLine,
+    DeliveryLine,
+};
+use crate::application::service::inventory_read::InventoryReadService;
+use crate::application::service::inventory_intake::{DeliveryIntake, DeliveryRequestLine, DeliveryRequested};
+use crate::InventoryModule;
+
+use axum::extract::Query;
+
+use super::{
+    create_bin_read_routes, create_delivery_note_read_routes, create_purchase_receipt_read_routes,
+    create_stock_ledger_entry_read_routes, create_warehouse_read_routes,
+};
+
+#[derive(Debug, Serialize)]
+struct ErrorBody { error: String, message: String }
+#[derive(Debug, Serialize)]
+struct IdResponse { id: Uuid }
+fn err(e: InventoryError) -> axum::response::Response {
+    let s = StatusCode::from_u16(e.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    (s, Json(ErrorBody { error: e.code(), message: e.to_string() })).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateWarehouseBody {
+    company_id: Uuid,
+    code: String,
+    name: String,
+    #[serde(default)] warehouse_type: Option<String>,
+    #[serde(default)] parent_warehouse_id: Option<Uuid>,
+    #[serde(default)] is_group: bool,
+}
+async fn create_warehouse(State(svc): State<Arc<InventoryWriteService>>, Json(b): Json<CreateWarehouseBody>) -> axum::response::Response {
+    match svc.create_warehouse(NewWarehouse {
+        company_id: b.company_id, code: b.code, name: b.name, warehouse_type: b.warehouse_type,
+        parent_warehouse_id: b.parent_warehouse_id, is_group: b.is_group,
+    }).await {
+        Ok(id) => (StatusCode::CREATED, Json(IdResponse { id })).into_response(),
+        Err(e) => err(e),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceiptLineBody { item_id: Uuid, quantity: Decimal, rate: Decimal }
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateReceiptBody {
+    receipt_number: String,
+    company_id: Uuid,
+    #[serde(default)] branch_id: Option<Uuid>,
+    supplier_id: Uuid,
+    #[serde(default)] source_po_id: Option<Uuid>,
+    warehouse_id: Uuid,
+    posting_date: chrono::NaiveDate,
+    inventory_account_id: Uuid,
+    grir_account_id: Uuid,
+    lines: Vec<ReceiptLineBody>,
+}
+async fn create_receipt(State(svc): State<Arc<InventoryWriteService>>, Json(b): Json<CreateReceiptBody>) -> axum::response::Response {
+    let r = NewReceipt {
+        receipt_number: b.receipt_number, company_id: b.company_id, branch_id: b.branch_id,
+        supplier_id: b.supplier_id, source_po_id: b.source_po_id, warehouse_id: b.warehouse_id,
+        posting_date: b.posting_date, inventory_account_id: b.inventory_account_id, grir_account_id: b.grir_account_id,
+        lines: b.lines.into_iter().map(|l| ReceiptLine { item_id: l.item_id, quantity: l.quantity, rate: l.rate }).collect(),
+    };
+    match svc.create_purchase_receipt(r).await {
+        Ok(id) => (StatusCode::CREATED, Json(IdResponse { id })).into_response(),
+        Err(e) => err(e),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeliveryLineBody { item_id: Uuid, quantity: Decimal }
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateDeliveryBody {
+    delivery_number: String,
+    company_id: Uuid,
+    #[serde(default)] branch_id: Option<Uuid>,
+    customer_id: Uuid,
+    #[serde(default)] source_so_id: Option<Uuid>,
+    warehouse_id: Uuid,
+    posting_date: chrono::NaiveDate,
+    cogs_account_id: Uuid,
+    inventory_account_id: Uuid,
+    lines: Vec<DeliveryLineBody>,
+}
+async fn create_delivery(State(svc): State<Arc<InventoryWriteService>>, Json(b): Json<CreateDeliveryBody>) -> axum::response::Response {
+    let dn = NewDelivery {
+        delivery_number: b.delivery_number, company_id: b.company_id, branch_id: b.branch_id,
+        customer_id: b.customer_id, source_so_id: b.source_so_id, warehouse_id: b.warehouse_id,
+        posting_date: b.posting_date, cogs_account_id: b.cogs_account_id, inventory_account_id: b.inventory_account_id,
+        lines: b.lines.into_iter().map(|l| DeliveryLine { item_id: l.item_id, quantity: l.quantity }).collect(),
+    };
+    match svc.create_delivery_note(dn).await {
+        Ok(id) => (StatusCode::CREATED, Json(IdResponse { id })).into_response(),
+        Err(e) => err(e),
+    }
+}
+
+fn write_routes(svc: Arc<InventoryWriteService>) -> Router {
+    Router::new()
+        .route("/warehouses", post(create_warehouse))
+        .route("/purchase-receipts", post(create_receipt))
+        .route("/delivery-notes", post(create_delivery))
+        .with_state(svc)
+}
+
+// ── availability read-model (the surface selling consumes to check stock) ────
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AvailabilityQuery { company_id: Uuid, item_id: Uuid, warehouse_id: Uuid }
+async fn get_availability(State(svc): State<Arc<InventoryReadService>>, Query(q): Query<AvailabilityQuery>) -> axum::response::Response {
+    match svc.availability(q.company_id, q.item_id, q.warehouse_id).await {
+        Ok(view) => (StatusCode::OK, Json(view)).into_response(),
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorBody { error: "internal_error".into(), message: "availability query failed".into() })).into_response(),
+    }
+}
+fn read_routes(svc: Arc<InventoryReadService>) -> Router {
+    Router::new().route("/availability", axum::routing::get(get_availability)).with_state(svc)
+}
+
+// ── DeliveryRequested intake (the trigger of the selling↔inventory delivery seam) ──
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeliveryRequestLineBody { item_id: Uuid, quantity: Decimal }
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeliveryRequestedBody {
+    delivery_number: String,
+    company_id: Uuid,
+    #[serde(default)] branch_id: Option<Uuid>,
+    customer_id: Uuid,
+    #[serde(default)] source_so_id: Option<Uuid>,
+    warehouse_id: Uuid,
+    posting_date: chrono::NaiveDate,
+    cogs_account_id: Uuid,
+    inventory_account_id: Uuid,
+    lines: Vec<DeliveryRequestLineBody>,
+}
+async fn post_delivery_requested(State(intake): State<Arc<DeliveryIntake>>, Json(b): Json<DeliveryRequestedBody>) -> axum::response::Response {
+    let req = DeliveryRequested {
+        delivery_number: b.delivery_number, company_id: b.company_id, branch_id: b.branch_id,
+        customer_id: b.customer_id, source_so_id: b.source_so_id, warehouse_id: b.warehouse_id,
+        posting_date: b.posting_date, cogs_account_id: b.cogs_account_id, inventory_account_id: b.inventory_account_id,
+        lines: b.lines.into_iter().map(|l| DeliveryRequestLine { item_id: l.item_id, quantity: l.quantity }).collect(),
+    };
+    match intake.on_delivery_requested(req).await {
+        Ok(id) => (StatusCode::CREATED, Json(IdResponse { id })).into_response(),
+        Err(e) => err(e),
+    }
+}
+fn intake_routes(intake: Arc<DeliveryIntake>) -> Router {
+    Router::new().route("/delivery-requests", post(post_delivery_requested)).with_state(intake)
+}
+
+/// Mount the inventory module: read stock documents + validated creates. Generic mutation and
+/// direct SLE/Bin writes are not exposed. **Prefer this over `InventoryModule::all_crud_routes()`.**
+pub fn create_guarded_inventory_routes(m: &InventoryModule, pool: PgPool) -> Router {
+    let write = Arc::new(InventoryWriteService::new(pool.clone()));
+    let read = Arc::new(InventoryReadService::new(pool.clone()));
+    let intake = Arc::new(DeliveryIntake::new(pool));
+    Router::new()
+        .merge(create_warehouse_read_routes(m.warehouse_service.clone()))
+        .merge(create_bin_read_routes(m.bin_service.clone()))
+        .merge(create_stock_ledger_entry_read_routes(m.stock_ledger_entry_service.clone()))
+        .merge(create_purchase_receipt_read_routes(m.purchase_receipt_service.clone()))
+        .merge(create_delivery_note_read_routes(m.delivery_note_service.clone()))
+        .merge(write_routes(write))
+        .merge(read_routes(read))
+        .merge(intake_routes(intake))
+}
