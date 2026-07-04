@@ -2,10 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
-use rust_decimal::Decimal;
 
 use super::WarehouseType;
-use super::WarehouseStatus;
 use super::AuditMetadata;
 
 /// Strongly-typed ID for Warehouse
@@ -52,37 +50,12 @@ impl std::ops::Deref for WarehouseId {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Warehouse {
     pub id: Uuid,
-    pub provider_id: Uuid,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub outlet_id: Option<Uuid>,
+    pub company_id: Uuid,
     pub code: String,
     pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
     pub warehouse_type: WarehouseType,
-    pub is_main: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub address_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub contact_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub contact_phone: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub contact_email: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub total_capacity: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub capacity_unit: Option<String>,
-    pub allow_receipt: bool,
-    pub allow_issue: bool,
-    pub allow_transfer_in: bool,
-    pub allow_transfer_out: bool,
-    pub allow_adjustment: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub default_inventory_account_id: Option<Uuid>,
-    pub status: WarehouseStatus,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub notes: Option<String>,
+    pub parent_warehouse_id: Option<Uuid>,
+    pub is_group: bool,
     #[serde(default)]
     #[sqlx(json)]
     pub metadata: AuditMetadata,
@@ -95,30 +68,15 @@ impl Warehouse {
     }
 
     /// Create a new Warehouse with required fields
-    pub fn new(provider_id: Uuid, code: String, name: String, warehouse_type: WarehouseType, is_main: bool, allow_receipt: bool, allow_issue: bool, allow_transfer_in: bool, allow_transfer_out: bool, allow_adjustment: bool, status: WarehouseStatus) -> Self {
+    pub fn new(company_id: Uuid, code: String, name: String, warehouse_type: WarehouseType, is_group: bool) -> Self {
         Self {
             id: Uuid::new_v4(),
-            provider_id,
-            outlet_id: None,
+            company_id,
             code,
             name,
-            description: None,
             warehouse_type,
-            is_main,
-            address_id: None,
-            contact_name: None,
-            contact_phone: None,
-            contact_email: None,
-            total_capacity: None,
-            capacity_unit: None,
-            allow_receipt,
-            allow_issue,
-            allow_transfer_in,
-            allow_transfer_out,
-            allow_adjustment,
-            default_inventory_account_id: None,
-            status,
-            notes: None,
+            parent_warehouse_id: None,
+            is_group,
             metadata: AuditMetadata::default(),
         }
     }
@@ -173,73 +131,14 @@ impl Warehouse {
         self.metadata.deleted_by.as_ref()
     }
 
-    /// Get the current status
-    pub fn status(&self) -> &WarehouseStatus {
-        &self.status
-    }
-
 
     // ==========================================================
     // Fluent Setters (with_* for optional fields)
     // ==========================================================
 
-    /// Set the outlet_id field (chainable)
-    pub fn with_outlet_id(mut self, value: Uuid) -> Self {
-        self.outlet_id = Some(value);
-        self
-    }
-
-    /// Set the description field (chainable)
-    pub fn with_description(mut self, value: String) -> Self {
-        self.description = Some(value);
-        self
-    }
-
-    /// Set the address_id field (chainable)
-    pub fn with_address_id(mut self, value: Uuid) -> Self {
-        self.address_id = Some(value);
-        self
-    }
-
-    /// Set the contact_name field (chainable)
-    pub fn with_contact_name(mut self, value: String) -> Self {
-        self.contact_name = Some(value);
-        self
-    }
-
-    /// Set the contact_phone field (chainable)
-    pub fn with_contact_phone(mut self, value: String) -> Self {
-        self.contact_phone = Some(value);
-        self
-    }
-
-    /// Set the contact_email field (chainable)
-    pub fn with_contact_email(mut self, value: String) -> Self {
-        self.contact_email = Some(value);
-        self
-    }
-
-    /// Set the total_capacity field (chainable)
-    pub fn with_total_capacity(mut self, value: Decimal) -> Self {
-        self.total_capacity = Some(value);
-        self
-    }
-
-    /// Set the capacity_unit field (chainable)
-    pub fn with_capacity_unit(mut self, value: String) -> Self {
-        self.capacity_unit = Some(value);
-        self
-    }
-
-    /// Set the default_inventory_account_id field (chainable)
-    pub fn with_default_inventory_account_id(mut self, value: Uuid) -> Self {
-        self.default_inventory_account_id = Some(value);
-        self
-    }
-
-    /// Set the notes field (chainable)
-    pub fn with_notes(mut self, value: String) -> Self {
-        self.notes = Some(value);
+    /// Set the parent_warehouse_id field (chainable)
+    pub fn with_parent_warehouse_id(mut self, value: Uuid) -> Self {
+        self.parent_warehouse_id = Some(value);
         self
     }
 
@@ -251,11 +150,8 @@ impl Warehouse {
     pub fn apply_patch(&mut self, fields: std::collections::HashMap<String, serde_json::Value>) {
         for (key, value) in fields {
             match key.as_str() {
-                "provider_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.provider_id = v; }
-                }
-                "outlet_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.outlet_id = v; }
+                "company_id" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
                 }
                 "code" => {
                     if let Ok(v) = serde_json::from_value(value) { self.code = v; }
@@ -263,56 +159,14 @@ impl Warehouse {
                 "name" => {
                     if let Ok(v) = serde_json::from_value(value) { self.name = v; }
                 }
-                "description" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.description = v; }
-                }
                 "warehouse_type" => {
                     if let Ok(v) = serde_json::from_value(value) { self.warehouse_type = v; }
                 }
-                "is_main" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.is_main = v; }
+                "parent_warehouse_id" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.parent_warehouse_id = v; }
                 }
-                "address_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.address_id = v; }
-                }
-                "contact_name" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.contact_name = v; }
-                }
-                "contact_phone" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.contact_phone = v; }
-                }
-                "contact_email" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.contact_email = v; }
-                }
-                "total_capacity" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.total_capacity = v; }
-                }
-                "capacity_unit" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.capacity_unit = v; }
-                }
-                "allow_receipt" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.allow_receipt = v; }
-                }
-                "allow_issue" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.allow_issue = v; }
-                }
-                "allow_transfer_in" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.allow_transfer_in = v; }
-                }
-                "allow_transfer_out" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.allow_transfer_out = v; }
-                }
-                "allow_adjustment" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.allow_adjustment = v; }
-                }
-                "default_inventory_account_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.default_inventory_account_id = v; }
-                }
-                "status" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.status = v; }
-                }
-                "notes" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.notes = v; }
+                "is_group" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.is_group = v; }
                 }
                 _ => {} // ignore unknown fields
             }
@@ -368,12 +222,9 @@ impl backbone_orm::EntityRepoMeta for Warehouse {
     fn column_types() -> std::collections::HashMap<String, String> {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
-        m.insert("provider_id".to_string(), "uuid".to_string());
-        m.insert("outlet_id".to_string(), "uuid".to_string());
-        m.insert("address_id".to_string(), "uuid".to_string());
-        m.insert("default_inventory_account_id".to_string(), "uuid".to_string());
+        m.insert("company_id".to_string(), "uuid".to_string());
+        m.insert("parent_warehouse_id".to_string(), "uuid".to_string());
         m.insert("warehouse_type".to_string(), "warehouse_type".to_string());
-        m.insert("status".to_string(), "warehouse_status".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
@@ -387,39 +238,18 @@ impl backbone_orm::EntityRepoMeta for Warehouse {
 /// System fields (id, metadata, timestamps) are auto-initialized.
 #[derive(Debug, Clone, Default)]
 pub struct WarehouseBuilder {
-    provider_id: Option<Uuid>,
-    outlet_id: Option<Uuid>,
+    company_id: Option<Uuid>,
     code: Option<String>,
     name: Option<String>,
-    description: Option<String>,
     warehouse_type: Option<WarehouseType>,
-    is_main: Option<bool>,
-    address_id: Option<Uuid>,
-    contact_name: Option<String>,
-    contact_phone: Option<String>,
-    contact_email: Option<String>,
-    total_capacity: Option<Decimal>,
-    capacity_unit: Option<String>,
-    allow_receipt: Option<bool>,
-    allow_issue: Option<bool>,
-    allow_transfer_in: Option<bool>,
-    allow_transfer_out: Option<bool>,
-    allow_adjustment: Option<bool>,
-    default_inventory_account_id: Option<Uuid>,
-    status: Option<WarehouseStatus>,
-    notes: Option<String>,
+    parent_warehouse_id: Option<Uuid>,
+    is_group: Option<bool>,
 }
 
 impl WarehouseBuilder {
-    /// Set the provider_id field (required)
-    pub fn provider_id(mut self, value: Uuid) -> Self {
-        self.provider_id = Some(value);
-        self
-    }
-
-    /// Set the outlet_id field (optional)
-    pub fn outlet_id(mut self, value: Uuid) -> Self {
-        self.outlet_id = Some(value);
+    /// Set the company_id field (required)
+    pub fn company_id(mut self, value: Uuid) -> Self {
+        self.company_id = Some(value);
         self
     }
 
@@ -435,105 +265,21 @@ impl WarehouseBuilder {
         self
     }
 
-    /// Set the description field (optional)
-    pub fn description(mut self, value: String) -> Self {
-        self.description = Some(value);
-        self
-    }
-
     /// Set the warehouse_type field (default: `WarehouseType::default()`)
     pub fn warehouse_type(mut self, value: WarehouseType) -> Self {
         self.warehouse_type = Some(value);
         self
     }
 
-    /// Set the is_main field (default: `false`)
-    pub fn is_main(mut self, value: bool) -> Self {
-        self.is_main = Some(value);
+    /// Set the parent_warehouse_id field (optional)
+    pub fn parent_warehouse_id(mut self, value: Uuid) -> Self {
+        self.parent_warehouse_id = Some(value);
         self
     }
 
-    /// Set the address_id field (optional)
-    pub fn address_id(mut self, value: Uuid) -> Self {
-        self.address_id = Some(value);
-        self
-    }
-
-    /// Set the contact_name field (optional)
-    pub fn contact_name(mut self, value: String) -> Self {
-        self.contact_name = Some(value);
-        self
-    }
-
-    /// Set the contact_phone field (optional)
-    pub fn contact_phone(mut self, value: String) -> Self {
-        self.contact_phone = Some(value);
-        self
-    }
-
-    /// Set the contact_email field (optional)
-    pub fn contact_email(mut self, value: String) -> Self {
-        self.contact_email = Some(value);
-        self
-    }
-
-    /// Set the total_capacity field (optional)
-    pub fn total_capacity(mut self, value: Decimal) -> Self {
-        self.total_capacity = Some(value);
-        self
-    }
-
-    /// Set the capacity_unit field (optional)
-    pub fn capacity_unit(mut self, value: String) -> Self {
-        self.capacity_unit = Some(value);
-        self
-    }
-
-    /// Set the allow_receipt field (default: `true`)
-    pub fn allow_receipt(mut self, value: bool) -> Self {
-        self.allow_receipt = Some(value);
-        self
-    }
-
-    /// Set the allow_issue field (default: `true`)
-    pub fn allow_issue(mut self, value: bool) -> Self {
-        self.allow_issue = Some(value);
-        self
-    }
-
-    /// Set the allow_transfer_in field (default: `true`)
-    pub fn allow_transfer_in(mut self, value: bool) -> Self {
-        self.allow_transfer_in = Some(value);
-        self
-    }
-
-    /// Set the allow_transfer_out field (default: `true`)
-    pub fn allow_transfer_out(mut self, value: bool) -> Self {
-        self.allow_transfer_out = Some(value);
-        self
-    }
-
-    /// Set the allow_adjustment field (default: `true`)
-    pub fn allow_adjustment(mut self, value: bool) -> Self {
-        self.allow_adjustment = Some(value);
-        self
-    }
-
-    /// Set the default_inventory_account_id field (optional)
-    pub fn default_inventory_account_id(mut self, value: Uuid) -> Self {
-        self.default_inventory_account_id = Some(value);
-        self
-    }
-
-    /// Set the status field (default: `WarehouseStatus::default()`)
-    pub fn status(mut self, value: WarehouseStatus) -> Self {
-        self.status = Some(value);
-        self
-    }
-
-    /// Set the notes field (optional)
-    pub fn notes(mut self, value: String) -> Self {
-        self.notes = Some(value);
+    /// Set the is_group field (default: `false`)
+    pub fn is_group(mut self, value: bool) -> Self {
+        self.is_group = Some(value);
         self
     }
 
@@ -541,33 +287,18 @@ impl WarehouseBuilder {
     ///
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<Warehouse, String> {
-        let provider_id = self.provider_id.ok_or_else(|| "provider_id is required".to_string())?;
+        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
         let code = self.code.ok_or_else(|| "code is required".to_string())?;
         let name = self.name.ok_or_else(|| "name is required".to_string())?;
 
         Ok(Warehouse {
             id: Uuid::new_v4(),
-            provider_id,
-            outlet_id: self.outlet_id,
+            company_id,
             code,
             name,
-            description: self.description,
             warehouse_type: self.warehouse_type.unwrap_or(WarehouseType::default()),
-            is_main: self.is_main.unwrap_or(false),
-            address_id: self.address_id,
-            contact_name: self.contact_name,
-            contact_phone: self.contact_phone,
-            contact_email: self.contact_email,
-            total_capacity: self.total_capacity,
-            capacity_unit: self.capacity_unit,
-            allow_receipt: self.allow_receipt.unwrap_or(true),
-            allow_issue: self.allow_issue.unwrap_or(true),
-            allow_transfer_in: self.allow_transfer_in.unwrap_or(true),
-            allow_transfer_out: self.allow_transfer_out.unwrap_or(true),
-            allow_adjustment: self.allow_adjustment.unwrap_or(true),
-            default_inventory_account_id: self.default_inventory_account_id,
-            status: self.status.unwrap_or(WarehouseStatus::default()),
-            notes: self.notes,
+            parent_warehouse_id: self.parent_warehouse_id,
+            is_group: self.is_group.unwrap_or(false),
             metadata: AuditMetadata::default(),
         })
     }
