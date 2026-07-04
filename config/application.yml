@@ -1,119 +1,90 @@
 server:
   host: 0.0.0.0
-  port: 3000
+  port: 8080
   grpc_port: 50051
 database:
-  url: postgresql://root:password@localhost:5432/backbonedb
-  max_connections: 20
+  url: postgresql://root:password@localhost:5432/skeletondb
+  max_connections: 10
   min_connections: 5
   connect_timeout: 30
   idle_timeout: 600
+logging:
+  level: info
+  format: json
+  file: logs/inventory.log
 module:
   name: inventory
   enabled: true
 features:
   soft_delete: true
-  state_machines: true
+  state_machines: false
   workflows: true
-logging:
-  level: info
-  format: json
-  file: logs/inventory.log
-tracing:
-  enabled: true
-  exporter: otlp
-  endpoint: http://localhost:4317
-metrics:
-  enabled: true
-  endpoint: /metrics
-  port: 9090
 entities:
-  goods_receipt:
-    collection: goods_receipts
+  delivery_note:
+    collection: delivery_notes
     enabled: true
     cache_ttl: 300
     pagination:
       default_limit: 20
       max_limit: 100
-  goods_receipt_item:
-    collection: goods_receipt_items
+  delivery_note_item:
+    collection: delivery_note_items
     enabled: true
     cache_ttl: 300
     pagination:
       default_limit: 20
       max_limit: 100
-  product_category:
-    collection: product_categories
+  purchase_receipt:
+    collection: purchase_receipts
     enabled: true
     cache_ttl: 300
     pagination:
       default_limit: 20
       max_limit: 100
-  product:
-    collection: products
+  purchase_receipt_item:
+    collection: purchase_receipt_items
     enabled: true
     cache_ttl: 300
     pagination:
       default_limit: 20
       max_limit: 100
-  purchase_order:
-    collection: purchase_orders
+  stock_entry:
+    collection: stock_entries
     enabled: true
     cache_ttl: 300
     pagination:
       default_limit: 20
       max_limit: 100
-  purchase_order_item:
-    collection: purchase_order_items
+  stock_entry_item:
+    collection: stock_entry_items
     enabled: true
     cache_ttl: 300
     pagination:
       default_limit: 20
       max_limit: 100
-  stock:
-    collection: stocks
+  stock_ledger_entry:
+    collection: stock_ledger_entries
     enabled: true
     cache_ttl: 300
     pagination:
       default_limit: 20
       max_limit: 100
-  stock_adjustment:
-    collection: stock_adjustments
+  bin:
+    collection: bins
     enabled: true
     cache_ttl: 300
     pagination:
       default_limit: 20
       max_limit: 100
-  stock_adjustment_item:
-    collection: stock_adjustment_items
+  stock_reconciliation:
+    collection: stock_reconciliations
     enabled: true
     cache_ttl: 300
     pagination:
       default_limit: 20
       max_limit: 100
-  stock_batch:
-    collection: stock_batches
-    enabled: true
-    cache_ttl: 300
-    pagination:
-      default_limit: 20
-      max_limit: 100
-  stock_movement:
-    collection: stock_movements
-    enabled: true
-    cache_ttl: 300
-    pagination:
-      default_limit: 20
-      max_limit: 100
-  stock_transfer:
-    collection: stock_transfers
-    enabled: true
-    cache_ttl: 300
-    pagination:
-      default_limit: 20
-      max_limit: 100
-  stock_transfer_item:
-    collection: stock_transfer_items
+  stock_reconciliation_item:
+    collection: stock_reconciliation_items
     enabled: true
     cache_ttl: 300
     pagination:
@@ -126,3 +97,18 @@ entities:
     pagination:
       default_limit: 20
       max_limit: 100
+  stock_item:
+    collection: stock_items
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+tracing:
+  enabled: true
+  exporter: otlp
+  endpoint: http://localhost:4317
+metrics:
+  enabled: true
+  endpoint: /metrics
+  port: 9090

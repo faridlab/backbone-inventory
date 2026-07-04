@@ -1,7 +1,7 @@
 server:
   host: 127.0.0.1
 database:
-  url: postgresql://root:password@localhost:5432/backbonedb
+  url: postgresql://root:password@localhost:5432/inventory_dev
   max_connections: 5
 logging:
   level: debug
