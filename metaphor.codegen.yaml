@@ -1,0 +1,36 @@
+# Codegen policy for inventory.
+#
+# `user_owned` globs are hand-written files that live inside generator-owned trees but are
+# NOT schema-derived. `metaphor schema generate [--force]` skips them wholesale (never reads,
+# merges, or deletes them). Everything else in src/ is regenerated from schema/models.
+#
+# Re-exports/declarations that must sit alongside generated code live inside
+# `// <<< CUSTOM ... // END CUSTOM` markers (service/mod.rs, presentation/http/mod.rs, lib.rs)
+# and are preserved by the marker mechanism, not listed here.
+#
+# Add your hand-authored services, handlers, tests, and docs below as you write them.
+
+user_owned:
+  # Domain events (public extension surface) + GL-posting port + valuation engine/write path
+  # + the availability read-model + the DeliveryRequested intake.
+  - "src/application/service/inventory_events.rs"
+  - "src/application/service/inventory_gl.rs"
+  - "src/application/service/inventory_write_service.rs"
+  - "src/application/service/inventory_read.rs"
+  - "src/application/service/inventory_intake.rs"
+  - "src/presentation/http/guarded_routes.rs"
+
+
+  # Behavior tests (valuation golden oracle) + SLE integrity + GL seam + route probes + BDD.
+  - "tests/valuation_golden_cases.rs"
+  - "tests/gl_posting_seam.rs"
+  - "tests/integrity_probes.rs"
+  - "tests/consumer_surface.rs"
+  - "tests/features/**"
+
+  # Per-entity CRUD integration harness — frozen so hand cleanups persist across regen.
+  - "tests/integration_tests.rs"
+  - "tests/integration/**"
+
+  # Hand-authored module documentation.
+  - "docs/**"
