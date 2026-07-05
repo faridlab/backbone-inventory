@@ -13,7 +13,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::inventory_write_service::{DeliveryLine, InventoryError, InventoryWriteService, NewDelivery};
+use super::inventory_write_service::{
+    DeliveryLine, InventoryError, InventoryWriteService, NewDelivery, NewReceipt, ReceiptLine,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DeliveryRequestLine {
@@ -37,7 +39,31 @@ pub struct DeliveryRequested {
     pub lines: Vec<DeliveryRequestLine>,
 }
 
-/// The intake handler — a consumer subscribes the event bus to this.
+/// One line of a receipt request (what buying asks inventory to receive; carries the unit cost).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReceiptRequestLine {
+    pub item_id: Uuid,
+    pub quantity: Decimal,
+    pub rate: Decimal,
+}
+
+/// The inbound request buying emits to have goods received against a confirmed Purchase Order.
+/// GL accounts (Inventory + GR/IR) are inventory config, supplied by the composing service.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReceiptExpected {
+    pub receipt_number: String,
+    pub company_id: Uuid,
+    pub branch_id: Option<Uuid>,
+    pub supplier_id: Uuid,
+    pub source_po_id: Option<Uuid>,
+    pub warehouse_id: Uuid,
+    pub posting_date: chrono::NaiveDate,
+    pub inventory_account_id: Uuid,
+    pub grir_account_id: Uuid,
+    pub lines: Vec<ReceiptRequestLine>,
+}
+
+/// The intake handler — a consumer subscribes the event bus to these.
 #[derive(Clone)]
 pub struct DeliveryIntake {
     write: InventoryWriteService,
@@ -62,6 +88,24 @@ impl DeliveryIntake {
             cogs_account_id: req.cogs_account_id,
             inventory_account_id: req.inventory_account_id,
             lines: req.lines.into_iter().map(|l| DeliveryLine { item_id: l.item_id, quantity: l.quantity }).collect(),
+        }).await
+    }
+
+    /// Turn a `ReceiptExpected` (from buying) into a DRAFT purchase receipt; returns its id. The
+    /// caller then `submit_purchase_receipt(id, sink)` to perform the physical move + asset post.
+    /// The receipt-side mirror of `on_delivery_requested`.
+    pub async fn on_receipt_expected(&self, req: ReceiptExpected) -> Result<Uuid, InventoryError> {
+        self.write.create_purchase_receipt(NewReceipt {
+            receipt_number: req.receipt_number,
+            company_id: req.company_id,
+            branch_id: req.branch_id,
+            supplier_id: req.supplier_id,
+            source_po_id: req.source_po_id,
+            warehouse_id: req.warehouse_id,
+            posting_date: req.posting_date,
+            inventory_account_id: req.inventory_account_id,
+            grir_account_id: req.grir_account_id,
+            lines: req.lines.into_iter().map(|l| ReceiptLine { item_id: l.item_id, quantity: l.quantity, rate: l.rate }).collect(),
         }).await
     }
 }

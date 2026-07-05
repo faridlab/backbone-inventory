@@ -54,5 +54,7 @@ pub use inventory_write_service::{
     NewStockItem, NewTransfer, NewWarehouse, ReceiptLine, ReconLine, SubmitOutcome,
 };
 pub use inventory_read::{AvailabilityView, InventoryReadService, StockBalance};
-pub use inventory_intake::{DeliveryIntake, DeliveryRequestLine, DeliveryRequested};
+pub use inventory_intake::{
+    DeliveryIntake, DeliveryRequestLine, DeliveryRequested, ReceiptExpected, ReceiptRequestLine,
+};
 // END CUSTOM
