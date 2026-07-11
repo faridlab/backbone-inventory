@@ -7,9 +7,9 @@ CREATE TABLE IF NOT EXISTS inventory.purchase_receipt_items (
     id UUID NOT NULL DEFAULT gen_random_uuid(),
     receipt_id UUID NOT NULL,
     item_id UUID NOT NULL,
-    quantity NUMERIC NOT NULL,
-    rate NUMERIC NOT NULL,
-    amount NUMERIC NOT NULL DEFAULT 0,
+    quantity NUMERIC(18, 4) NOT NULL CHECK (quantity >= 0),
+    rate NUMERIC(18, 6) NOT NULL CHECK (rate >= 0),
+    amount NUMERIC(18, 2) NOT NULL DEFAULT 0 CHECK (amount >= 0),
     metadata JSONB NOT NULL DEFAULT '{"created_at":null,"updated_at":null,"deleted_at":null,"created_by":null,"updated_by":null,"deleted_by":null}'::jsonb,
     PRIMARY KEY (id)
 );

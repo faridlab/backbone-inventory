@@ -7,10 +7,10 @@ CREATE TABLE IF NOT EXISTS inventory.stock_reconciliation_items (
     id UUID NOT NULL DEFAULT gen_random_uuid(),
     reconciliation_id UUID NOT NULL,
     item_id UUID NOT NULL,
-    counted_qty NUMERIC NOT NULL,
-    counted_rate NUMERIC NOT NULL DEFAULT 0,
-    qty_difference NUMERIC NOT NULL DEFAULT 0,
-    value_difference NUMERIC NOT NULL DEFAULT 0,
+    counted_qty NUMERIC(18, 4) NOT NULL CHECK (counted_qty >= 0),
+    counted_rate NUMERIC(18, 6) NOT NULL DEFAULT 0 CHECK (counted_rate >= 0),
+    qty_difference NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    value_difference NUMERIC(18, 2) NOT NULL DEFAULT 0,
     metadata JSONB NOT NULL DEFAULT '{"created_at":null,"updated_at":null,"deleted_at":null,"created_by":null,"updated_by":null,"deleted_by":null}'::jsonb,
     PRIMARY KEY (id)
 );

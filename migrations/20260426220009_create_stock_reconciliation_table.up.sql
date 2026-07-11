@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS inventory.stock_reconciliations (
     company_id UUID NOT NULL,
     warehouse_id UUID NOT NULL,
     posting_date DATE NOT NULL,
-    net_difference NUMERIC NOT NULL DEFAULT 0,
+    net_difference NUMERIC(18, 2) NOT NULL DEFAULT 0,
     inventory_account_id UUID NOT NULL,
     adjustment_account_id UUID NOT NULL,
     status doc_status NOT NULL DEFAULT 'draft',

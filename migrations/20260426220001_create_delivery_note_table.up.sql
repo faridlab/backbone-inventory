@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS inventory.delivery_notes (
     source_so_id UUID,
     warehouse_id UUID NOT NULL,
     posting_date DATE NOT NULL,
-    total_cogs NUMERIC NOT NULL DEFAULT 0,
+    total_cogs NUMERIC(18, 2) NOT NULL DEFAULT 0 CHECK (total_cogs >= 0),
     cogs_account_id UUID NOT NULL,
     inventory_account_id UUID NOT NULL,
     status doc_status NOT NULL DEFAULT 'draft',

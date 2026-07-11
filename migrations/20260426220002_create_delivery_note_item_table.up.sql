@@ -7,9 +7,9 @@ CREATE TABLE IF NOT EXISTS inventory.delivery_note_items (
     id UUID NOT NULL DEFAULT gen_random_uuid(),
     delivery_id UUID NOT NULL,
     item_id UUID NOT NULL,
-    quantity NUMERIC NOT NULL,
-    valuation_rate NUMERIC NOT NULL DEFAULT 0,
-    cogs_amount NUMERIC NOT NULL DEFAULT 0,
+    quantity NUMERIC(18, 4) NOT NULL CHECK (quantity >= 0),
+    valuation_rate NUMERIC(18, 6) NOT NULL DEFAULT 0 CHECK (valuation_rate >= 0),
+    cogs_amount NUMERIC(18, 2) NOT NULL DEFAULT 0 CHECK (cogs_amount >= 0),
     metadata JSONB NOT NULL DEFAULT '{"created_at":null,"updated_at":null,"deleted_at":null,"created_by":null,"updated_by":null,"deleted_by":null}'::jsonb,
     PRIMARY KEY (id)
 );

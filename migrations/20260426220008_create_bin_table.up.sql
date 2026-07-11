@@ -8,10 +8,10 @@ CREATE TABLE IF NOT EXISTS inventory.bins (
     company_id UUID NOT NULL,
     item_id UUID NOT NULL,
     warehouse_id UUID NOT NULL,
-    actual_qty NUMERIC NOT NULL DEFAULT 0,
-    reserved_qty NUMERIC NOT NULL DEFAULT 0,
-    valuation_rate NUMERIC NOT NULL DEFAULT 0,
-    stock_value NUMERIC NOT NULL DEFAULT 0,
+    actual_qty NUMERIC(18, 4) NOT NULL DEFAULT 0,
+    reserved_qty NUMERIC(18, 4) NOT NULL DEFAULT 0 CHECK (reserved_qty >= 0),
+    valuation_rate NUMERIC(18, 6) NOT NULL DEFAULT 0 CHECK (valuation_rate >= 0),
+    stock_value NUMERIC(18, 2) NOT NULL DEFAULT 0,
     metadata JSONB NOT NULL DEFAULT '{"created_at":null,"updated_at":null,"deleted_at":null,"created_by":null,"updated_by":null,"deleted_by":null}'::jsonb,
     PRIMARY KEY (id)
 );

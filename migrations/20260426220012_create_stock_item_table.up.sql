@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS inventory.stock_items (
     is_stock_item BOOLEAN NOT NULL DEFAULT TRUE,
     has_batch BOOLEAN NOT NULL DEFAULT FALSE,
     valuation_method valuation_method NOT NULL DEFAULT 'moving_average',
-    reorder_level NUMERIC NOT NULL DEFAULT 0,
+    reorder_level NUMERIC(18, 4) NOT NULL DEFAULT 0 CHECK (reorder_level >= 0),
     metadata JSONB NOT NULL DEFAULT '{"created_at":null,"updated_at":null,"deleted_at":null,"created_by":null,"updated_by":null,"deleted_by":null}'::jsonb,
     PRIMARY KEY (id)
 );

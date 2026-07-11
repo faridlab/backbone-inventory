@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS inventory.purchase_receipts (
     warehouse_id UUID NOT NULL,
     posting_date DATE NOT NULL,
     currency TEXT NOT NULL DEFAULT 'IDR',
-    total_value NUMERIC NOT NULL DEFAULT 0,
+    total_value NUMERIC(18, 2) NOT NULL DEFAULT 0 CHECK (total_value >= 0),
     inventory_account_id UUID NOT NULL,
     grir_account_id UUID NOT NULL,
     status doc_status NOT NULL DEFAULT 'draft',
