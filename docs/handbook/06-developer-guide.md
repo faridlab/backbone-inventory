@@ -49,14 +49,17 @@ metaphor migration run              # CREATE SCHEMA inventory + all tables
 ```rust
 use backbone_inventory::InventoryModule;
 use backbone_inventory::presentation::http::guarded_routes::create_guarded_inventory_routes;
+use backbone_auth::tenant::TenantVerifier;
 
 // pool: sqlx::PgPool
 let inventory = InventoryModule::builder()
     .with_database(pool.clone())
     .build()?;
 
-// RECOMMENDED: read models + validated creates. No direct SLE/Bin writes, no generic delete.
-let router = create_guarded_inventory_routes(&inventory, pool.clone());
+// RECOMMENDED: read models + validated, tenant-scoped creates. No direct SLE/Bin writes, no
+// generic delete. Writes derive `company_id` from the signed Bearer token, never from the body.
+let verifier = TenantVerifier::hs256(jwt_secret.as_bytes());
+let router = create_guarded_inventory_routes(&inventory, pool.clone(), verifier);
 //    → mount under /api/v1 in your service's Axum router.
 
 // Do NOT use inventory.all_crud_routes() in production — that is the unguarded admin surface.

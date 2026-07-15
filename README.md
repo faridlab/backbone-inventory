@@ -84,9 +84,12 @@ metaphor.codegen.yaml # user_owned globs — protects the engine, guarded routes
 ```rust
 use backbone_inventory::InventoryModule;
 use backbone_inventory::presentation::http::create_guarded_inventory_routes;
+use backbone_auth::tenant::TenantVerifier;
 
 let inventory = InventoryModule::builder().with_database(pool.clone()).build()?;
-let router = create_guarded_inventory_routes(&inventory, pool.clone()); // ← the guarded surface
+// The verifier is built once from your JWT secret; writes take their tenant from the token.
+let verifier = TenantVerifier::hs256(jwt_secret.as_bytes());
+let router = create_guarded_inventory_routes(&inventory, pool.clone(), verifier); // ← the guarded surface
 // Mount under /api/v1. Supply a GlPostSink to post movements to your ledger.
 // Do NOT mount InventoryModule::all_crud_routes() in production — that is the unguarded admin surface.
 ```
