@@ -3,7 +3,7 @@
 //! Hand-authored (user-owned). Read all stock documents + **validated create** (warehouse,
 //! stock-item, purchase-receipt draft, delivery-note draft); generic create/update/delete CRUD is
 //! NOT mounted, so no caller can write an SLE/Bin directly or persist an inconsistent document.
-//! Every validated write derives its tenant from a signed Bearer token (`TenantContext`) rather than
+//! Every validated write derives its tenant from a signed Bearer token (`CompanyContext`) rather than
 //! from the request body — a client cannot name the company it writes into.
 //!
 //! Submitting a movement (which writes the SLE, updates the Bin, and emits the GL post) needs a
@@ -16,7 +16,7 @@ use axum::{
     extract::State, http::StatusCode, middleware::from_fn_with_state, response::IntoResponse,
     routing::post, Json, Router,
 };
-use backbone_auth::tenant::{tenant_auth, TenantContext, TenantVerifier};
+use backbone_auth::company::{company_auth, CompanyContext, CompanyVerifier};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -49,7 +49,7 @@ fn err(e: InventoryError) -> axum::response::Response {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CreateWarehouseBody {
-    // No `company_id`: the tenant is derived from the signed token via `TenantContext`, never from
+    // No `company_id`: the tenant is derived from the signed token via `CompanyContext`, never from
     // the request body — a client must not be able to name the tenant it writes into.
     code: String,
     name: String,
@@ -57,7 +57,7 @@ struct CreateWarehouseBody {
     #[serde(default)] parent_warehouse_id: Option<Uuid>,
     #[serde(default)] is_group: bool,
 }
-async fn create_warehouse(State(svc): State<Arc<InventoryWriteService>>, tenant: TenantContext, Json(b): Json<CreateWarehouseBody>) -> axum::response::Response {
+async fn create_warehouse(State(svc): State<Arc<InventoryWriteService>>, tenant: CompanyContext, Json(b): Json<CreateWarehouseBody>) -> axum::response::Response {
     match svc.create_warehouse(NewWarehouse {
         company_id: tenant.company_id, code: b.code, name: b.name, warehouse_type: b.warehouse_type,
         parent_warehouse_id: b.parent_warehouse_id, is_group: b.is_group,
@@ -74,7 +74,7 @@ struct ReceiptLineBody { item_id: Uuid, quantity: Decimal, rate: Decimal }
 #[serde(rename_all = "camelCase")]
 struct CreateReceiptBody {
     receipt_number: String,
-    // Tenant (company/branch) comes from the signed token (`TenantContext`), not the body.
+    // Tenant (company/branch) comes from the signed token (`CompanyContext`), not the body.
     supplier_id: Uuid,
     #[serde(default)] source_po_id: Option<Uuid>,
     warehouse_id: Uuid,
@@ -83,7 +83,7 @@ struct CreateReceiptBody {
     grir_account_id: Uuid,
     lines: Vec<ReceiptLineBody>,
 }
-async fn create_receipt(State(svc): State<Arc<InventoryWriteService>>, tenant: TenantContext, Json(b): Json<CreateReceiptBody>) -> axum::response::Response {
+async fn create_receipt(State(svc): State<Arc<InventoryWriteService>>, tenant: CompanyContext, Json(b): Json<CreateReceiptBody>) -> axum::response::Response {
     let r = NewReceipt {
         receipt_number: b.receipt_number, company_id: tenant.company_id, branch_id: tenant.branch_id,
         supplier_id: b.supplier_id, source_po_id: b.source_po_id, warehouse_id: b.warehouse_id,
@@ -103,7 +103,7 @@ struct DeliveryLineBody { item_id: Uuid, quantity: Decimal }
 #[serde(rename_all = "camelCase")]
 struct CreateDeliveryBody {
     delivery_number: String,
-    // Tenant (company/branch) comes from the signed token (`TenantContext`), not the body.
+    // Tenant (company/branch) comes from the signed token (`CompanyContext`), not the body.
     customer_id: Uuid,
     #[serde(default)] source_so_id: Option<Uuid>,
     warehouse_id: Uuid,
@@ -112,7 +112,7 @@ struct CreateDeliveryBody {
     inventory_account_id: Uuid,
     lines: Vec<DeliveryLineBody>,
 }
-async fn create_delivery(State(svc): State<Arc<InventoryWriteService>>, tenant: TenantContext, Json(b): Json<CreateDeliveryBody>) -> axum::response::Response {
+async fn create_delivery(State(svc): State<Arc<InventoryWriteService>>, tenant: CompanyContext, Json(b): Json<CreateDeliveryBody>) -> axum::response::Response {
     let dn = NewDelivery {
         delivery_number: b.delivery_number, company_id: tenant.company_id, branch_id: tenant.branch_id,
         customer_id: b.customer_id, source_so_id: b.source_so_id, warehouse_id: b.warehouse_id,
@@ -125,19 +125,19 @@ async fn create_delivery(State(svc): State<Arc<InventoryWriteService>>, tenant: 
     }
 }
 
-fn write_routes(svc: Arc<InventoryWriteService>, verifier: TenantVerifier) -> Router {
+fn write_routes(svc: Arc<InventoryWriteService>, verifier: CompanyVerifier) -> Router {
     Router::new()
         .route("/warehouses", post(create_warehouse))
         .route("/purchase-receipts", post(create_receipt))
         .route("/delivery-notes", post(create_delivery))
-        // Every write above is tenant-scoped: `tenant_auth` rejects a request whose token is absent,
+        // Every write above is tenant-scoped: `company_auth` rejects a request whose token is absent,
         // invalid, or carries no `company_id`, so a handler only ever runs with a proven tenant.
         //
         // `route_layer`, not `layer`: `layer` would also wrap this router's fallback, so once merged
         // every *unmatched* path (e.g. the generic CRUD paths this surface deliberately does not
         // mount) would answer 401 instead of 404 — leaking "auth required" for routes that do not
         // exist, and masking the CRUD-bypass probes.
-        .route_layer(from_fn_with_state(verifier, tenant_auth))
+        .route_layer(from_fn_with_state(verifier, company_auth))
         .with_state(svc)
 }
 
@@ -163,7 +163,7 @@ struct DeliveryRequestLineBody { item_id: Uuid, quantity: Decimal }
 #[serde(rename_all = "camelCase")]
 struct DeliveryRequestedBody {
     delivery_number: String,
-    // Tenant (company/branch) comes from the signed token (`TenantContext`), not the body: this
+    // Tenant (company/branch) comes from the signed token (`CompanyContext`), not the body: this
     // intake persists a Delivery Note, so a body-supplied tenant would be a cross-tenant write.
     customer_id: Uuid,
     #[serde(default)] source_so_id: Option<Uuid>,
@@ -173,7 +173,7 @@ struct DeliveryRequestedBody {
     inventory_account_id: Uuid,
     lines: Vec<DeliveryRequestLineBody>,
 }
-async fn post_delivery_requested(State(intake): State<Arc<DeliveryIntake>>, tenant: TenantContext, Json(b): Json<DeliveryRequestedBody>) -> axum::response::Response {
+async fn post_delivery_requested(State(intake): State<Arc<DeliveryIntake>>, tenant: CompanyContext, Json(b): Json<DeliveryRequestedBody>) -> axum::response::Response {
     let req = DeliveryRequested {
         delivery_number: b.delivery_number, company_id: tenant.company_id, branch_id: tenant.branch_id,
         customer_id: b.customer_id, source_so_id: b.source_so_id, warehouse_id: b.warehouse_id,
@@ -185,12 +185,12 @@ async fn post_delivery_requested(State(intake): State<Arc<DeliveryIntake>>, tena
         Err(e) => err(e),
     }
 }
-fn intake_routes(intake: Arc<DeliveryIntake>, verifier: TenantVerifier) -> Router {
+fn intake_routes(intake: Arc<DeliveryIntake>, verifier: CompanyVerifier) -> Router {
     Router::new()
         .route("/delivery-requests", post(post_delivery_requested))
         // Same guard as the write surface (and `route_layer` for the same fallback reason): the HTTP
         // face of the seam persists a document, so it must prove its tenant like any other write.
-        .route_layer(from_fn_with_state(verifier, tenant_auth))
+        .route_layer(from_fn_with_state(verifier, company_auth))
         .with_state(intake)
 }
 
@@ -198,12 +198,12 @@ fn intake_routes(intake: Arc<DeliveryIntake>, verifier: TenantVerifier) -> Route
 /// mutation and direct SLE/Bin writes are not exposed. **Prefer this over
 /// `InventoryModule::all_crud_routes()`.**
 ///
-/// The composing service builds one [`TenantVerifier`] from its JWT secret and passes it here; the
+/// The composing service builds one [`CompanyVerifier`] from its JWT secret and passes it here; the
 /// write surface derives `company_id` from the token, so no tenant crosses the wire in a body.
 pub fn create_guarded_inventory_routes(
     m: &InventoryModule,
     pool: PgPool,
-    verifier: TenantVerifier,
+    verifier: CompanyVerifier,
 ) -> Router {
     let write = Arc::new(InventoryWriteService::new(pool.clone()));
     let read = Arc::new(InventoryReadService::new(pool.clone()));
