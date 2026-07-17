@@ -14,6 +14,7 @@
 //!
 //! Money: `stock_value`/GL amounts are 2dp (half-up); `valuation_rate` is 6dp.
 
+use backbone_orm::company_scope;
 use rust_decimal::{Decimal, RoundingStrategy};
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
@@ -214,8 +215,10 @@ impl InventoryWriteService {
                VALUES ($1,$2,$3,$4,$5::warehouse_type,$6,$7)"#,
         )
         .bind(id).bind(w.company_id).bind(&w.code).bind(&w.name).bind(&wt)
-        .bind(w.parent_warehouse_id).bind(w.is_group)
-        .execute(&self.db_pool).await;
+        .bind(w.parent_warehouse_id).bind(w.is_group);
+        // RLS scope (ADR-0008): company on the DTO.
+        let r = company_scope::with_company_scope(Some(w.company_id),
+            company_scope::execute_scoped(&self.db_pool, r)).await;
         match r {
             Ok(_) => Ok(id),
             Err(e) if is_dup(&e) => Err(InventoryError::DuplicateNumber(w.code)),
@@ -231,8 +234,9 @@ impl InventoryWriteService {
                 (id, item_id, company_id, stock_uom, is_stock_item, has_batch, valuation_method, reorder_level)
                VALUES ($1,$2,$3,$4,TRUE,FALSE,$5::valuation_method,$6)"#,
         )
-        .bind(id).bind(s.item_id).bind(s.company_id).bind(&s.stock_uom).bind(&vm).bind(s.reorder_level)
-        .execute(&self.db_pool).await;
+        .bind(id).bind(s.item_id).bind(s.company_id).bind(&s.stock_uom).bind(&vm).bind(s.reorder_level);
+        let r = company_scope::with_company_scope(Some(s.company_id),
+            company_scope::execute_scoped(&self.db_pool, r)).await;
         match r {
             Ok(_) => Ok(id),
             Err(e) if is_dup(&e) => Err(InventoryError::DuplicateNumber(s.item_id.to_string())),
@@ -250,6 +254,7 @@ impl InventoryWriteService {
         let total: Decimal = r.lines.iter().map(|l| money(l.quantity * l.rate)).sum();
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
+        company_scope::bind_company_on(&mut tx, r.company_id).await?;
         let ins = sqlx::query(
             r#"INSERT INTO inventory.purchase_receipts
                 (id, receipt_number, company_id, branch_id, supplier_id, source_po_id, warehouse_id,
@@ -283,6 +288,7 @@ impl InventoryWriteService {
         }
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
+        company_scope::bind_company_on(&mut tx, d.company_id).await?;
         let ins = sqlx::query(
             r#"INSERT INTO inventory.delivery_notes
                 (id, delivery_number, company_id, branch_id, customer_id, source_so_id, warehouse_id,
@@ -378,7 +384,10 @@ impl InventoryWriteService {
                       status::text AS st, inventory_account_id, grir_account_id
                FROM inventory.purchase_receipts WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
         )
-        .bind(id).fetch_optional(&self.db_pool).await?.ok_or(InventoryError::NotFound(id))?;
+        .bind(id);
+        // RLS scope (ADR-0008), ID-only: fenced by the request/inherited scope.
+        let hdr = company_scope::fetch_optional_row_scoped(&self.db_pool, hdr).await?
+            .ok_or(InventoryError::NotFound(id))?;
         if hdr.get::<String, _>("st") != "draft" {
             return Err(InventoryError::NotDraft(id.to_string()));
         }
@@ -395,10 +404,13 @@ impl InventoryWriteService {
             r#"SELECT item_id, quantity, rate FROM inventory.purchase_receipt_items
                WHERE receipt_id=$1 AND (metadata->>'deleted_at') IS NULL ORDER BY id"#,
         )
-        .bind(id).fetch_all(&self.db_pool).await?;
+        .bind(id);
+        let items = company_scope::with_company_scope(Some(company),
+            company_scope::fetch_all_rows_scoped(&self.db_pool, items)).await?;
 
         // ---- physical movement: SLE + Bin, one transaction ----
         let mut tx = self.db_pool.begin().await?;
+        company_scope::bind_company_on(&mut tx, company).await?;
         let mut total_debit = Decimal::ZERO;
         let mut sle_no = 0i32;
         for it in &items {
@@ -447,7 +459,10 @@ impl InventoryWriteService {
                       status::text AS st, cogs_account_id, inventory_account_id
                FROM inventory.delivery_notes WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
         )
-        .bind(id).fetch_optional(&self.db_pool).await?.ok_or(InventoryError::NotFound(id))?;
+        .bind(id);
+        // RLS scope (ADR-0008), ID-only: fenced by the request/inherited scope.
+        let hdr = company_scope::fetch_optional_row_scoped(&self.db_pool, hdr).await?
+            .ok_or(InventoryError::NotFound(id))?;
         if hdr.get::<String, _>("st") != "draft" {
             return Err(InventoryError::NotDraft(id.to_string()));
         }
@@ -464,9 +479,12 @@ impl InventoryWriteService {
             r#"SELECT id, item_id, quantity FROM inventory.delivery_note_items
                WHERE delivery_id=$1 AND (metadata->>'deleted_at') IS NULL ORDER BY id"#,
         )
-        .bind(id).fetch_all(&self.db_pool).await?;
+        .bind(id);
+        let items = company_scope::with_company_scope(Some(company),
+            company_scope::fetch_all_rows_scoped(&self.db_pool, items)).await?;
 
         let mut tx = self.db_pool.begin().await?;
+        company_scope::bind_company_on(&mut tx, company).await?;
         let mut total_cogs = Decimal::ZERO;
         let mut sle_no = 0i32;
         for it in &items {
@@ -525,6 +543,7 @@ impl InventoryWriteService {
 
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
+        company_scope::bind_company_on(&mut tx, t.company_id).await?;
         let ins = sqlx::query(
             r#"INSERT INTO inventory.stock_entries
                 (id, entry_number, company_id, stock_entry_type, from_warehouse_id, to_warehouse_id,
@@ -580,6 +599,7 @@ impl InventoryWriteService {
         }
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
+        company_scope::bind_company_on(&mut tx, r.company_id).await?;
         let ins = sqlx::query(
             r#"INSERT INTO inventory.stock_reconciliations
                 (id, recon_number, company_id, warehouse_id, posting_date, net_difference,
@@ -633,8 +653,11 @@ impl InventoryWriteService {
             };
             self.emit_and_reconcile("stock_reconciliations", id, &env, sink, net.abs()).await?;
         } else {
-            sqlx::query("UPDATE inventory.stock_reconciliations SET posting_state='not_applicable'::gl_posting_state WHERE id=$1")
-                .bind(id).execute(&self.db_pool).await?;
+            company_scope::with_company_scope(Some(r.company_id), company_scope::execute_scoped(
+                &self.db_pool,
+                sqlx::query("UPDATE inventory.stock_reconciliations SET posting_state='not_applicable'::gl_posting_state WHERE id=$1")
+                    .bind(id),
+            )).await?;
         }
         self.sink.publish(InventoryEvent::StockReconciled(StockReconciled {
             reconciliation_id: id, company_id: r.company_id, warehouse_id: r.warehouse_id, net_difference: net,
@@ -660,7 +683,10 @@ impl InventoryWriteService {
             r#"SELECT company_id, branch_id, receipt_number, posting_date, total_value,
                       inventory_account_id, grir_account_id, posting_state::text AS ps, journal_id, accounting_post_id
                FROM inventory.purchase_receipts WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
-        ).bind(id).fetch_optional(&self.db_pool).await?.ok_or(InventoryError::NotFound(id))?;
+        ).bind(id);
+        // RLS scope (ADR-0008), ID-only: fenced by the request/inherited scope.
+        let h = company_scope::fetch_optional_row_scoped(&self.db_pool, h).await?
+            .ok_or(InventoryError::NotFound(id))?;
         if let Some(o) = Self::already_settled(&h, id) { return Ok(o); }
         let amt: Decimal = h.get("total_value");
         let env = AccountingPostEnvelope {
@@ -681,7 +707,10 @@ impl InventoryWriteService {
             r#"SELECT company_id, branch_id, delivery_number, posting_date, total_cogs,
                       cogs_account_id, inventory_account_id, posting_state::text AS ps, journal_id, accounting_post_id
                FROM inventory.delivery_notes WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
-        ).bind(id).fetch_optional(&self.db_pool).await?.ok_or(InventoryError::NotFound(id))?;
+        ).bind(id);
+        // RLS scope (ADR-0008), ID-only: fenced by the request/inherited scope.
+        let h = company_scope::fetch_optional_row_scoped(&self.db_pool, h).await?
+            .ok_or(InventoryError::NotFound(id))?;
         if let Some(o) = Self::already_settled(&h, id) { return Ok(o); }
         let amt: Decimal = h.get("total_cogs");
         let env = AccountingPostEnvelope {
@@ -724,12 +753,16 @@ impl InventoryWriteService {
                 let sql = format!(
                     "UPDATE inventory.{table} SET posting_state='posted'::gl_posting_state, journal_id=$2, accounting_post_id=$3, posted_at=now() WHERE id=$1 AND posting_state <> 'posted'::gl_posting_state"
                 );
-                sqlx::query(&sql).bind(voucher_id).bind(ack.journal_id).bind(ack.post_id).execute(&self.db_pool).await?;
+                company_scope::with_company_scope(Some(env.company_id), company_scope::execute_scoped(
+                    &self.db_pool,
+                    sqlx::query(&sql).bind(voucher_id).bind(ack.journal_id).bind(ack.post_id),
+                )).await?;
                 Ok(SubmitOutcome { voucher_id, posted: true, journal_id: Some(ack.journal_id), post_id: Some(ack.post_id), gl_amount })
             }
             Err(rej) => {
                 let sql = format!("UPDATE inventory.{table} SET posting_state='failed'::gl_posting_state WHERE id=$1");
-                let _ = sqlx::query(&sql).bind(voucher_id).execute(&self.db_pool).await;
+                let _ = company_scope::with_company_scope(Some(env.company_id), company_scope::execute_scoped(
+                    &self.db_pool, sqlx::query(&sql).bind(voucher_id))).await;
                 Err(InventoryError::GlRejected { code: rej.code, message: rej.message })
             }
         }
