@@ -208,12 +208,19 @@ pub fn create_guarded_inventory_routes(
     let write = Arc::new(InventoryWriteService::new(pool.clone()));
     let read = Arc::new(InventoryReadService::new(pool.clone()));
     let intake = Arc::new(DeliveryIntake::new(pool));
-    Router::new()
+    // The generic entity read routes are tenant-scoped by the same `company_auth` layer as the writes:
+    // it establishes the request scope (app.company_id bound on a dedicated connection), and the generic
+    // list/get path runs through `company_scope::fetch_*_scoped`, which rides that connection so RLS
+    // returns only the caller's rows. All five entities are company-fenced. Unauthenticated reads → 401.
+    let entity_reads = Router::new()
         .merge(create_warehouse_read_routes(m.warehouse_service.clone()))
         .merge(create_bin_read_routes(m.bin_service.clone()))
         .merge(create_stock_ledger_entry_read_routes(m.stock_ledger_entry_service.clone()))
         .merge(create_purchase_receipt_read_routes(m.purchase_receipt_service.clone()))
         .merge(create_delivery_note_read_routes(m.delivery_note_service.clone()))
+        .route_layer(from_fn_with_state(verifier.clone(), company_auth));
+    Router::new()
+        .merge(entity_reads)
         .merge(write_routes(write, verifier.clone()))
         .merge(read_routes(read))
         .merge(intake_routes(intake, verifier))
