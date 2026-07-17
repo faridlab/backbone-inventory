@@ -50,7 +50,7 @@ pub use backbone_orm::repository::{
 // The hand-written inventory SQL's parameter/projection types. Their repositories are all declared
 // `user_owned` in metaphor.codegen.yaml.
 pub use gl_voucher_repository::{GlSettlementState, GlVoucher, GlVoucherRepository};
-pub use bin_repository::BinBalanceRow;
+pub use bin_repository::{BinAvailabilityRow, BinBalanceRow, BinWarehouseAvailabilityRow};
 pub use stock_ledger_entry_repository::NewSleRow;
 pub use warehouse_repository::NewWarehouseRow;
 pub use stock_item_repository::NewStockItemRow;

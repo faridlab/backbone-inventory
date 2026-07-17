@@ -8,6 +8,7 @@
 //! All standard CRUD methods are available via `Deref`.
 
 use anyhow::Result;
+use backbone_orm::company_scope;
 use rust_decimal::Decimal;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -114,6 +115,103 @@ impl BinRepository {
         .execute(conn)
         .await?;
         Ok(())
+    }
+}
+
+/// A Bin's available-to-commit columns.
+pub struct BinAvailabilityRow {
+    pub actual_qty: Decimal,
+    pub reserved_qty: Decimal,
+}
+
+/// A Bin's available-to-commit columns, carrying the warehouse the row came from.
+pub struct BinWarehouseAvailabilityRow {
+    pub warehouse_id: Uuid,
+    pub actual_qty: Decimal,
+    pub reserved_qty: Decimal,
+}
+
+/// Hand-written Bin read SQL backing the consumer-facing read port
+/// (`InventoryReadService`). Pool-based: each read is its own unit of work.
+///
+/// These take `company_id` as an explicit parameter AND filter on it, so they are fenced by
+/// argument regardless of scope; they additionally run through `company_scope` so they ride the
+/// RLS fence (ADR-0008) like every other read in the suite. Defense in depth — the predicate is
+/// not redundant with the fence, keep both.
+impl BinRepository {
+    /// One bin's availability columns. `Ok(None)` = no bin row (the caller decides what that
+    /// means; the read service projects it as a zeroed, unavailable view).
+    pub async fn fetch_availability(
+        &self,
+        pool: &PgPool,
+        company_id: Uuid,
+        item_id: Uuid,
+        warehouse_id: Uuid,
+    ) -> Result<Option<BinAvailabilityRow>, sqlx::Error> {
+        let row = company_scope::fetch_optional_row_scoped(
+            pool,
+            sqlx::query(
+                r#"SELECT actual_qty, reserved_qty FROM inventory.bins
+                   WHERE company_id=$1 AND item_id=$2 AND warehouse_id=$3 AND (metadata->>'deleted_at') IS NULL"#,
+            )
+            .bind(company_id).bind(item_id).bind(warehouse_id),
+        )
+        .await?;
+        Ok(row.map(|r| BinAvailabilityRow {
+            actual_qty: r.get("actual_qty"),
+            reserved_qty: r.get("reserved_qty"),
+        }))
+    }
+
+    /// Every bin the company holds for one item, ordered by warehouse.
+    pub async fn fetch_availability_across_warehouses(
+        &self,
+        pool: &PgPool,
+        company_id: Uuid,
+        item_id: Uuid,
+    ) -> Result<Vec<BinWarehouseAvailabilityRow>, sqlx::Error> {
+        let rows = company_scope::fetch_all_rows_scoped(
+            pool,
+            sqlx::query(
+                r#"SELECT warehouse_id, actual_qty, reserved_qty FROM inventory.bins
+                   WHERE company_id=$1 AND item_id=$2 AND (metadata->>'deleted_at') IS NULL
+                   ORDER BY warehouse_id"#,
+            )
+            .bind(company_id).bind(item_id),
+        )
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| BinWarehouseAvailabilityRow {
+                warehouse_id: r.get("warehouse_id"),
+                actual_qty: r.get("actual_qty"),
+                reserved_qty: r.get("reserved_qty"),
+            })
+            .collect())
+    }
+
+    /// One bin's valuation columns. `Ok(None)` = no bin row.
+    pub async fn fetch_balance(
+        &self,
+        pool: &PgPool,
+        company_id: Uuid,
+        item_id: Uuid,
+        warehouse_id: Uuid,
+    ) -> Result<Option<BinBalanceRow>, sqlx::Error> {
+        let row = company_scope::fetch_optional_row_scoped(
+            pool,
+            sqlx::query(
+                r#"SELECT actual_qty, valuation_rate, stock_value FROM inventory.bins
+                   WHERE company_id=$1 AND item_id=$2 AND warehouse_id=$3 AND (metadata->>'deleted_at') IS NULL"#,
+            )
+            .bind(company_id).bind(item_id).bind(warehouse_id),
+        )
+        .await?;
+        Ok(row.map(|r| BinBalanceRow {
+            actual_qty: r.get("actual_qty"),
+            valuation_rate: r.get("valuation_rate"),
+            stock_value: r.get("stock_value"),
+        }))
     }
 }
 
