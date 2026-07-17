@@ -13,12 +13,27 @@
 //! consistent (`posting_state` pending→posted|failed), per the GL-posting contract.
 //!
 //! Money: `stock_value`/GL amounts are 2dp (half-up); `valuation_rate` is 6dp.
+//!
+//! **Layering (the module's 4-layer rule).** This service ORCHESTRATES: it owns the valuation
+//! arithmetic, the unit of work (`begin`/`commit`), the ORDER the bin locks are taken in, the
+//! company-scope decisions (ADR-0008) and the seam events. It holds no SQL — every statement lives
+//! in `infrastructure::persistence`, and the repository methods that participate in a movement take
+//! THIS service's connection so the SLE + Bin writes commit together with their voucher.
 
 use backbone_orm::company_scope;
 use rust_decimal::{Decimal, RoundingStrategy};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use std::sync::Arc;
 use uuid::Uuid;
+
+use crate::infrastructure::persistence::{
+    BinRepository, DeliveryNoteItemRepository, DeliveryNoteRepository, GlSettlementState, GlVoucher,
+    GlVoucherRepository, NewDeliveryItemRow, NewDeliveryRow, NewReceiptItemRow, NewReceiptRow,
+    NewReconciliationItemRow, NewReconciliationRow, NewSleRow, NewStockEntryItemRow, NewStockItemRow,
+    NewTransferRow, NewWarehouseRow, PurchaseReceiptItemRepository, PurchaseReceiptRepository,
+    StockEntryItemRepository, StockEntryRepository, StockItemRepository, StockLedgerEntryRepository,
+    StockReconciliationItemRepository, StockReconciliationRepository, WarehouseRepository,
+};
 
 use super::inventory_events::{
     InventoryEvent, InventoryEventSink, LoggingSink, StockDelivered, StockMoved, StockReceived,
@@ -183,25 +198,47 @@ fn is_dup(e: &sqlx::Error) -> bool {
     e.as_database_error().map(|d| d.is_unique_violation()).unwrap_or(false)
 }
 
-/// A Bin's running balance, loaded FOR UPDATE inside a movement transaction.
-struct BinState {
-    qty: Decimal,
-    rate: Decimal,
-    value: Decimal,
-}
-
 #[derive(Clone)]
 pub struct InventoryWriteService {
     db_pool: PgPool,
     sink: Arc<dyn InventoryEventSink>,
+    warehouses: Arc<WarehouseRepository>,
+    stock_items: Arc<StockItemRepository>,
+    bins: Arc<BinRepository>,
+    sles: Arc<StockLedgerEntryRepository>,
+    receipts: Arc<PurchaseReceiptRepository>,
+    receipt_items: Arc<PurchaseReceiptItemRepository>,
+    deliveries: Arc<DeliveryNoteRepository>,
+    delivery_items: Arc<DeliveryNoteItemRepository>,
+    entries: Arc<StockEntryRepository>,
+    entry_items: Arc<StockEntryItemRepository>,
+    recons: Arc<StockReconciliationRepository>,
+    recon_items: Arc<StockReconciliationItemRepository>,
+    gl: Arc<GlVoucherRepository>,
 }
 
 impl InventoryWriteService {
     pub fn new(db_pool: PgPool) -> Self {
-        Self { db_pool, sink: Arc::new(LoggingSink) }
+        Self::with_sink(db_pool, Arc::new(LoggingSink))
     }
     pub fn with_sink(db_pool: PgPool, sink: Arc<dyn InventoryEventSink>) -> Self {
-        Self { db_pool, sink }
+        Self {
+            warehouses: Arc::new(WarehouseRepository::new(db_pool.clone())),
+            stock_items: Arc::new(StockItemRepository::new(db_pool.clone())),
+            bins: Arc::new(BinRepository::new(db_pool.clone())),
+            sles: Arc::new(StockLedgerEntryRepository::new(db_pool.clone())),
+            receipts: Arc::new(PurchaseReceiptRepository::new(db_pool.clone())),
+            receipt_items: Arc::new(PurchaseReceiptItemRepository::new(db_pool.clone())),
+            deliveries: Arc::new(DeliveryNoteRepository::new(db_pool.clone())),
+            delivery_items: Arc::new(DeliveryNoteItemRepository::new(db_pool.clone())),
+            entries: Arc::new(StockEntryRepository::new(db_pool.clone())),
+            entry_items: Arc::new(StockEntryItemRepository::new(db_pool.clone())),
+            recons: Arc::new(StockReconciliationRepository::new(db_pool.clone())),
+            recon_items: Arc::new(StockReconciliationItemRepository::new(db_pool.clone())),
+            gl: Arc::new(GlVoucherRepository::new()),
+            db_pool,
+            sink,
+        }
     }
 
     // ---- masters ------------------------------------------------------------
@@ -209,16 +246,19 @@ impl InventoryWriteService {
     pub async fn create_warehouse(&self, w: NewWarehouse) -> Result<Uuid, InventoryError> {
         let id = Uuid::new_v4();
         let wt = w.warehouse_type.unwrap_or_else(|| "stock".into());
-        let r = sqlx::query(
-            r#"INSERT INTO inventory.warehouses
-                (id, company_id, code, name, warehouse_type, parent_warehouse_id, is_group)
-               VALUES ($1,$2,$3,$4,$5::warehouse_type,$6,$7)"#,
-        )
-        .bind(id).bind(w.company_id).bind(&w.code).bind(&w.name).bind(&wt)
-        .bind(w.parent_warehouse_id).bind(w.is_group);
         // RLS scope (ADR-0008): company on the DTO.
-        let r = company_scope::with_company_scope(Some(w.company_id),
-            company_scope::execute_scoped(&self.db_pool, r)).await;
+        let r = company_scope::with_company_scope(
+            Some(w.company_id),
+            self.warehouses.insert_warehouse(&self.db_pool, &NewWarehouseRow {
+                id,
+                company_id: w.company_id,
+                code: &w.code,
+                name: &w.name,
+                warehouse_type: &wt,
+                parent_warehouse_id: w.parent_warehouse_id,
+                is_group: w.is_group,
+            }),
+        ).await;
         match r {
             Ok(_) => Ok(id),
             Err(e) if is_dup(&e) => Err(InventoryError::DuplicateNumber(w.code)),
@@ -229,14 +269,18 @@ impl InventoryWriteService {
     pub async fn create_stock_item(&self, s: NewStockItem) -> Result<Uuid, InventoryError> {
         let id = Uuid::new_v4();
         let vm = s.valuation_method.unwrap_or_else(|| "moving_average".into());
-        let r = sqlx::query(
-            r#"INSERT INTO inventory.stock_items
-                (id, item_id, company_id, stock_uom, is_stock_item, has_batch, valuation_method, reorder_level)
-               VALUES ($1,$2,$3,$4,TRUE,FALSE,$5::valuation_method,$6)"#,
-        )
-        .bind(id).bind(s.item_id).bind(s.company_id).bind(&s.stock_uom).bind(&vm).bind(s.reorder_level);
-        let r = company_scope::with_company_scope(Some(s.company_id),
-            company_scope::execute_scoped(&self.db_pool, r)).await;
+        // RLS scope (ADR-0008): company on the DTO.
+        let r = company_scope::with_company_scope(
+            Some(s.company_id),
+            self.stock_items.insert_stock_item(&self.db_pool, &NewStockItemRow {
+                id,
+                item_id: s.item_id,
+                company_id: s.company_id,
+                stock_uom: &s.stock_uom,
+                valuation_method: &vm,
+                reorder_level: s.reorder_level,
+            }),
+        ).await;
         match r {
             Ok(_) => Ok(id),
             Err(e) if is_dup(&e) => Err(InventoryError::DuplicateNumber(s.item_id.to_string())),
@@ -255,27 +299,31 @@ impl InventoryWriteService {
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
         company_scope::bind_company_on(&mut tx, r.company_id).await?;
-        let ins = sqlx::query(
-            r#"INSERT INTO inventory.purchase_receipts
-                (id, receipt_number, company_id, branch_id, supplier_id, source_po_id, warehouse_id,
-                 posting_date, currency, total_value, inventory_account_id, grir_account_id,
-                 status, posting_state)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'IDR',$9,$10,$11,'draft'::doc_status,'pending'::gl_posting_state)"#,
-        )
-        .bind(id).bind(&r.receipt_number).bind(r.company_id).bind(r.branch_id).bind(r.supplier_id)
-        .bind(r.source_po_id).bind(r.warehouse_id).bind(r.posting_date).bind(total)
-        .bind(r.inventory_account_id).bind(r.grir_account_id)
-        .execute(&mut *tx).await;
+        let ins = self.receipts.insert_draft(&mut tx, &NewReceiptRow {
+            id,
+            receipt_number: &r.receipt_number,
+            company_id: r.company_id,
+            branch_id: r.branch_id,
+            supplier_id: r.supplier_id,
+            source_po_id: r.source_po_id,
+            warehouse_id: r.warehouse_id,
+            posting_date: r.posting_date,
+            total_value: total,
+            inventory_account_id: r.inventory_account_id,
+            grir_account_id: r.grir_account_id,
+        }).await;
         if let Err(e) = ins {
             return Err(if is_dup(&e) { InventoryError::DuplicateNumber(r.receipt_number) } else { e.into() });
         }
         for l in &r.lines {
-            sqlx::query(
-                r#"INSERT INTO inventory.purchase_receipt_items (id, receipt_id, item_id, quantity, rate, amount)
-                   VALUES ($1,$2,$3,$4,$5,$6)"#,
-            )
-            .bind(Uuid::new_v4()).bind(id).bind(l.item_id).bind(l.quantity).bind(l.rate).bind(money(l.quantity * l.rate))
-            .execute(&mut *tx).await?;
+            self.receipt_items.insert_item(&mut tx, &NewReceiptItemRow {
+                id: Uuid::new_v4(),
+                receipt_id: id,
+                item_id: l.item_id,
+                quantity: l.quantity,
+                rate: l.rate,
+                amount: money(l.quantity * l.rate),
+            }).await?;
         }
         tx.commit().await?;
         Ok(id)
@@ -289,147 +337,81 @@ impl InventoryWriteService {
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
         company_scope::bind_company_on(&mut tx, d.company_id).await?;
-        let ins = sqlx::query(
-            r#"INSERT INTO inventory.delivery_notes
-                (id, delivery_number, company_id, branch_id, customer_id, source_so_id, warehouse_id,
-                 posting_date, total_cogs, cogs_account_id, inventory_account_id, status, posting_state)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,0,$9,$10,'draft'::doc_status,'pending'::gl_posting_state)"#,
-        )
-        .bind(id).bind(&d.delivery_number).bind(d.company_id).bind(d.branch_id).bind(d.customer_id)
-        .bind(d.source_so_id).bind(d.warehouse_id).bind(d.posting_date)
-        .bind(d.cogs_account_id).bind(d.inventory_account_id)
-        .execute(&mut *tx).await;
+        let ins = self.deliveries.insert_draft(&mut tx, &NewDeliveryRow {
+            id,
+            delivery_number: &d.delivery_number,
+            company_id: d.company_id,
+            branch_id: d.branch_id,
+            customer_id: d.customer_id,
+            source_so_id: d.source_so_id,
+            warehouse_id: d.warehouse_id,
+            posting_date: d.posting_date,
+            cogs_account_id: d.cogs_account_id,
+            inventory_account_id: d.inventory_account_id,
+        }).await;
         if let Err(e) = ins {
             return Err(if is_dup(&e) { InventoryError::DuplicateNumber(d.delivery_number) } else { e.into() });
         }
         for l in &d.lines {
-            sqlx::query(
-                r#"INSERT INTO inventory.delivery_note_items (id, delivery_id, item_id, quantity, valuation_rate, cogs_amount)
-                   VALUES ($1,$2,$3,$4,0,0)"#,
-            )
-            .bind(Uuid::new_v4()).bind(id).bind(l.item_id).bind(l.quantity)
-            .execute(&mut *tx).await?;
+            self.delivery_items.insert_item(&mut tx, &NewDeliveryItemRow {
+                id: Uuid::new_v4(),
+                delivery_id: id,
+                item_id: l.item_id,
+                quantity: l.quantity,
+            }).await?;
         }
         tx.commit().await?;
         Ok(id)
     }
 
-    // ---- bin helper (call inside a transaction) ----------------------------
-
-    /// Load a bin FOR UPDATE, creating a zeroed one if absent. Returns its current balance.
-    async fn load_or_init_bin(
-        tx: &mut sqlx::PgConnection,
-        company: Uuid,
-        item: Uuid,
-        warehouse: Uuid,
-    ) -> Result<BinState, InventoryError> {
-        let row = sqlx::query(
-            r#"SELECT actual_qty, valuation_rate, stock_value FROM inventory.bins
-               WHERE company_id=$1 AND item_id=$2 AND warehouse_id=$3 AND (metadata->>'deleted_at') IS NULL
-               FOR UPDATE"#,
-        )
-        .bind(company).bind(item).bind(warehouse).fetch_optional(&mut *tx).await?;
-        if let Some(r) = row {
-            return Ok(BinState { qty: r.get("actual_qty"), rate: r.get("valuation_rate"), value: r.get("stock_value") });
-        }
-        sqlx::query(
-            r#"INSERT INTO inventory.bins (id, company_id, item_id, warehouse_id, actual_qty, reserved_qty, valuation_rate, stock_value)
-               VALUES ($1,$2,$3,$4,0,0,0,0)"#,
-        )
-        .bind(Uuid::new_v4()).bind(company).bind(item).bind(warehouse).execute(&mut *tx).await?;
-        Ok(BinState { qty: Decimal::ZERO, rate: Decimal::ZERO, value: Decimal::ZERO })
-    }
-
-    async fn set_bin(
-        tx: &mut sqlx::PgConnection,
-        company: Uuid, item: Uuid, warehouse: Uuid,
-        qty: Decimal, rate: Decimal, value: Decimal,
-    ) -> Result<(), InventoryError> {
-        sqlx::query(
-            r#"UPDATE inventory.bins SET actual_qty=$4, valuation_rate=$5, stock_value=$6
-               WHERE company_id=$1 AND item_id=$2 AND warehouse_id=$3 AND (metadata->>'deleted_at') IS NULL"#,
-        )
-        .bind(company).bind(item).bind(warehouse).bind(qty).bind(rate).bind(value)
-        .execute(&mut *tx).await?;
-        Ok(())
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    async fn write_sle(
-        tx: &mut sqlx::PgConnection,
-        company: Uuid, item: Uuid, warehouse: Uuid, posting_date: chrono::NaiveDate,
-        actual_qty: Decimal, qty_after: Decimal, incoming_rate: Decimal, valuation_rate: Decimal,
-        stock_value: Decimal, value_diff: Decimal, voucher_type: &str, voucher_id: Uuid,
-        voucher_no: &str, sle_no: i32,
-    ) -> Result<(), InventoryError> {
-        sqlx::query(
-            r#"INSERT INTO inventory.stock_ledger_entries
-                (id, company_id, item_id, warehouse_id, posting_date, actual_qty, qty_after_txn,
-                 incoming_rate, valuation_rate, stock_value, stock_value_difference, voucher_type,
-                 voucher_id, voucher_no, sle_no, is_cancelled)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::voucher_type,$13,$14,$15,FALSE)"#,
-        )
-        .bind(Uuid::new_v4()).bind(company).bind(item).bind(warehouse).bind(posting_date)
-        .bind(actual_qty).bind(qty_after).bind(incoming_rate).bind(valuation_rate).bind(stock_value)
-        .bind(value_diff).bind(voucher_type).bind(voucher_id).bind(voucher_no).bind(sle_no)
-        .execute(&mut *tx).await?;
-        Ok(())
-    }
-
     // ---- submit: Purchase Receipt (asset post) -----------------------------
 
     pub async fn submit_purchase_receipt(&self, id: Uuid, sink: &dyn GlPostSink) -> Result<SubmitOutcome, InventoryError> {
-        let hdr = sqlx::query(
-            r#"SELECT receipt_number, company_id, branch_id, warehouse_id, posting_date, source_po_id,
-                      status::text AS st, inventory_account_id, grir_account_id
-               FROM inventory.purchase_receipts WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
-        )
-        .bind(id);
         // RLS scope (ADR-0008), ID-only: fenced by the request/inherited scope.
-        let hdr = company_scope::fetch_optional_row_scoped(&self.db_pool, hdr).await?
+        let hdr = self.receipts.fetch_submit_header(&self.db_pool, id).await?
             .ok_or(InventoryError::NotFound(id))?;
-        if hdr.get::<String, _>("st") != "draft" {
+        if hdr.status != "draft" {
             return Err(InventoryError::NotDraft(id.to_string()));
         }
-        let company: Uuid = hdr.get("company_id");
-        let branch: Option<Uuid> = hdr.get("branch_id");
-        let warehouse: Uuid = hdr.get("warehouse_id");
-        let posting_date: chrono::NaiveDate = hdr.get("posting_date");
-        let voucher_no: String = hdr.get("receipt_number");
-        let inv_acct: Uuid = hdr.get("inventory_account_id");
-        let grir_acct: Uuid = hdr.get("grir_account_id");
-        let source_po: Option<Uuid> = hdr.get("source_po_id");
+        let company = hdr.company_id;
+        let branch = hdr.branch_id;
+        let warehouse = hdr.warehouse_id;
+        let posting_date = hdr.posting_date;
+        let voucher_no = hdr.receipt_number;
+        let inv_acct = hdr.inventory_account_id;
+        let grir_acct = hdr.grir_account_id;
+        let source_po = hdr.source_po_id;
 
-        let items = sqlx::query(
-            r#"SELECT item_id, quantity, rate FROM inventory.purchase_receipt_items
-               WHERE receipt_id=$1 AND (metadata->>'deleted_at') IS NULL ORDER BY id"#,
-        )
-        .bind(id);
-        let items = company_scope::with_company_scope(Some(company),
-            company_scope::fetch_all_rows_scoped(&self.db_pool, items)).await?;
+        let items = company_scope::with_company_scope(
+            Some(company),
+            self.receipt_items.fetch_items(&self.db_pool, id),
+        ).await?;
 
         // ---- physical movement: SLE + Bin, one transaction ----
         let mut tx = self.db_pool.begin().await?;
+        // RLS scope (ADR-0008): MUST be bound before any bin read — an unbound connection is fenced
+        // to zero rows, so the FOR UPDATE below would read every bin as empty.
         company_scope::bind_company_on(&mut tx, company).await?;
         let mut total_debit = Decimal::ZERO;
         let mut sle_no = 0i32;
         for it in &items {
-            let item: Uuid = it.get("item_id");
-            let qty: Decimal = it.get("quantity");
-            let in_rate: Decimal = it.get("rate");
-            let bin = Self::load_or_init_bin(&mut tx, company, item, warehouse).await?;
+            let (item, qty, in_rate) = (it.item_id, it.quantity, it.rate);
+            let bin = self.bins.lock_or_init(&mut tx, company, item, warehouse).await?;
             let in_amount = money(qty * in_rate);
-            let new_qty = bin.qty + qty;
-            let new_value = bin.value + in_amount;
+            let new_qty = bin.actual_qty + qty;
+            let new_value = bin.stock_value + in_amount;
             let new_rate = if new_qty > Decimal::ZERO { rate6(new_value / new_qty) } else { Decimal::ZERO };
-            Self::set_bin(&mut tx, company, item, warehouse, new_qty, new_rate, new_value).await?;
+            self.bins.update_balance(&mut tx, company, item, warehouse, new_qty, new_rate, new_value).await?;
             sle_no += 1;
-            Self::write_sle(&mut tx, company, item, warehouse, posting_date, qty, new_qty, in_rate,
-                new_rate, new_value, in_amount, "purchase_receipt", id, &voucher_no, sle_no).await?;
+            self.sles.insert_sle(&mut tx, &NewSleRow {
+                company_id: company, item_id: item, warehouse_id: warehouse, posting_date,
+                actual_qty: qty, qty_after_txn: new_qty, incoming_rate: in_rate,
+                valuation_rate: new_rate, stock_value: new_value, stock_value_difference: in_amount,
+                voucher_type: "purchase_receipt", voucher_id: id, voucher_no: &voucher_no, sle_no,
+            }).await?;
             total_debit += in_amount;
         }
-        sqlx::query("UPDATE inventory.purchase_receipts SET status='submitted'::doc_status WHERE id=$1")
-            .bind(id).execute(&mut *tx).await?;
+        self.receipts.mark_submitted(&mut tx, id).await?;
         tx.commit().await?;
 
         // ---- GL post (eventually consistent) ----
@@ -443,7 +425,7 @@ impl InventoryWriteService {
                 GlPostLine::credit(grir_acct, total_debit).with_description("GR/IR clearing"),
             ],
         };
-        let outcome = self.emit_and_reconcile("purchase_receipts", id, &env, sink, total_debit).await?;
+        let outcome = self.emit_and_reconcile(GlVoucher::PurchaseReceipt, id, &env, sink, total_debit).await?;
         self.sink.publish(InventoryEvent::StockReceived(StockReceived {
             receipt_id: id, company_id: company, warehouse_id: warehouse, source_po_id: source_po,
             total_value: total_debit,
@@ -454,66 +436,60 @@ impl InventoryWriteService {
     // ---- submit: Delivery Note (COGS post) ---------------------------------
 
     pub async fn submit_delivery_note(&self, id: Uuid, sink: &dyn GlPostSink) -> Result<SubmitOutcome, InventoryError> {
-        let hdr = sqlx::query(
-            r#"SELECT delivery_number, company_id, branch_id, warehouse_id, posting_date, source_so_id,
-                      status::text AS st, cogs_account_id, inventory_account_id
-               FROM inventory.delivery_notes WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
-        )
-        .bind(id);
         // RLS scope (ADR-0008), ID-only: fenced by the request/inherited scope.
-        let hdr = company_scope::fetch_optional_row_scoped(&self.db_pool, hdr).await?
+        let hdr = self.deliveries.fetch_submit_header(&self.db_pool, id).await?
             .ok_or(InventoryError::NotFound(id))?;
-        if hdr.get::<String, _>("st") != "draft" {
+        if hdr.status != "draft" {
             return Err(InventoryError::NotDraft(id.to_string()));
         }
-        let company: Uuid = hdr.get("company_id");
-        let branch: Option<Uuid> = hdr.get("branch_id");
-        let warehouse: Uuid = hdr.get("warehouse_id");
-        let posting_date: chrono::NaiveDate = hdr.get("posting_date");
-        let voucher_no: String = hdr.get("delivery_number");
-        let cogs_acct: Uuid = hdr.get("cogs_account_id");
-        let inv_acct: Uuid = hdr.get("inventory_account_id");
-        let source_so: Option<Uuid> = hdr.get("source_so_id");
+        let company = hdr.company_id;
+        let branch = hdr.branch_id;
+        let warehouse = hdr.warehouse_id;
+        let posting_date = hdr.posting_date;
+        let voucher_no = hdr.delivery_number;
+        let cogs_acct = hdr.cogs_account_id;
+        let inv_acct = hdr.inventory_account_id;
+        let source_so = hdr.source_so_id;
 
-        let items = sqlx::query(
-            r#"SELECT id, item_id, quantity FROM inventory.delivery_note_items
-               WHERE delivery_id=$1 AND (metadata->>'deleted_at') IS NULL ORDER BY id"#,
-        )
-        .bind(id);
-        let items = company_scope::with_company_scope(Some(company),
-            company_scope::fetch_all_rows_scoped(&self.db_pool, items)).await?;
+        let items = company_scope::with_company_scope(
+            Some(company),
+            self.delivery_items.fetch_items(&self.db_pool, id),
+        ).await?;
 
         let mut tx = self.db_pool.begin().await?;
+        // RLS scope (ADR-0008): MUST be bound before any bin read — an unbound connection is fenced
+        // to zero rows, so the FOR UPDATE below would read every bin as empty (and every delivery
+        // would then fail the availability check).
         company_scope::bind_company_on(&mut tx, company).await?;
         let mut total_cogs = Decimal::ZERO;
         let mut sle_no = 0i32;
         for it in &items {
-            let line_id: Uuid = it.get("id");
-            let item: Uuid = it.get("item_id");
-            let qty: Decimal = it.get("quantity");
-            let bin = Self::load_or_init_bin(&mut tx, company, item, warehouse).await?;
-            if bin.qty < qty {
-                return Err(InventoryError::InsufficientStock { item_id: item, warehouse_id: warehouse, available: bin.qty, requested: qty });
+            let (line_id, item, qty) = (it.id, it.item_id, it.quantity);
+            let bin = self.bins.lock_or_init(&mut tx, company, item, warehouse).await?;
+            if bin.actual_qty < qty {
+                return Err(InventoryError::InsufficientStock { item_id: item, warehouse_id: warehouse, available: bin.actual_qty, requested: qty });
             }
-            let new_qty = bin.qty - qty;
+            let new_qty = bin.actual_qty - qty;
             // On the FINAL outflow (bin drained to 0), the last units absorb the moving-average
             // rounding residual: COGS = the entire remaining value, so stock_value returns to
             // EXACTLY 0 and the Inventory subledger ties out with the GL at zero stock (council
             // 2026-07-04). Otherwise COGS consumes the current 2dp-rounded average.
-            let cogs = if new_qty.is_zero() { bin.value } else { money(qty * bin.rate) };
-            let new_value = bin.value - cogs;
+            let cogs = if new_qty.is_zero() { bin.stock_value } else { money(qty * bin.valuation_rate) };
+            let new_value = bin.stock_value - cogs;
             // Moving-average: rate is unchanged by an outflow.
-            let new_rate = if new_qty > Decimal::ZERO { bin.rate } else { Decimal::ZERO };
-            Self::set_bin(&mut tx, company, item, warehouse, new_qty, new_rate, new_value).await?;
-            sqlx::query("UPDATE inventory.delivery_note_items SET valuation_rate=$2, cogs_amount=$3 WHERE id=$1")
-                .bind(line_id).bind(bin.rate).bind(cogs).execute(&mut *tx).await?;
+            let new_rate = if new_qty > Decimal::ZERO { bin.valuation_rate } else { Decimal::ZERO };
+            self.bins.update_balance(&mut tx, company, item, warehouse, new_qty, new_rate, new_value).await?;
+            self.delivery_items.update_valuation(&mut tx, line_id, bin.valuation_rate, cogs).await?;
             sle_no += 1;
-            Self::write_sle(&mut tx, company, item, warehouse, posting_date, -qty, new_qty, Decimal::ZERO,
-                new_rate, new_value, -cogs, "delivery_note", id, &voucher_no, sle_no).await?;
+            self.sles.insert_sle(&mut tx, &NewSleRow {
+                company_id: company, item_id: item, warehouse_id: warehouse, posting_date,
+                actual_qty: -qty, qty_after_txn: new_qty, incoming_rate: Decimal::ZERO,
+                valuation_rate: new_rate, stock_value: new_value, stock_value_difference: -cogs,
+                voucher_type: "delivery_note", voucher_id: id, voucher_no: &voucher_no, sle_no,
+            }).await?;
             total_cogs += cogs;
         }
-        sqlx::query("UPDATE inventory.delivery_notes SET status='submitted'::doc_status, total_cogs=$2 WHERE id=$1")
-            .bind(id).bind(total_cogs).execute(&mut *tx).await?;
+        self.deliveries.mark_submitted_with_cogs(&mut tx, id, total_cogs).await?;
         tx.commit().await?;
 
         let env = AccountingPostEnvelope {
@@ -526,7 +502,7 @@ impl InventoryWriteService {
                 GlPostLine::credit(inv_acct, total_cogs).with_description("Inventory"),
             ],
         };
-        let outcome = self.emit_and_reconcile("delivery_notes", id, &env, sink, total_cogs).await?;
+        let outcome = self.emit_and_reconcile(GlVoucher::DeliveryNote, id, &env, sink, total_cogs).await?;
         self.sink.publish(InventoryEvent::StockDelivered(StockDelivered {
             delivery_id: id, company_id: company, warehouse_id: warehouse, source_so_id: source_so,
             total_cogs,
@@ -543,45 +519,65 @@ impl InventoryWriteService {
 
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
+        // RLS scope (ADR-0008): MUST be bound before any bin read — an unbound connection is fenced
+        // to zero rows, so the FOR UPDATE below would read every bin as empty.
         company_scope::bind_company_on(&mut tx, t.company_id).await?;
-        let ins = sqlx::query(
-            r#"INSERT INTO inventory.stock_entries
-                (id, entry_number, company_id, stock_entry_type, from_warehouse_id, to_warehouse_id,
-                 posting_date, status, posting_state)
-               VALUES ($1,$2,$3,'transfer'::stock_entry_type,$4,$5,$6,'submitted'::doc_status,'not_applicable'::gl_posting_state)"#,
-        )
-        .bind(id).bind(&t.entry_number).bind(t.company_id).bind(t.from_warehouse_id).bind(t.to_warehouse_id).bind(t.posting_date)
-        .execute(&mut *tx).await;
+        let ins = self.entries.insert_transfer(&mut tx, &NewTransferRow {
+            id,
+            entry_number: &t.entry_number,
+            company_id: t.company_id,
+            from_warehouse_id: t.from_warehouse_id,
+            to_warehouse_id: t.to_warehouse_id,
+            posting_date: t.posting_date,
+        }).await;
         if let Err(e) = ins {
             return Err(if is_dup(&e) { InventoryError::DuplicateNumber(t.entry_number) } else { e.into() });
         }
         let mut sle_no = 0i32;
         for l in &t.lines {
-            sqlx::query("INSERT INTO inventory.stock_entry_items (id, entry_id, item_id, quantity) VALUES ($1,$2,$3,$4)")
-                .bind(Uuid::new_v4()).bind(id).bind(l.item_id).bind(l.quantity).execute(&mut *tx).await?;
-            // OUT of source
-            let from = Self::load_or_init_bin(&mut tx, t.company_id, l.item_id, t.from_warehouse_id).await?;
-            if from.qty < l.quantity {
-                return Err(InventoryError::InsufficientStock { item_id: l.item_id, warehouse_id: t.from_warehouse_id, available: from.qty, requested: l.quantity });
+            self.entry_items.insert_item(&mut tx, &NewStockEntryItemRow {
+                id: Uuid::new_v4(),
+                entry_id: id,
+                item_id: l.item_id,
+                quantity: l.quantity,
+            }).await?;
+            // OUT of source — the SOURCE bin is always locked before the target. Both bins are locked
+            // on this one transaction; keep this order (it is what stops two transfers touching the
+            // same pair of warehouses from deadlocking against each other).
+            let from = self.bins.lock_or_init(&mut tx, t.company_id, l.item_id, t.from_warehouse_id).await?;
+            if from.actual_qty < l.quantity {
+                return Err(InventoryError::InsufficientStock { item_id: l.item_id, warehouse_id: t.from_warehouse_id, available: from.actual_qty, requested: l.quantity });
             }
-            let from_qty = from.qty - l.quantity;
+            let from_qty = from.actual_qty - l.quantity;
             // Same residual flush as delivery: when the source bin drains to 0, the move carries
             // its entire remaining value so the source ends at exactly 0 (and the target receives
             // the exact value moved — total value conserved to the cent).
-            let move_value = if from_qty.is_zero() { from.value } else { money(l.quantity * from.rate) };
-            let from_value = from.value - move_value;
-            let from_rate = if from_qty > Decimal::ZERO { from.rate } else { Decimal::ZERO };
-            Self::set_bin(&mut tx, t.company_id, l.item_id, t.from_warehouse_id, from_qty, from_rate, from_value).await?;
+            let move_value = if from_qty.is_zero() { from.stock_value } else { money(l.quantity * from.valuation_rate) };
+            let from_value = from.stock_value - move_value;
+            let from_rate = if from_qty > Decimal::ZERO { from.valuation_rate } else { Decimal::ZERO };
+            self.bins.update_balance(&mut tx, t.company_id, l.item_id, t.from_warehouse_id, from_qty, from_rate, from_value).await?;
             sle_no += 1;
-            Self::write_sle(&mut tx, t.company_id, l.item_id, t.from_warehouse_id, t.posting_date, -l.quantity, from_qty, Decimal::ZERO, from_rate, from_value, -move_value, "stock_entry", id, &t.entry_number, sle_no).await?;
+            self.sles.insert_sle(&mut tx, &NewSleRow {
+                company_id: t.company_id, item_id: l.item_id, warehouse_id: t.from_warehouse_id,
+                posting_date: t.posting_date, actual_qty: -l.quantity, qty_after_txn: from_qty,
+                incoming_rate: Decimal::ZERO, valuation_rate: from_rate, stock_value: from_value,
+                stock_value_difference: -move_value, voucher_type: "stock_entry", voucher_id: id,
+                voucher_no: &t.entry_number, sle_no,
+            }).await?;
             // IN to target at the source rate (value conserved)
-            let to = Self::load_or_init_bin(&mut tx, t.company_id, l.item_id, t.to_warehouse_id).await?;
-            let to_qty = to.qty + l.quantity;
-            let to_value = to.value + move_value;
+            let to = self.bins.lock_or_init(&mut tx, t.company_id, l.item_id, t.to_warehouse_id).await?;
+            let to_qty = to.actual_qty + l.quantity;
+            let to_value = to.stock_value + move_value;
             let to_rate = if to_qty > Decimal::ZERO { rate6(to_value / to_qty) } else { Decimal::ZERO };
-            Self::set_bin(&mut tx, t.company_id, l.item_id, t.to_warehouse_id, to_qty, to_rate, to_value).await?;
+            self.bins.update_balance(&mut tx, t.company_id, l.item_id, t.to_warehouse_id, to_qty, to_rate, to_value).await?;
             sle_no += 1;
-            Self::write_sle(&mut tx, t.company_id, l.item_id, t.to_warehouse_id, t.posting_date, l.quantity, to_qty, from.rate, to_rate, to_value, move_value, "stock_entry", id, &t.entry_number, sle_no).await?;
+            self.sles.insert_sle(&mut tx, &NewSleRow {
+                company_id: t.company_id, item_id: l.item_id, warehouse_id: t.to_warehouse_id,
+                posting_date: t.posting_date, actual_qty: l.quantity, qty_after_txn: to_qty,
+                incoming_rate: from.valuation_rate, valuation_rate: to_rate, stock_value: to_value,
+                stock_value_difference: move_value, voucher_type: "stock_entry", voucher_id: id,
+                voucher_no: &t.entry_number, sle_no,
+            }).await?;
         }
         tx.commit().await?;
         self.sink.publish(InventoryEvent::StockMoved(StockMoved {
@@ -599,41 +595,51 @@ impl InventoryWriteService {
         }
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
+        // RLS scope (ADR-0008): MUST be bound before any bin read — an unbound connection is fenced
+        // to zero rows, so the FOR UPDATE below would read every bin as empty and the count would
+        // book the entire counted quantity as a difference.
         company_scope::bind_company_on(&mut tx, r.company_id).await?;
-        let ins = sqlx::query(
-            r#"INSERT INTO inventory.stock_reconciliations
-                (id, recon_number, company_id, warehouse_id, posting_date, net_difference,
-                 inventory_account_id, adjustment_account_id, status, posting_state)
-               VALUES ($1,$2,$3,$4,$5,0,$6,$7,'submitted'::doc_status,'pending'::gl_posting_state)"#,
-        )
-        .bind(id).bind(&r.recon_number).bind(r.company_id).bind(r.warehouse_id).bind(r.posting_date)
-        .bind(r.inventory_account_id).bind(r.adjustment_account_id)
-        .execute(&mut *tx).await;
+        let ins = self.recons.insert_submitted(&mut tx, &NewReconciliationRow {
+            id,
+            recon_number: &r.recon_number,
+            company_id: r.company_id,
+            warehouse_id: r.warehouse_id,
+            posting_date: r.posting_date,
+            inventory_account_id: r.inventory_account_id,
+            adjustment_account_id: r.adjustment_account_id,
+        }).await;
         if let Err(e) = ins {
             return Err(if is_dup(&e) { InventoryError::DuplicateNumber(r.recon_number) } else { e.into() });
         }
         let mut net = Decimal::ZERO;
         let mut sle_no = 0i32;
         for l in &r.lines {
-            let bin = Self::load_or_init_bin(&mut tx, r.company_id, l.item_id, r.warehouse_id).await?;
-            let target_rate = if l.counted_rate > Decimal::ZERO { l.counted_rate } else { bin.rate };
+            let bin = self.bins.lock_or_init(&mut tx, r.company_id, l.item_id, r.warehouse_id).await?;
+            let target_rate = if l.counted_rate > Decimal::ZERO { l.counted_rate } else { bin.valuation_rate };
             let new_value = money(l.counted_qty * target_rate);
-            let value_diff = new_value - bin.value;
-            let qty_diff = l.counted_qty - bin.qty;
-            Self::set_bin(&mut tx, r.company_id, l.item_id, r.warehouse_id, l.counted_qty, target_rate, new_value).await?;
-            sqlx::query(
-                r#"INSERT INTO inventory.stock_reconciliation_items
-                    (id, reconciliation_id, item_id, counted_qty, counted_rate, qty_difference, value_difference)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7)"#,
-            )
-            .bind(Uuid::new_v4()).bind(id).bind(l.item_id).bind(l.counted_qty).bind(l.counted_rate).bind(qty_diff).bind(value_diff)
-            .execute(&mut *tx).await?;
+            let value_diff = new_value - bin.stock_value;
+            let qty_diff = l.counted_qty - bin.actual_qty;
+            self.bins.update_balance(&mut tx, r.company_id, l.item_id, r.warehouse_id, l.counted_qty, target_rate, new_value).await?;
+            self.recon_items.insert_item(&mut tx, &NewReconciliationItemRow {
+                id: Uuid::new_v4(),
+                reconciliation_id: id,
+                item_id: l.item_id,
+                counted_qty: l.counted_qty,
+                counted_rate: l.counted_rate,
+                qty_difference: qty_diff,
+                value_difference: value_diff,
+            }).await?;
             sle_no += 1;
-            Self::write_sle(&mut tx, r.company_id, l.item_id, r.warehouse_id, r.posting_date, qty_diff, l.counted_qty, Decimal::ZERO, target_rate, new_value, value_diff, "stock_reconciliation", id, &r.recon_number, sle_no).await?;
+            self.sles.insert_sle(&mut tx, &NewSleRow {
+                company_id: r.company_id, item_id: l.item_id, warehouse_id: r.warehouse_id,
+                posting_date: r.posting_date, actual_qty: qty_diff, qty_after_txn: l.counted_qty,
+                incoming_rate: Decimal::ZERO, valuation_rate: target_rate, stock_value: new_value,
+                stock_value_difference: value_diff, voucher_type: "stock_reconciliation",
+                voucher_id: id, voucher_no: &r.recon_number, sle_no,
+            }).await?;
             net += value_diff;
         }
-        sqlx::query("UPDATE inventory.stock_reconciliations SET net_difference=$2 WHERE id=$1")
-            .bind(id).bind(net).execute(&mut *tx).await?;
+        self.recons.update_net_difference(&mut tx, id, net).await?;
         tx.commit().await?;
 
         if net != Decimal::ZERO {
@@ -651,13 +657,12 @@ impl InventoryWriteService {
                 posting_date: r.posting_date, currency: "IDR".into(), posting_type: "original".into(),
                 description: Some("Stock reconciliation".into()), lines,
             };
-            self.emit_and_reconcile("stock_reconciliations", id, &env, sink, net.abs()).await?;
+            self.emit_and_reconcile(GlVoucher::StockReconciliation, id, &env, sink, net.abs()).await?;
         } else {
-            company_scope::with_company_scope(Some(r.company_id), company_scope::execute_scoped(
-                &self.db_pool,
-                sqlx::query("UPDATE inventory.stock_reconciliations SET posting_state='not_applicable'::gl_posting_state WHERE id=$1")
-                    .bind(id),
-            )).await?;
+            company_scope::with_company_scope(
+                Some(r.company_id),
+                self.recons.mark_not_applicable(&self.db_pool, id),
+            ).await?;
         }
         self.sink.publish(InventoryEvent::StockReconciled(StockReconciled {
             reconciliation_id: id, company_id: r.company_id, warehouse_id: r.warehouse_id, net_difference: net,
@@ -679,60 +684,50 @@ impl InventoryWriteService {
     /// (returns the recorded ids); `not_applicable` is a no-op. Rebuilds the envelope from the stored
     /// header (never re-touches the SLE/Bin — the physical movement already happened).
     pub async fn repost_purchase_receipt(&self, id: Uuid, sink: &dyn GlPostSink) -> Result<SubmitOutcome, InventoryError> {
-        let h = sqlx::query(
-            r#"SELECT company_id, branch_id, receipt_number, posting_date, total_value,
-                      inventory_account_id, grir_account_id, posting_state::text AS ps, journal_id, accounting_post_id
-               FROM inventory.purchase_receipts WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
-        ).bind(id);
         // RLS scope (ADR-0008), ID-only: fenced by the request/inherited scope.
-        let h = company_scope::fetch_optional_row_scoped(&self.db_pool, h).await?
+        let h = self.receipts.fetch_repost_header(&self.db_pool, id).await?
             .ok_or(InventoryError::NotFound(id))?;
-        if let Some(o) = Self::already_settled(&h, id) { return Ok(o); }
-        let amt: Decimal = h.get("total_value");
+        if let Some(o) = Self::already_settled(&h.gl, id) { return Ok(o); }
+        let amt = h.total_value;
         let env = AccountingPostEnvelope {
-            idempotency_key: id.to_string(), company_id: h.get("company_id"), branch_id: h.get("branch_id"),
-            source_type: "inventory".into(), source_id: id, source_reference: Some(h.get("receipt_number")),
-            posting_date: h.get("posting_date"), currency: "IDR".into(), posting_type: "original".into(),
+            idempotency_key: id.to_string(), company_id: h.company_id, branch_id: h.branch_id,
+            source_type: "inventory".into(), source_id: id, source_reference: Some(h.receipt_number),
+            posting_date: h.posting_date, currency: "IDR".into(), posting_type: "original".into(),
             description: Some("Goods receipt (repost)".into()),
             lines: vec![
-                GlPostLine::debit(h.get("inventory_account_id"), amt).with_description("Inventory"),
-                GlPostLine::credit(h.get("grir_account_id"), amt).with_description("GR/IR clearing"),
+                GlPostLine::debit(h.inventory_account_id, amt).with_description("Inventory"),
+                GlPostLine::credit(h.grir_account_id, amt).with_description("GR/IR clearing"),
             ],
         };
-        self.emit_and_reconcile("purchase_receipts", id, &env, sink, amt).await
+        self.emit_and_reconcile(GlVoucher::PurchaseReceipt, id, &env, sink, amt).await
     }
 
     pub async fn repost_delivery_note(&self, id: Uuid, sink: &dyn GlPostSink) -> Result<SubmitOutcome, InventoryError> {
-        let h = sqlx::query(
-            r#"SELECT company_id, branch_id, delivery_number, posting_date, total_cogs,
-                      cogs_account_id, inventory_account_id, posting_state::text AS ps, journal_id, accounting_post_id
-               FROM inventory.delivery_notes WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
-        ).bind(id);
         // RLS scope (ADR-0008), ID-only: fenced by the request/inherited scope.
-        let h = company_scope::fetch_optional_row_scoped(&self.db_pool, h).await?
+        let h = self.deliveries.fetch_repost_header(&self.db_pool, id).await?
             .ok_or(InventoryError::NotFound(id))?;
-        if let Some(o) = Self::already_settled(&h, id) { return Ok(o); }
-        let amt: Decimal = h.get("total_cogs");
+        if let Some(o) = Self::already_settled(&h.gl, id) { return Ok(o); }
+        let amt = h.total_cogs;
         let env = AccountingPostEnvelope {
-            idempotency_key: id.to_string(), company_id: h.get("company_id"), branch_id: h.get("branch_id"),
-            source_type: "inventory".into(), source_id: id, source_reference: Some(h.get("delivery_number")),
-            posting_date: h.get("posting_date"), currency: "IDR".into(), posting_type: "original".into(),
+            idempotency_key: id.to_string(), company_id: h.company_id, branch_id: h.branch_id,
+            source_type: "inventory".into(), source_id: id, source_reference: Some(h.delivery_number),
+            posting_date: h.posting_date, currency: "IDR".into(), posting_type: "original".into(),
             description: Some("Delivery COGS (repost)".into()),
             lines: vec![
-                GlPostLine::debit(h.get("cogs_account_id"), amt).with_description("COGS"),
-                GlPostLine::credit(h.get("inventory_account_id"), amt).with_description("Inventory"),
+                GlPostLine::debit(h.cogs_account_id, amt).with_description("COGS"),
+                GlPostLine::credit(h.inventory_account_id, amt).with_description("Inventory"),
             ],
         };
-        self.emit_and_reconcile("delivery_notes", id, &env, sink, amt).await
+        self.emit_and_reconcile(GlVoucher::DeliveryNote, id, &env, sink, amt).await
     }
 
     /// Short-circuit a repost when the voucher is already settled: `posted` → return the recorded
     /// ids; `not_applicable` → no-op. Returns None when a (re-)emit is actually needed.
-    fn already_settled(h: &sqlx::postgres::PgRow, id: Uuid) -> Option<SubmitOutcome> {
-        match h.get::<String, _>("ps").as_str() {
+    fn already_settled(gl: &GlSettlementState, id: Uuid) -> Option<SubmitOutcome> {
+        match gl.posting_state.as_str() {
             "posted" => Some(SubmitOutcome {
                 voucher_id: id, posted: true,
-                journal_id: h.get("journal_id"), post_id: h.get("accounting_post_id"), gl_amount: Decimal::ZERO,
+                journal_id: gl.journal_id, post_id: gl.accounting_post_id, gl_amount: Decimal::ZERO,
             }),
             "not_applicable" => Some(SubmitOutcome { voucher_id: id, posted: false, journal_id: None, post_id: None, gl_amount: Decimal::ZERO }),
             _ => None,
@@ -745,24 +740,22 @@ impl InventoryWriteService {
     /// movement is already committed; on GL failure the voucher is `failed` — now re-drivable via
     /// `repost_*` (never rolled back).
     async fn emit_and_reconcile(
-        &self, table: &str, voucher_id: Uuid, env: &AccountingPostEnvelope, sink: &dyn GlPostSink, gl_amount: Decimal,
+        &self, voucher: GlVoucher, voucher_id: Uuid, env: &AccountingPostEnvelope, sink: &dyn GlPostSink, gl_amount: Decimal,
     ) -> Result<SubmitOutcome, InventoryError> {
         debug_assert!(env.is_balanced());
         match sink.post(env).await {
             Ok(ack) => {
-                let sql = format!(
-                    "UPDATE inventory.{table} SET posting_state='posted'::gl_posting_state, journal_id=$2, accounting_post_id=$3, posted_at=now() WHERE id=$1 AND posting_state <> 'posted'::gl_posting_state"
-                );
-                company_scope::with_company_scope(Some(env.company_id), company_scope::execute_scoped(
-                    &self.db_pool,
-                    sqlx::query(&sql).bind(voucher_id).bind(ack.journal_id).bind(ack.post_id),
-                )).await?;
+                company_scope::with_company_scope(
+                    Some(env.company_id),
+                    self.gl.mark_posted(&self.db_pool, voucher, voucher_id, ack.journal_id, ack.post_id),
+                ).await?;
                 Ok(SubmitOutcome { voucher_id, posted: true, journal_id: Some(ack.journal_id), post_id: Some(ack.post_id), gl_amount })
             }
             Err(rej) => {
-                let sql = format!("UPDATE inventory.{table} SET posting_state='failed'::gl_posting_state WHERE id=$1");
-                let _ = company_scope::with_company_scope(Some(env.company_id), company_scope::execute_scoped(
-                    &self.db_pool, sqlx::query(&sql).bind(voucher_id))).await;
+                let _ = company_scope::with_company_scope(
+                    Some(env.company_id),
+                    self.gl.mark_failed(&self.db_pool, voucher, voucher_id),
+                ).await;
                 Err(InventoryError::GlRejected { code: rej.code, message: rej.message })
             }
         }

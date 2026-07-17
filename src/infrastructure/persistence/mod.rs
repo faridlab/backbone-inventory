@@ -19,6 +19,9 @@ mod stock_item_repository;
 
 // Custom persistence modules
 // <<< CUSTOM
+// The GL reconcile's SQL — uniform across all three posting voucher tables, so it belongs to no
+// single entity repository. Declared `user_owned` in metaphor.codegen.yaml.
+mod gl_voucher_repository;
 // END CUSTOM
 
 // Re-exports
@@ -44,4 +47,19 @@ pub use backbone_orm::repository::{
 
 // Re-export custom persistence types
 // <<< CUSTOM
+// The hand-written inventory SQL's parameter/projection types. Their repositories are all declared
+// `user_owned` in metaphor.codegen.yaml.
+pub use gl_voucher_repository::{GlSettlementState, GlVoucher, GlVoucherRepository};
+pub use bin_repository::BinBalanceRow;
+pub use stock_ledger_entry_repository::NewSleRow;
+pub use warehouse_repository::NewWarehouseRow;
+pub use stock_item_repository::NewStockItemRow;
+pub use purchase_receipt_repository::{NewReceiptRow, ReceiptRepostHeaderRow, ReceiptSubmitHeaderRow};
+pub use purchase_receipt_item_repository::{NewReceiptItemRow, ReceiptItemRow};
+pub use delivery_note_repository::{DeliveryRepostHeaderRow, DeliverySubmitHeaderRow, NewDeliveryRow};
+pub use delivery_note_item_repository::{DeliveryItemRow, NewDeliveryItemRow};
+pub use stock_entry_repository::NewTransferRow;
+pub use stock_entry_item_repository::NewStockEntryItemRow;
+pub use stock_reconciliation_repository::NewReconciliationRow;
+pub use stock_reconciliation_item_repository::NewReconciliationItemRow;
 // END CUSTOM

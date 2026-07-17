@@ -20,6 +20,26 @@ user_owned:
   - "src/application/service/inventory_intake.rs"
   - "src/presentation/http/guarded_routes.rs"
 
+  # Own the hand-written inventory SQL that the valuation engine orchestrates: the Bin FOR UPDATE
+  # balance lock that serializes every stock move, the append-only SLE insert, the voucher headers +
+  # lines, and the masters. Declared here — not renamed with a `_custom` suffix — so the generator
+  # skips them wholesale; this declaration is what makes editing them legitimate.
+  - "src/infrastructure/persistence/bin_repository.rs"
+  - "src/infrastructure/persistence/stock_ledger_entry_repository.rs"
+  - "src/infrastructure/persistence/warehouse_repository.rs"
+  - "src/infrastructure/persistence/stock_item_repository.rs"
+  - "src/infrastructure/persistence/purchase_receipt_repository.rs"
+  - "src/infrastructure/persistence/purchase_receipt_item_repository.rs"
+  - "src/infrastructure/persistence/delivery_note_repository.rs"
+  - "src/infrastructure/persistence/delivery_note_item_repository.rs"
+  - "src/infrastructure/persistence/stock_entry_repository.rs"
+  - "src/infrastructure/persistence/stock_entry_item_repository.rs"
+  - "src/infrastructure/persistence/stock_reconciliation_repository.rs"
+  - "src/infrastructure/persistence/stock_reconciliation_item_repository.rs"
+  # Not schema-derived at all: the GL reconcile is uniform across all three voucher tables, so it
+  # has no entity of its own.
+  - "src/infrastructure/persistence/gl_voucher_repository.rs"
+
 
   # Behavior tests (valuation golden oracle) + SLE integrity + GL seam + route probes + BDD.
   - "tests/valuation_golden_cases.rs"
