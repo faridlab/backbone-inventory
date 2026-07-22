@@ -45,6 +45,7 @@ impl DeliveryNoteItemRepository {
 pub struct NewDeliveryItemRow {
     pub id: Uuid,
     pub delivery_id: Uuid,
+    pub company_id: Uuid,
     pub item_id: Uuid,
     pub quantity: Decimal,
 }
@@ -67,10 +68,10 @@ impl DeliveryNoteItemRepository {
         l: &NewDeliveryItemRow,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
-            r#"INSERT INTO inventory.delivery_note_items (id, delivery_id, item_id, quantity, valuation_rate, cogs_amount)
-               VALUES ($1,$2,$3,$4,0,0)"#,
+            r#"INSERT INTO inventory.delivery_note_items (id, delivery_id, company_id, item_id, quantity, valuation_rate, cogs_amount)
+               VALUES ($1,$2,$3,$4,$5,0,0)"#,
         )
-        .bind(l.id).bind(l.delivery_id).bind(l.item_id).bind(l.quantity)
+        .bind(l.id).bind(l.delivery_id).bind(l.company_id).bind(l.item_id).bind(l.quantity)
         .execute(conn)
         .await?;
         Ok(())

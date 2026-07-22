@@ -46,6 +46,7 @@ user_owned:
   - "tests/gl_posting_seam.rs"
   - "tests/integrity_probes.rs"
   - "tests/consumer_surface.rs"
+  - "tests/route_surface_guard.rs"
   - "tests/features/**"
 
   # Per-entity CRUD integration harness — frozen so hand cleanups persist across regen.

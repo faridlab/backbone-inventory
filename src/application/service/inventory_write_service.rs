@@ -319,6 +319,7 @@ impl InventoryWriteService {
             self.receipt_items.insert_item(&mut tx, &NewReceiptItemRow {
                 id: Uuid::new_v4(),
                 receipt_id: id,
+                company_id: r.company_id,
                 item_id: l.item_id,
                 quantity: l.quantity,
                 rate: l.rate,
@@ -356,6 +357,7 @@ impl InventoryWriteService {
             self.delivery_items.insert_item(&mut tx, &NewDeliveryItemRow {
                 id: Uuid::new_v4(),
                 delivery_id: id,
+                company_id: d.company_id,
                 item_id: l.item_id,
                 quantity: l.quantity,
             }).await?;
@@ -538,6 +540,7 @@ impl InventoryWriteService {
             self.entry_items.insert_item(&mut tx, &NewStockEntryItemRow {
                 id: Uuid::new_v4(),
                 entry_id: id,
+                company_id: t.company_id,
                 item_id: l.item_id,
                 quantity: l.quantity,
             }).await?;
@@ -623,6 +626,7 @@ impl InventoryWriteService {
             self.recon_items.insert_item(&mut tx, &NewReconciliationItemRow {
                 id: Uuid::new_v4(),
                 reconciliation_id: id,
+                company_id: r.company_id,
                 item_id: l.item_id,
                 counted_qty: l.counted_qty,
                 counted_rate: l.counted_rate,

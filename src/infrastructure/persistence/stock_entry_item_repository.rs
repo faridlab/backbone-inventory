@@ -42,6 +42,7 @@ impl StockEntryItemRepository {
 pub struct NewStockEntryItemRow {
     pub id: Uuid,
     pub entry_id: Uuid,
+    pub company_id: Uuid,
     pub item_id: Uuid,
     pub quantity: Decimal,
 }
@@ -55,8 +56,8 @@ impl StockEntryItemRepository {
         conn: &mut sqlx::PgConnection,
         l: &NewStockEntryItemRow,
     ) -> Result<(), sqlx::Error> {
-        sqlx::query("INSERT INTO inventory.stock_entry_items (id, entry_id, item_id, quantity) VALUES ($1,$2,$3,$4)")
-            .bind(l.id).bind(l.entry_id).bind(l.item_id).bind(l.quantity)
+        sqlx::query("INSERT INTO inventory.stock_entry_items (id, entry_id, company_id, item_id, quantity) VALUES ($1,$2,$3,$4,$5)")
+            .bind(l.id).bind(l.entry_id).bind(l.company_id).bind(l.item_id).bind(l.quantity)
             .execute(conn)
             .await?;
         Ok(())

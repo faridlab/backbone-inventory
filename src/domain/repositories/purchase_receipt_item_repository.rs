@@ -45,13 +45,14 @@ pub struct PurchaseReceiptItemPaginatedResult {
 #[derive(Debug, Clone, Default)]
 pub struct PurchaseReceiptItemFilter {
     pub receipt_id: Option<Uuid>,
+    pub company_id: Option<Uuid>,
     pub item_id: Option<Uuid>,
 }
 
 impl PurchaseReceiptItemFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.receipt_id.is_some() || self.item_id.is_some()
+        self.receipt_id.is_some() || self.company_id.is_some() || self.item_id.is_some()
     }
 }
 

@@ -92,30 +92,22 @@ impl InventoryModule {
     pub fn all_crud_routes(&self) -> Router {
         use presentation::http::{
             create_delivery_note_routes,
-            create_delivery_note_item_routes,
             create_purchase_receipt_routes,
-            create_purchase_receipt_item_routes,
             create_stock_entry_routes,
-            create_stock_entry_item_routes,
             create_stock_ledger_entry_routes,
             create_bin_routes,
             create_stock_reconciliation_routes,
-            create_stock_reconciliation_item_routes,
             create_warehouse_routes,
             create_stock_item_routes,
         };
 
         Router::new()
             .merge(create_delivery_note_routes(self.delivery_note_service.clone()))
-            .merge(create_delivery_note_item_routes(self.delivery_note_item_service.clone()))
             .merge(create_purchase_receipt_routes(self.purchase_receipt_service.clone()))
-            .merge(create_purchase_receipt_item_routes(self.purchase_receipt_item_service.clone()))
             .merge(create_stock_entry_routes(self.stock_entry_service.clone()))
-            .merge(create_stock_entry_item_routes(self.stock_entry_item_service.clone()))
             .merge(create_stock_ledger_entry_routes(self.stock_ledger_entry_service.clone()))
             .merge(create_bin_routes(self.bin_service.clone()))
             .merge(create_stock_reconciliation_routes(self.stock_reconciliation_service.clone()))
-            .merge(create_stock_reconciliation_item_routes(self.stock_reconciliation_item_service.clone()))
             .merge(create_warehouse_routes(self.warehouse_service.clone()))
             .merge(create_stock_item_routes(self.stock_item_service.clone()))
     }

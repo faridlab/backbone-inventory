@@ -46,6 +46,7 @@ impl StockReconciliationItemRepository {
 pub struct NewReconciliationItemRow {
     pub id: Uuid,
     pub reconciliation_id: Uuid,
+    pub company_id: Uuid,
     pub item_id: Uuid,
     pub counted_qty: Decimal,
     pub counted_rate: Decimal,
@@ -64,10 +65,10 @@ impl StockReconciliationItemRepository {
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"INSERT INTO inventory.stock_reconciliation_items
-                (id, reconciliation_id, item_id, counted_qty, counted_rate, qty_difference, value_difference)
-               VALUES ($1,$2,$3,$4,$5,$6,$7)"#,
+                (id, reconciliation_id, company_id, item_id, counted_qty, counted_rate, qty_difference, value_difference)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)"#,
         )
-        .bind(l.id).bind(l.reconciliation_id).bind(l.item_id).bind(l.counted_qty)
+        .bind(l.id).bind(l.reconciliation_id).bind(l.company_id).bind(l.item_id).bind(l.counted_qty)
         .bind(l.counted_rate).bind(l.qty_difference).bind(l.value_difference)
         .execute(conn)
         .await?;

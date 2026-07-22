@@ -120,6 +120,7 @@ impl From<DeliveryNoteItemId> for Uuid {
 pub struct DeliveryNoteItemDto {
     pub id: DeliveryNoteItemId,
     pub delivery_id: Uuid,
+    pub company_id: Uuid,
     pub item_id: Uuid,
     pub quantity: Decimal,
     pub valuation_rate: Decimal,
@@ -249,6 +250,7 @@ impl From<PurchaseReceiptItemId> for Uuid {
 pub struct PurchaseReceiptItemDto {
     pub id: PurchaseReceiptItemId,
     pub receipt_id: Uuid,
+    pub company_id: Uuid,
     pub item_id: Uuid,
     pub quantity: Decimal,
     pub rate: Decimal,
@@ -370,6 +372,7 @@ impl From<StockEntryItemId> for Uuid {
 pub struct StockEntryItemDto {
     pub id: StockEntryItemId,
     pub entry_id: Uuid,
+    pub company_id: Uuid,
     pub item_id: Uuid,
     pub quantity: Decimal,
     pub metadata: serde_json::Value,
@@ -620,6 +623,7 @@ impl From<StockReconciliationItemId> for Uuid {
 pub struct StockReconciliationItemDto {
     pub id: StockReconciliationItemId,
     pub reconciliation_id: Uuid,
+    pub company_id: Uuid,
     pub item_id: Uuid,
     pub counted_qty: Decimal,
     pub counted_rate: Decimal,

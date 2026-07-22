@@ -230,6 +230,9 @@ impl backbone_orm::EntityRepoMeta for Warehouse {
     fn search_fields() -> &'static [&'static str] {
         &["code", "name"]
     }
+    fn company_field() -> Option<&'static str> {
+        Some("company_id")
+    }
 }
 
 /// Builder for Warehouse entity

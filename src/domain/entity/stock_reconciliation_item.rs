@@ -50,6 +50,7 @@ impl std::ops::Deref for StockReconciliationItemId {
 pub struct StockReconciliationItem {
     pub id: Uuid,
     pub reconciliation_id: Uuid,
+    pub company_id: Uuid,
     pub item_id: Uuid,
     pub counted_qty: Decimal,
     pub counted_rate: Decimal,
@@ -67,10 +68,11 @@ impl StockReconciliationItem {
     }
 
     /// Create a new StockReconciliationItem with required fields
-    pub fn new(reconciliation_id: Uuid, item_id: Uuid, counted_qty: Decimal, counted_rate: Decimal, qty_difference: Decimal, value_difference: Decimal) -> Self {
+    pub fn new(reconciliation_id: Uuid, company_id: Uuid, item_id: Uuid, counted_qty: Decimal, counted_rate: Decimal, qty_difference: Decimal, value_difference: Decimal) -> Self {
         Self {
             id: Uuid::new_v4(),
             reconciliation_id,
+            company_id,
             item_id,
             counted_qty,
             counted_rate,
@@ -142,6 +144,9 @@ impl StockReconciliationItem {
                 "reconciliation_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.reconciliation_id = v; }
                 }
+                "company_id" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
+                }
                 "item_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.item_id = v; }
                 }
@@ -212,11 +217,15 @@ impl backbone_orm::EntityRepoMeta for StockReconciliationItem {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
         m.insert("reconciliation_id".to_string(), "uuid".to_string());
+        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("item_id".to_string(), "uuid".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
         &[]
+    }
+    fn company_field() -> Option<&'static str> {
+        Some("company_id")
     }
     fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
         &[("reconciliation", "stock_reconciliations", "reconciliationId")]
@@ -230,6 +239,7 @@ impl backbone_orm::EntityRepoMeta for StockReconciliationItem {
 #[derive(Debug, Clone, Default)]
 pub struct StockReconciliationItemBuilder {
     reconciliation_id: Option<Uuid>,
+    company_id: Option<Uuid>,
     item_id: Option<Uuid>,
     counted_qty: Option<Decimal>,
     counted_rate: Option<Decimal>,
@@ -241,6 +251,12 @@ impl StockReconciliationItemBuilder {
     /// Set the reconciliation_id field (required)
     pub fn reconciliation_id(mut self, value: Uuid) -> Self {
         self.reconciliation_id = Some(value);
+        self
+    }
+
+    /// Set the company_id field (required)
+    pub fn company_id(mut self, value: Uuid) -> Self {
+        self.company_id = Some(value);
         self
     }
 
@@ -279,12 +295,14 @@ impl StockReconciliationItemBuilder {
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<StockReconciliationItem, String> {
         let reconciliation_id = self.reconciliation_id.ok_or_else(|| "reconciliation_id is required".to_string())?;
+        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
         let item_id = self.item_id.ok_or_else(|| "item_id is required".to_string())?;
         let counted_qty = self.counted_qty.ok_or_else(|| "counted_qty is required".to_string())?;
 
         Ok(StockReconciliationItem {
             id: Uuid::new_v4(),
             reconciliation_id,
+            company_id,
             item_id,
             counted_qty,
             counted_rate: self.counted_rate.unwrap_or(Decimal::from(0)),

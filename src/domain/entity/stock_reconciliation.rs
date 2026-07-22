@@ -284,6 +284,9 @@ impl backbone_orm::EntityRepoMeta for StockReconciliation {
     fn search_fields() -> &'static [&'static str] {
         &["recon_number"]
     }
+    fn company_field() -> Option<&'static str> {
+        Some("company_id")
+    }
 }
 
 /// Builder for StockReconciliation entity

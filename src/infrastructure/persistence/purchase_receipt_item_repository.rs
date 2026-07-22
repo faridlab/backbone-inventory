@@ -44,6 +44,7 @@ impl PurchaseReceiptItemRepository {
 pub struct NewReceiptItemRow {
     pub id: Uuid,
     pub receipt_id: Uuid,
+    pub company_id: Uuid,
     pub item_id: Uuid,
     pub quantity: Decimal,
     pub rate: Decimal,
@@ -67,10 +68,10 @@ impl PurchaseReceiptItemRepository {
         l: &NewReceiptItemRow,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
-            r#"INSERT INTO inventory.purchase_receipt_items (id, receipt_id, item_id, quantity, rate, amount)
-               VALUES ($1,$2,$3,$4,$5,$6)"#,
+            r#"INSERT INTO inventory.purchase_receipt_items (id, receipt_id, company_id, item_id, quantity, rate, amount)
+               VALUES ($1,$2,$3,$4,$5,$6,$7)"#,
         )
-        .bind(l.id).bind(l.receipt_id).bind(l.item_id).bind(l.quantity).bind(l.rate).bind(l.amount)
+        .bind(l.id).bind(l.receipt_id).bind(l.company_id).bind(l.item_id).bind(l.quantity).bind(l.rate).bind(l.amount)
         .execute(conn)
         .await?;
         Ok(())

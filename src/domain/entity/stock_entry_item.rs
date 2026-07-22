@@ -50,6 +50,7 @@ impl std::ops::Deref for StockEntryItemId {
 pub struct StockEntryItem {
     pub id: Uuid,
     pub entry_id: Uuid,
+    pub company_id: Uuid,
     pub item_id: Uuid,
     pub quantity: Decimal,
     #[serde(default)]
@@ -64,10 +65,11 @@ impl StockEntryItem {
     }
 
     /// Create a new StockEntryItem with required fields
-    pub fn new(entry_id: Uuid, item_id: Uuid, quantity: Decimal) -> Self {
+    pub fn new(entry_id: Uuid, company_id: Uuid, item_id: Uuid, quantity: Decimal) -> Self {
         Self {
             id: Uuid::new_v4(),
             entry_id,
+            company_id,
             item_id,
             quantity,
             metadata: AuditMetadata::default(),
@@ -136,6 +138,9 @@ impl StockEntryItem {
                 "entry_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.entry_id = v; }
                 }
+                "company_id" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
+                }
                 "item_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.item_id = v; }
                 }
@@ -197,11 +202,15 @@ impl backbone_orm::EntityRepoMeta for StockEntryItem {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
         m.insert("entry_id".to_string(), "uuid".to_string());
+        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("item_id".to_string(), "uuid".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
         &[]
+    }
+    fn company_field() -> Option<&'static str> {
+        Some("company_id")
     }
     fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
         &[("entry", "stock_entries", "entryId")]
@@ -215,6 +224,7 @@ impl backbone_orm::EntityRepoMeta for StockEntryItem {
 #[derive(Debug, Clone, Default)]
 pub struct StockEntryItemBuilder {
     entry_id: Option<Uuid>,
+    company_id: Option<Uuid>,
     item_id: Option<Uuid>,
     quantity: Option<Decimal>,
 }
@@ -223,6 +233,12 @@ impl StockEntryItemBuilder {
     /// Set the entry_id field (required)
     pub fn entry_id(mut self, value: Uuid) -> Self {
         self.entry_id = Some(value);
+        self
+    }
+
+    /// Set the company_id field (required)
+    pub fn company_id(mut self, value: Uuid) -> Self {
+        self.company_id = Some(value);
         self
     }
 
@@ -243,12 +259,14 @@ impl StockEntryItemBuilder {
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<StockEntryItem, String> {
         let entry_id = self.entry_id.ok_or_else(|| "entry_id is required".to_string())?;
+        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
         let item_id = self.item_id.ok_or_else(|| "item_id is required".to_string())?;
         let quantity = self.quantity.ok_or_else(|| "quantity is required".to_string())?;
 
         Ok(StockEntryItem {
             id: Uuid::new_v4(),
             entry_id,
+            company_id,
             item_id,
             quantity,
             metadata: AuditMetadata::default(),

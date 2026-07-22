@@ -139,6 +139,11 @@ models:
         attributes: ["@required", "@foreign_key(PurchaseReceipt.id)"]
         description: "Owning receipt"
 
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Books/stock owner # logical FK to organization.Company.id; denormalized from PurchaseReceipt to FORCE RLS on the child (ADR-0010 Decision A)"
+
       item_id:
         type: uuid
         attributes: ["@required", "@exclude_from_foreign_key_check"]
