@@ -208,7 +208,7 @@ dependencies = [
 
 [[package]]
 name = "backbone-accounting"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -294,6 +294,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "backbone-gl-posting"
+version = "0.1.0"
+source = "git+https://github.com/faridlab/backbone-framework?tag=v2.7.5#15a7d6cd42d1398bababc5bac38230608a838a07"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "rust_decimal",
+ "serde",
+ "uuid",
+]
+
+[[package]]
 name = "backbone-inventory"
 version = "0.2.0"
 dependencies = [
@@ -303,6 +315,7 @@ dependencies = [
  "backbone-accounting",
  "backbone-auth",
  "backbone-core",
+ "backbone-gl-posting",
  "backbone-messaging",
  "backbone-orm",
  "chrono",

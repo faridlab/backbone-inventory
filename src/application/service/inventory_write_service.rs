@@ -420,7 +420,7 @@ impl InventoryWriteService {
         let env = AccountingPostEnvelope {
             idempotency_key: id.to_string(), company_id: company, branch_id: branch,
             source_type: "inventory".into(), source_id: id, source_reference: Some(voucher_no.clone()),
-            posting_date, currency: "IDR".into(), posting_type: "original".into(),
+            posting_date, currency: "IDR".into(), posting_type: "original".into(), reverses_post_id: None,
             description: Some("Goods receipt".into()),
             lines: vec![
                 GlPostLine::debit(inv_acct, total_debit).with_description("Inventory"),
@@ -497,7 +497,7 @@ impl InventoryWriteService {
         let env = AccountingPostEnvelope {
             idempotency_key: id.to_string(), company_id: company, branch_id: branch,
             source_type: "inventory".into(), source_id: id, source_reference: Some(voucher_no.clone()),
-            posting_date, currency: "IDR".into(), posting_type: "original".into(),
+            posting_date, currency: "IDR".into(), posting_type: "original".into(), reverses_post_id: None,
             description: Some("Delivery COGS".into()),
             lines: vec![
                 GlPostLine::debit(cogs_acct, total_cogs).with_description("COGS"),
@@ -658,7 +658,7 @@ impl InventoryWriteService {
             let env = AccountingPostEnvelope {
                 idempotency_key: id.to_string(), company_id: r.company_id, branch_id: None,
                 source_type: "inventory".into(), source_id: id, source_reference: Some(r.recon_number.clone()),
-                posting_date: r.posting_date, currency: "IDR".into(), posting_type: "original".into(),
+                posting_date: r.posting_date, currency: "IDR".into(), posting_type: "original".into(), reverses_post_id: None,
                 description: Some("Stock reconciliation".into()), lines,
             };
             self.emit_and_reconcile(GlVoucher::StockReconciliation, id, &env, sink, net.abs()).await?;
@@ -696,7 +696,7 @@ impl InventoryWriteService {
         let env = AccountingPostEnvelope {
             idempotency_key: id.to_string(), company_id: h.company_id, branch_id: h.branch_id,
             source_type: "inventory".into(), source_id: id, source_reference: Some(h.receipt_number),
-            posting_date: h.posting_date, currency: "IDR".into(), posting_type: "original".into(),
+            posting_date: h.posting_date, currency: "IDR".into(), posting_type: "original".into(), reverses_post_id: None,
             description: Some("Goods receipt (repost)".into()),
             lines: vec![
                 GlPostLine::debit(h.inventory_account_id, amt).with_description("Inventory"),
@@ -715,7 +715,7 @@ impl InventoryWriteService {
         let env = AccountingPostEnvelope {
             idempotency_key: id.to_string(), company_id: h.company_id, branch_id: h.branch_id,
             source_type: "inventory".into(), source_id: id, source_reference: Some(h.delivery_number),
-            posting_date: h.posting_date, currency: "IDR".into(), posting_type: "original".into(),
+            posting_date: h.posting_date, currency: "IDR".into(), posting_type: "original".into(), reverses_post_id: None,
             description: Some("Delivery COGS (repost)".into()),
             lines: vec![
                 GlPostLine::debit(h.cogs_account_id, amt).with_description("COGS"),
