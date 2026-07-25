@@ -1,0 +1,6 @@
+# Copy to .cargo/config.toml (gitignored) to build inventory against the LOCAL backbone-accounting
+# checkout at ../backbone-accounting. Without it, Cargo builds backbone-accounting from its pinned
+# git tag (the prod/CI path). See the [dev-dependencies] block in Cargo.toml.
+
+[patch."https://github.com/faridlab/backbone-accounting"]
+backbone-accounting = { path = "../backbone-accounting" }

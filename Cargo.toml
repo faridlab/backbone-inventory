@@ -1,6 +1,6 @@
 [package]
 name = "backbone-inventory"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 description = "Inventory: stock ledger of record (SLE) + moving-average valuation; emits COGS/asset AccountingPost (Delivery/Receipt -> GL)"
 
@@ -90,4 +90,7 @@ rand = "0.8"
 # TEST-ONLY edge: the GL-posting seam test drives the REAL backbone-accounting PostingService via
 # an in-test adapter (envelope -> PostingRequest). Dev-dependency ONLY — the shipped inventory
 # library has ZERO normal edge to accounting (verify: cargo tree -e normal -i backbone-accounting).
-backbone-accounting = { path = "../backbone-accounting" }
+#
+# Dual-mode: committed source is the git tag (prod/standalone/CI); .cargo/config.toml (gitignored)
+# patches it to ../backbone-accounting for local workspace dev. See .cargo/config.toml.example.
+backbone-accounting = { git = "https://github.com/faridlab/backbone-accounting", tag = "v0.4.0" }
