@@ -26,6 +26,14 @@ pub mod stock_item_service;
 pub mod inventory_events;
 pub mod inventory_gl;
 pub mod inventory_write_service;
+// The write surface, chunked: each is an `impl InventoryWriteService` block over the vocabulary
+// that stays in `inventory_write_service` (so the `inventory_write_service::{NewReceipt, ...}`
+// import paths are unchanged).
+pub mod inventory_masters;
+pub mod inventory_receipt;
+pub mod inventory_delivery;
+pub mod inventory_transfer;
+pub mod inventory_reconciliation;
 pub mod inventory_read;
 pub mod inventory_intake;
 // END CUSTOM

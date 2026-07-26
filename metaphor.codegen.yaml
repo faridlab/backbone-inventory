@@ -16,6 +16,14 @@ user_owned:
   - "src/application/service/inventory_events.rs"
   - "src/application/service/inventory_gl.rs"
   - "src/application/service/inventory_write_service.rs"
+  # The write surface, chunked out of inventory_write_service.rs. Each is an `impl
+  # InventoryWriteService` block; the shared vocabulary (input structs, outcomes, errors) stays
+  # in inventory_write_service.rs.
+  - "src/application/service/inventory_masters.rs"
+  - "src/application/service/inventory_receipt.rs"
+  - "src/application/service/inventory_delivery.rs"
+  - "src/application/service/inventory_transfer.rs"
+  - "src/application/service/inventory_reconciliation.rs"
   - "src/application/service/inventory_read.rs"
   - "src/application/service/inventory_intake.rs"
   - "src/presentation/http/guarded_routes.rs"
