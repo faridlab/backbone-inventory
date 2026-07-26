@@ -5,6 +5,7 @@
 //! Both schemas (`inventory.*`, `accounting.*`) live in one DB. Requires DATABASE_URL (:5433/backbone_inventory).
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use rust_decimal::Decimal;
 use sqlx::{PgPool, Row};
@@ -20,6 +21,7 @@ use backbone_inventory::application::service::inventory_write_service::{
 use backbone_accounting::application::service::posting_service::{
     PostingLine, PostingRequest, PostingService,
 };
+use backbone_accounting::infrastructure::persistence::SqlxPostingRepository;
 
 struct AccountingAdapter { svc: PostingService }
 #[async_trait::async_trait]
@@ -106,7 +108,7 @@ async fn receipt_posts_asset_to_real_gl() {
     let pool = pool().await;
     let (company, coa) = seed_coa(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
-    let adapter = AccountingAdapter { svc: PostingService::new(pool.clone()) };
+    let adapter = AccountingAdapter { svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))) };
     let wh = warehouse(&w, company).await;
     let item = Uuid::new_v4();
     let rid = w.create_purchase_receipt(NewReceipt {
@@ -131,7 +133,7 @@ async fn delivery_posts_cogs_to_real_gl() {
     let pool = pool().await;
     let (company, coa) = seed_coa(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
-    let adapter = AccountingAdapter { svc: PostingService::new(pool.clone()) };
+    let adapter = AccountingAdapter { svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))) };
     let wh = warehouse(&w, company).await;
     let item = Uuid::new_v4();
     for (q, r) in [("10", "100"), ("10", "120")] {
@@ -162,7 +164,7 @@ async fn reconciliation_posts_adjustment_to_real_gl() {
     let pool = pool().await;
     let (company, coa) = seed_coa(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
-    let adapter = AccountingAdapter { svc: PostingService::new(pool.clone()) };
+    let adapter = AccountingAdapter { svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))) };
     let wh = warehouse(&w, company).await;
     let item = Uuid::new_v4();
     let rid = w.create_purchase_receipt(NewReceipt {
@@ -190,7 +192,7 @@ async fn gl_rejection_leaves_movement_but_marks_failed() {
     let pool = pool().await;
     let (company, coa) = seed_coa(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
-    let adapter = AccountingAdapter { svc: PostingService::new(pool.clone()) };
+    let adapter = AccountingAdapter { svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))) };
     let wh = warehouse(&w, company).await;
     let item = Uuid::new_v4();
     let rid = w.create_purchase_receipt(NewReceipt {
@@ -214,7 +216,7 @@ async fn resubmit_is_refused() {
     let pool = pool().await;
     let (company, coa) = seed_coa(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
-    let adapter = AccountingAdapter { svc: PostingService::new(pool.clone()) };
+    let adapter = AccountingAdapter { svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))) };
     let wh = warehouse(&w, company).await;
     let rid = w.create_purchase_receipt(NewReceipt {
         receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
@@ -234,7 +236,7 @@ async fn repost_recovers_a_failed_post() {
     let pool = pool().await;
     let (company, coa) = seed_coa(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
-    let good = AccountingAdapter { svc: PostingService::new(pool.clone()) };
+    let good = AccountingAdapter { svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))) };
     let wh = warehouse(&w, company).await;
     let item = Uuid::new_v4();
     let rid = w.create_purchase_receipt(NewReceipt {
@@ -266,7 +268,7 @@ async fn repost_does_not_double_post() {
     let pool = pool().await;
     let (company, coa) = seed_coa(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
-    let adapter = AccountingAdapter { svc: PostingService::new(pool.clone()) };
+    let adapter = AccountingAdapter { svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))) };
     let wh = warehouse(&w, company).await;
     let rid = w.create_purchase_receipt(NewReceipt {
         receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
