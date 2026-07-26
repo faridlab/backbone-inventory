@@ -1,6 +1,6 @@
 [package]
 name = "backbone-inventory"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2021"
 description = "Inventory: stock ledger of record (SLE) + moving-average valuation; emits COGS/asset AccountingPost (Delivery/Receipt -> GL)"
 
