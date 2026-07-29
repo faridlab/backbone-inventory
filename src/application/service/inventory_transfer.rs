@@ -2,9 +2,10 @@
 //!
 //! An `impl InventoryWriteService` chunk over the vocabulary in [`super::inventory_write_service`]:
 //! the warehouse-to-warehouse move. Value-neutral — no GL — but still drives the moving-average
-//! engine: paired out/in SLE at the source rate, source bin locked before target (the lock order
-//! that stops two transfers touching the same pair of warehouses from deadlocking), and the same
-//! residual-flush rule as delivery (draining the source to 0 carries its entire remaining value).
+//! engine: paired out/in SLE at the source rate, BOTH bins locked in canonical `warehouse_id` order
+//! before either leg runs (the lock order that stops two transfers touching the same pair of
+//! warehouses — including opposing A→B / B→A — from deadlocking), and the same residual-flush rule
+//! as delivery (draining the source to 0 carries its entire remaining value).
 //!
 //! Per the module's 4-layer rule this file holds no SQL — the statements live on
 //! `StockEntryRepository` / `StockEntryItemRepository` / `BinRepository` /
@@ -57,10 +58,17 @@ impl InventoryWriteService {
                 item_id: l.item_id,
                 quantity: l.quantity,
             }).await?;
-            // OUT of source — the SOURCE bin is always locked before the target. Both bins are locked
-            // on this one transaction; keep this order (it is what stops two transfers touching the
-            // same pair of warehouses from deadlocking against each other).
-            let from = self.bins.lock_or_init(&mut tx, t.company_id, l.item_id, t.from_warehouse_id).await?;
+            // Lock BOTH bins in CANONICAL warehouse_id order before either leg runs. The earlier
+            // "source before target" rule only ordered locks WITHIN one voucher — two concurrent
+            // transfers A→B and B→A on the same item each took their own source first and deadlocked
+            // at the Postgres row lock. Locking min(warehouse_id) first makes every transfer on the
+            // pair take locks in the same order, so they serialize instead of deadlocking
+            // (council 2026-07-29, parking-lot item).
+            let (from_wh, to_wh) = (t.from_warehouse_id, t.to_warehouse_id);
+            let (first_wh, second_wh) = if from_wh < to_wh { (from_wh, to_wh) } else { (to_wh, from_wh) };
+            let first = self.bins.lock_or_init(&mut tx, t.company_id, l.item_id, first_wh).await?;
+            let second = self.bins.lock_or_init(&mut tx, t.company_id, l.item_id, second_wh).await?;
+            let (from, to) = if from_wh == first_wh { (first, second) } else { (second, first) };
             if from.actual_qty < l.quantity {
                 return Err(InventoryError::InsufficientStock { item_id: l.item_id, warehouse_id: t.from_warehouse_id, available: from.actual_qty, requested: l.quantity });
             }
@@ -80,8 +88,9 @@ impl InventoryWriteService {
                 stock_value_difference: -move_value, voucher_type: "stock_entry", voucher_id: id,
                 voucher_no: &t.entry_number, sle_no,
             }).await?;
-            // IN to target at the source rate (value conserved)
-            let to = self.bins.lock_or_init(&mut tx, t.company_id, l.item_id, t.to_warehouse_id).await?;
+            // IN to target at the source rate (value conserved). `to` was captured above (locked in
+            // canonical order, before the OUT leg ran) — the OUT leg only touches the source bin, so
+            // this snapshot is the target's correct starting balance.
             let to_qty = to.actual_qty + l.quantity;
             let to_value = to.stock_value + move_value;
             let to_rate = if to_qty > Decimal::ZERO { rate6(to_value / to_qty) } else { Decimal::ZERO };
