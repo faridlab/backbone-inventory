@@ -63,6 +63,7 @@ async fn availability_reflects_received_stock() {
     let rid = w.create_purchase_receipt(NewReceipt {
         receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
+        currency: "IDR".into(),
         inventory_account_id: Uuid::new_v4(), grir_account_id: Uuid::new_v4(),
         lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") }],
     }).await.unwrap();
@@ -90,6 +91,7 @@ async fn delivery_requested_creates_draft_linked_to_order() {
     let did = intake.on_delivery_requested(DeliveryRequested {
         delivery_number: uq("DN"), company_id: company, branch_id: None, customer_id: Uuid::new_v4(),
         source_so_id: Some(so), warehouse_id: wh, posting_date: day(),
+        currency: "IDR".into(),
         cogs_account_id: Uuid::new_v4(), inventory_account_id: Uuid::new_v4(),
         lines: vec![DeliveryRequestLine { item_id: item, quantity: d("3") }],
     }).await.unwrap();

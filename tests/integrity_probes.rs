@@ -191,3 +191,92 @@ async fn body_company_id_cannot_override_the_token_tenant() {
     assert_eq!(persisted, token_company, "tenant must come from the token, not the body");
     assert_ne!(persisted, attacker_company, "the body's companyId must be ignored");
 }
+
+// IIP-5 (council 2026-07-29): the Bin running balance must tie to the append-only SLE for EVERY
+// (item, warehouse) after a mixed workload (receipt + delivery + transfer + reconciliation + cancel).
+// bin.stock_value == Σ sle.stock_value_difference and bin.actual_qty == Σ sle.actual_qty. A non-zero
+// drift would mean a Bin was touched outside the engine — the leak Phase-1 closed. Defense-in-depth.
+#[tokio::test]
+async fn bin_ties_to_sle_after_mixed_workload() {
+    use backbone_inventory::application::service::inventory_gl::{
+        AccountingPostEnvelope, GlPostAck, GlPostRejected, GlPostSink,
+    };
+    use backbone_inventory::application::service::inventory_write_service::{
+        DeliveryLine, InventoryWriteService, NewDelivery, NewReceipt, NewReconciliation, NewTransfer,
+        NewWarehouse, ReceiptLine, ReconLine,
+    };
+    use rust_decimal::Decimal;
+
+    struct StubGl;
+    #[async_trait::async_trait]
+    impl GlPostSink for StubGl {
+        async fn post(&self, _e: &AccountingPostEnvelope) -> Result<GlPostAck, GlPostRejected> {
+            Ok(GlPostAck { post_id: Uuid::new_v4(), journal_id: Uuid::new_v4(), idempotent_reuse: false })
+        }
+    }
+    fn d(s: &str) -> Decimal { Decimal::from_str_exact(s).unwrap() }
+    fn day() -> chrono::NaiveDate { chrono::NaiveDate::from_ymd_opt(2026, 7, 29).unwrap() }
+
+    let pool = pool().await;
+    let w = InventoryWriteService::new(pool.clone());
+    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let wh1 = w.create_warehouse(NewWarehouse {
+        company_id: company, code: uq("WH"), name: "A".into(),
+        warehouse_type: None, parent_warehouse_id: None, is_group: false,
+    }).await.unwrap();
+    let wh2 = w.create_warehouse(NewWarehouse {
+        company_id: company, code: uq("WH"), name: "B".into(),
+        warehouse_type: None, parent_warehouse_id: None, is_group: false,
+    }).await.unwrap();
+
+    // A workload spanning every movement kind + a cancellation.
+    let r1 = w.create_purchase_receipt(NewReceipt {
+        receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
+        source_po_id: None, warehouse_id: wh1, posting_date: day(), currency: "IDR".into(),
+        inventory_account_id: Uuid::new_v4(), grir_account_id: Uuid::new_v4(),
+        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") }],
+    }).await.unwrap();
+    w.submit_purchase_receipt(r1, &StubGl).await.unwrap();
+    let did = w.create_delivery_note(NewDelivery {
+        delivery_number: uq("DN"), company_id: company, branch_id: None, customer_id: Uuid::new_v4(),
+        source_so_id: None, warehouse_id: wh1, posting_date: day(), currency: "IDR".into(),
+        cogs_account_id: Uuid::new_v4(), inventory_account_id: Uuid::new_v4(),
+        lines: vec![DeliveryLine { item_id: item, quantity: d("3") }],
+    }).await.unwrap();
+    w.submit_delivery_note(did, &StubGl).await.unwrap();
+    w.submit_transfer(NewTransfer {
+        entry_number: uq("SE"), company_id: company, from_warehouse_id: wh1, to_warehouse_id: wh2,
+        posting_date: day(), lines: vec![DeliveryLine { item_id: item, quantity: d("2") }],
+    }).await.unwrap();
+    w.submit_reconciliation(NewReconciliation {
+        recon_number: uq("SR"), company_id: company, warehouse_id: wh2, posting_date: day(),
+        currency: "IDR".into(), inventory_account_id: Uuid::new_v4(), adjustment_account_id: Uuid::new_v4(),
+        lines: vec![ReconLine { item_id: item, counted_qty: d("2"), counted_rate: Decimal::ZERO }],
+    }, &StubGl).await.unwrap();
+    w.cancel_delivery_note(did, &StubGl).await.unwrap();
+
+    // Drift check across every (item, warehouse) bin this company owns: Bin == Σ SLE.
+    let drift: Vec<(Uuid, Uuid, Decimal, Decimal)> = sqlx::query_as(
+        r#"WITH sle AS (
+              SELECT item_id, warehouse_id,
+                     SUM(actual_qty) AS sum_qty, SUM(stock_value_difference) AS sum_val
+              FROM inventory.stock_ledger_entries
+              WHERE company_id=$1 AND (metadata->>'deleted_at') IS NULL
+              GROUP BY item_id, warehouse_id)
+           SELECT b.item_id, b.warehouse_id,
+                  b.actual_qty - COALESCE(sle.sum_qty, 0),
+                  b.stock_value - COALESCE(sle.sum_val, 0)
+           FROM inventory.bins b
+           LEFT JOIN sle USING (item_id, warehouse_id)
+           WHERE b.company_id=$1 AND (b.metadata->>'deleted_at') IS NULL"#,
+    )
+    .bind(company)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert!(!drift.is_empty(), "the workload should have produced at least one bin");
+    for (item_id, wh_id, qty_drift, val_drift) in &drift {
+        assert_eq!(*qty_drift, Decimal::ZERO, "qty drift on item {item_id} wh {wh_id}");
+        assert_eq!(*val_drift, Decimal::ZERO, "value drift on item {item_id} wh {wh_id}");
+    }
+}

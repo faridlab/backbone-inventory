@@ -54,12 +54,12 @@ pub use bin_repository::{BinAvailabilityRow, BinBalanceRow, BinWarehouseAvailabi
 pub use stock_ledger_entry_repository::NewSleRow;
 pub use warehouse_repository::NewWarehouseRow;
 pub use stock_item_repository::NewStockItemRow;
-pub use purchase_receipt_repository::{NewReceiptRow, ReceiptRepostHeaderRow, ReceiptSubmitHeaderRow};
+pub use purchase_receipt_repository::{NewReceiptRow, ReceiptCancelHeaderRow, ReceiptRepostHeaderRow, ReceiptSubmitHeaderRow};
 pub use purchase_receipt_item_repository::{NewReceiptItemRow, ReceiptItemRow};
-pub use delivery_note_repository::{DeliveryRepostHeaderRow, DeliverySubmitHeaderRow, NewDeliveryRow};
-pub use delivery_note_item_repository::{DeliveryItemRow, NewDeliveryItemRow};
+pub use delivery_note_repository::{DeliveryCancelHeaderRow, DeliveryRepostHeaderRow, DeliverySubmitHeaderRow, NewDeliveryRow};
+pub use delivery_note_item_repository::{DeliveryCancelItemRow, DeliveryItemRow, NewDeliveryItemRow};
 pub use stock_entry_repository::NewTransferRow;
 pub use stock_entry_item_repository::NewStockEntryItemRow;
-pub use stock_reconciliation_repository::NewReconciliationRow;
+pub use stock_reconciliation_repository::{NewReconciliationRow, ReconRepostHeaderRow};
 pub use stock_reconciliation_item_repository::NewReconciliationItemRow;
 // END CUSTOM

@@ -53,6 +53,25 @@ impl GlPostSink for FailingGl {
     }
 }
 
+// A sink that captures the envelope inventory emits — so a test can assert the reversal contract
+// (posting_type, reverses_post_id, balanced, swapped Dr/Cr) without depending on accounting's
+// reversal mapping (that ACL lives in backbone-accounting, not here).
+#[derive(Clone)]
+struct CapturedEnv { posting_type: String, reverses_post_id: Option<Uuid>, dr: Decimal, cr: Decimal }
+#[derive(Default)]
+struct CapturingGl { seen: std::sync::Mutex<Option<CapturedEnv>> }
+#[async_trait::async_trait]
+impl GlPostSink for CapturingGl {
+    async fn post(&self, e: &AccountingPostEnvelope) -> Result<GlPostAck, GlPostRejected> {
+        let dr: Decimal = e.lines.iter().map(|l| l.debit).sum();
+        let cr: Decimal = e.lines.iter().map(|l| l.credit).sum();
+        *self.seen.lock().unwrap() = Some(CapturedEnv {
+            posting_type: e.posting_type.clone(), reverses_post_id: e.reverses_post_id, dr, cr,
+        });
+        Ok(GlPostAck { post_id: Uuid::new_v4(), journal_id: Uuid::new_v4(), idempotent_reuse: false })
+    }
+}
+
 fn d(s: &str) -> Decimal { Decimal::from_str_exact(s).unwrap() }
 fn day() -> chrono::NaiveDate { chrono::NaiveDate::from_ymd_opt(2026, 7, 4).unwrap() }
 fn uq(p: &str) -> String { format!("{p}-{}", &Uuid::new_v4().simple().to_string()[..8]) }
@@ -114,6 +133,7 @@ async fn receipt_posts_asset_to_real_gl() {
     let rid = w.create_purchase_receipt(NewReceipt {
         receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
+        currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
         lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") }],
     }).await.unwrap();
@@ -140,6 +160,7 @@ async fn delivery_posts_cogs_to_real_gl() {
         let rid = w.create_purchase_receipt(NewReceipt {
             receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
             source_po_id: None, warehouse_id: wh, posting_date: day(),
+            currency: "IDR".into(),
             inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
             lines: vec![ReceiptLine { item_id: item, quantity: d(q), rate: d(r) }],
         }).await.unwrap();
@@ -148,6 +169,7 @@ async fn delivery_posts_cogs_to_real_gl() {
     let did = w.create_delivery_note(NewDelivery {
         delivery_number: uq("DN"), company_id: company, branch_id: None, customer_id: Uuid::new_v4(),
         source_so_id: None, warehouse_id: wh, posting_date: day(),
+        currency: "IDR".into(),
         cogs_account_id: coa["5100"], inventory_account_id: coa["1300"],
         lines: vec![DeliveryLine { item_id: item, quantity: d("5") }],
     }).await.unwrap();
@@ -170,12 +192,14 @@ async fn reconciliation_posts_adjustment_to_real_gl() {
     let rid = w.create_purchase_receipt(NewReceipt {
         receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
+        currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
         lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") }],
     }).await.unwrap();
     w.submit_purchase_receipt(rid, &adapter).await.unwrap();
     let sr = w.submit_reconciliation(NewReconciliation {
         recon_number: uq("SR"), company_id: company, warehouse_id: wh, posting_date: day(),
+        currency: "IDR".into(),
         inventory_account_id: coa["1300"], adjustment_account_id: coa["5200"],
         lines: vec![ReconLine { item_id: item, counted_qty: d("8"), counted_rate: Decimal::ZERO }],
     }, &adapter).await.unwrap();
@@ -198,6 +222,7 @@ async fn gl_rejection_leaves_movement_but_marks_failed() {
     let rid = w.create_purchase_receipt(NewReceipt {
         receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
+        currency: "IDR".into(),
         inventory_account_id: coa["1000"], grir_account_id: coa["2150"], // 1000 is a header → rejected
         lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") }],
     }).await.unwrap();
@@ -221,6 +246,7 @@ async fn resubmit_is_refused() {
     let rid = w.create_purchase_receipt(NewReceipt {
         receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
+        currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
         lines: vec![ReceiptLine { item_id: Uuid::new_v4(), quantity: d("1"), rate: d("100") }],
     }).await.unwrap();
@@ -242,6 +268,7 @@ async fn repost_recovers_a_failed_post() {
     let rid = w.create_purchase_receipt(NewReceipt {
         receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
+        currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
         lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") }],
     }).await.unwrap();
@@ -273,6 +300,7 @@ async fn repost_does_not_double_post() {
     let rid = w.create_purchase_receipt(NewReceipt {
         receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
+        currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
         lines: vec![ReceiptLine { item_id: Uuid::new_v4(), quantity: d("2"), rate: d("100") }],
     }).await.unwrap();
@@ -287,4 +315,41 @@ async fn repost_does_not_double_post() {
     let noop = w.repost_purchase_receipt(rid, &adapter).await.unwrap();
     assert_eq!(noop.journal_id, first.journal_id);
     assert_eq!(journal_count(&pool, company).await, 1);
+}
+
+// ISEAM-8 (council 2026-07-29): cancelling a posted receipt emits a balanced REVERSAL envelope —
+// posting_type='reversal', reverses_post_id = the original post, Dr/Cr swapped vs the original
+// (Dr Inventory·Cr GR/IR → Dr GR/IR·Cr Inventory) — and records the reversal post id on the header.
+#[tokio::test]
+async fn cancel_emits_balanced_reversal_envelope() {
+    let pool = pool().await;
+    let (company, coa) = seed_coa(&pool).await;
+    let w = InventoryWriteService::new(pool.clone());
+    let adapter = AccountingAdapter { svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))) };
+    let wh = warehouse(&w, company).await;
+    let item = Uuid::new_v4();
+    let rid = w.create_purchase_receipt(NewReceipt {
+        receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
+        source_po_id: None, warehouse_id: wh, posting_date: day(),
+        currency: "IDR".into(),
+        inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
+        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") }],
+    }).await.unwrap();
+    let orig = w.submit_purchase_receipt(rid, &adapter).await.unwrap();
+    let orig_post = orig.post_id.unwrap();
+    // Cancel through a capturing sink so we can assert the reversal envelope inventory emits.
+    let cap = CapturingGl::default();
+    let out = w.cancel_purchase_receipt(rid, &cap).await.unwrap();
+    assert!(out.posted);
+    let env = cap.seen.lock().unwrap().clone().expect("reversal envelope emitted");
+    assert_eq!(env.posting_type, "reversal");
+    assert_eq!(env.reverses_post_id, Some(orig_post), "reversal references the original post");
+    assert_eq!(env.dr, d("1000"));
+    assert_eq!(env.cr, d("1000"), "balanced");
+    let st: String = sqlx::query_scalar("SELECT status::text FROM inventory.purchase_receipts WHERE id=$1")
+        .bind(rid).fetch_one(&pool).await.unwrap();
+    assert_eq!(st, "cancelled");
+    let rev: Option<Uuid> = sqlx::query_scalar("SELECT reversal_accounting_post_id FROM inventory.purchase_receipts WHERE id=$1")
+        .bind(rid).fetch_one(&pool).await.unwrap();
+    assert!(rev.is_some(), "reversal post id recorded on the header");
 }

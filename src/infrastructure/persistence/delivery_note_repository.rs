@@ -56,6 +56,7 @@ pub struct NewDeliveryRow<'a> {
     pub source_so_id: Option<Uuid>,
     pub warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
+    pub currency: &'a str,
     pub cogs_account_id: Uuid,
     pub inventory_account_id: Uuid,
 }
@@ -68,6 +69,7 @@ pub struct DeliverySubmitHeaderRow {
     pub warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
     pub source_so_id: Option<Uuid>,
+    pub currency: String,
     /// `status::text` — the submit path refuses anything but "draft".
     pub status: String,
     pub cogs_account_id: Uuid,
@@ -80,10 +82,32 @@ pub struct DeliveryRepostHeaderRow {
     pub branch_id: Option<Uuid>,
     pub delivery_number: String,
     pub posting_date: chrono::NaiveDate,
+    pub currency: String,
     pub total_cogs: Decimal,
     pub cogs_account_id: Uuid,
     pub inventory_account_id: Uuid,
     pub gl: GlSettlementState,
+}
+
+/// The cancel path's header projection — everything needed to reverse the outflow and emit the
+/// `posting_type='reversal'` post. Carries the original `accounting_post_id` (to reverse) and any
+/// already-recorded `reversal_accounting_post_id` (the idempotency/recovery short-circuit).
+pub struct DeliveryCancelHeaderRow {
+    pub company_id: Uuid,
+    pub branch_id: Option<Uuid>,
+    pub warehouse_id: Uuid,
+    pub posting_date: chrono::NaiveDate,
+    pub currency: String,
+    pub delivery_number: String,
+    /// The original posted COGS — the reversal GL leg re-posts this amount (Dr Inventory · Cr COGS).
+    pub total_cogs: Decimal,
+    /// `status::text` — a fresh cancel requires "submitted"; "cancelled" is the recovery short-circuit.
+    pub status: String,
+    pub cogs_account_id: Uuid,
+    pub inventory_account_id: Uuid,
+    pub gl: GlSettlementState,
+    pub reversal_journal_id: Option<Uuid>,
+    pub reversal_accounting_post_id: Option<Uuid>,
 }
 
 /// Hand-written DeliveryNote SQL. Lives here per the module's 4-layer rule.
@@ -103,11 +127,11 @@ impl DeliveryNoteRepository {
         sqlx::query(
             r#"INSERT INTO inventory.delivery_notes
                 (id, delivery_number, company_id, branch_id, customer_id, source_so_id, warehouse_id,
-                 posting_date, total_cogs, cogs_account_id, inventory_account_id, status, posting_state)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,0,$9,$10,'draft'::doc_status,'pending'::gl_posting_state)"#,
+                 posting_date, currency, total_cogs, cogs_account_id, inventory_account_id, status, posting_state)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,$11,'draft'::doc_status,'pending'::gl_posting_state)"#,
         )
         .bind(d.id).bind(d.delivery_number).bind(d.company_id).bind(d.branch_id).bind(d.customer_id)
-        .bind(d.source_so_id).bind(d.warehouse_id).bind(d.posting_date)
+        .bind(d.source_so_id).bind(d.warehouse_id).bind(d.posting_date).bind(d.currency)
         .bind(d.cogs_account_id).bind(d.inventory_account_id)
         .execute(conn)
         .await?;
@@ -126,7 +150,7 @@ impl DeliveryNoteRepository {
             pool,
             sqlx::query(
                 r#"SELECT delivery_number, company_id, branch_id, warehouse_id, posting_date, source_so_id,
-                          status::text AS st, cogs_account_id, inventory_account_id
+                          currency, status::text AS st, cogs_account_id, inventory_account_id
                    FROM inventory.delivery_notes WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
             )
             .bind(id),
@@ -136,6 +160,7 @@ impl DeliveryNoteRepository {
             delivery_number: h.get("delivery_number"), company_id: h.get("company_id"),
             branch_id: h.get("branch_id"), warehouse_id: h.get("warehouse_id"),
             posting_date: h.get("posting_date"), source_so_id: h.get("source_so_id"),
+            currency: h.get("currency"),
             status: h.get("st"), cogs_account_id: h.get("cogs_account_id"),
             inventory_account_id: h.get("inventory_account_id"),
         }))
@@ -150,7 +175,7 @@ impl DeliveryNoteRepository {
         let row = company_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
-                r#"SELECT company_id, branch_id, delivery_number, posting_date, total_cogs,
+                r#"SELECT company_id, branch_id, delivery_number, posting_date, currency, total_cogs,
                           cogs_account_id, inventory_account_id, posting_state::text AS ps, journal_id, accounting_post_id
                    FROM inventory.delivery_notes WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
             )
@@ -160,6 +185,7 @@ impl DeliveryNoteRepository {
         Ok(row.map(|h| DeliveryRepostHeaderRow {
             company_id: h.get("company_id"), branch_id: h.get("branch_id"),
             delivery_number: h.get("delivery_number"), posting_date: h.get("posting_date"),
+            currency: h.get("currency"),
             total_cogs: h.get("total_cogs"), cogs_account_id: h.get("cogs_account_id"),
             inventory_account_id: h.get("inventory_account_id"),
             gl: GlSettlementState {
@@ -182,6 +208,54 @@ impl DeliveryNoteRepository {
             .execute(conn)
             .await?;
         Ok(())
+    }
+
+    /// Flip the delivery submitted→cancelled. Must ride the cancellation's transaction. Guarded on
+    /// `submitted` so a draft or an already-cancelled delivery is not touched here.
+    pub async fn mark_cancelled(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE inventory.delivery_notes SET status='cancelled'::doc_status WHERE id=$1 AND status='submitted'::doc_status")
+            .bind(id)
+            .execute(conn)
+            .await?;
+        Ok(())
+    }
+
+    /// Read the cancel path's header. Same ID-only scope fence as [`Self::fetch_submit_header`].
+    pub async fn fetch_cancel_header(
+        &self,
+        pool: &PgPool,
+        id: Uuid,
+    ) -> Result<Option<DeliveryCancelHeaderRow>, sqlx::Error> {
+        let row = company_scope::fetch_optional_row_scoped(
+            pool,
+            sqlx::query(
+                r#"SELECT company_id, branch_id, warehouse_id, posting_date, currency, delivery_number,
+                          total_cogs, status::text AS st, cogs_account_id, inventory_account_id,
+                          posting_state::text AS ps, journal_id, accounting_post_id,
+                          reversal_journal_id, reversal_accounting_post_id
+                   FROM inventory.delivery_notes WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
+            )
+            .bind(id),
+        )
+        .await?;
+        Ok(row.map(|h| DeliveryCancelHeaderRow {
+            company_id: h.get("company_id"), branch_id: h.get("branch_id"),
+            warehouse_id: h.get("warehouse_id"), posting_date: h.get("posting_date"),
+            currency: h.get("currency"), delivery_number: h.get("delivery_number"),
+            total_cogs: h.get("total_cogs"),
+            status: h.get("st"), cogs_account_id: h.get("cogs_account_id"),
+            inventory_account_id: h.get("inventory_account_id"),
+            reversal_journal_id: h.get("reversal_journal_id"),
+            reversal_accounting_post_id: h.get("reversal_accounting_post_id"),
+            gl: GlSettlementState {
+                posting_state: h.get("ps"), journal_id: h.get("journal_id"),
+                accounting_post_id: h.get("accounting_post_id"),
+            },
+        }))
     }
 }
 

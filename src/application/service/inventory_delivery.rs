@@ -43,6 +43,7 @@ impl InventoryWriteService {
             source_so_id: d.source_so_id,
             warehouse_id: d.warehouse_id,
             posting_date: d.posting_date,
+            currency: &d.currency,
             cogs_account_id: d.cogs_account_id,
             inventory_account_id: d.inventory_account_id,
         }).await;
@@ -124,7 +125,7 @@ impl InventoryWriteService {
         let env = AccountingPostEnvelope {
             idempotency_key: id.to_string(), company_id: company, branch_id: branch,
             source_type: "inventory".into(), source_id: id, source_reference: Some(voucher_no.clone()),
-            posting_date, currency: "IDR".into(), posting_type: "original".into(), reverses_post_id: None,
+            posting_date, currency: hdr.currency.clone(), posting_type: "original".into(), reverses_post_id: None,
             description: Some("Delivery COGS".into()),
             lines: vec![
                 GlPostLine::debit(cogs_acct, total_cogs).with_description("COGS"),
@@ -150,7 +151,7 @@ impl InventoryWriteService {
         let env = AccountingPostEnvelope {
             idempotency_key: id.to_string(), company_id: h.company_id, branch_id: h.branch_id,
             source_type: "inventory".into(), source_id: id, source_reference: Some(h.delivery_number),
-            posting_date: h.posting_date, currency: "IDR".into(), posting_type: "original".into(), reverses_post_id: None,
+            posting_date: h.posting_date, currency: h.currency.clone(), posting_type: "original".into(), reverses_post_id: None,
             description: Some("Delivery COGS (repost)".into()),
             lines: vec![
                 GlPostLine::debit(h.cogs_account_id, amt).with_description("COGS"),

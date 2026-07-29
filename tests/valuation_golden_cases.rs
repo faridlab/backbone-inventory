@@ -46,6 +46,7 @@ async fn receipt(w: &InventoryWriteService, company: Uuid, wh: Uuid, item: Uuid,
     let id = w.create_purchase_receipt(NewReceipt {
         receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
+        currency: "IDR".into(),
         inventory_account_id: Uuid::new_v4(), grir_account_id: Uuid::new_v4(),
         lines: vec![ReceiptLine { item_id: item, quantity: d(qty), rate: d(rate) }],
     }).await.unwrap();
@@ -80,6 +81,7 @@ async fn delivery_consumes_average_rate_unchanged() {
     let did = w.create_delivery_note(NewDelivery {
         delivery_number: uq("DN"), company_id: company, branch_id: None, customer_id: Uuid::new_v4(),
         source_so_id: None, warehouse_id: wh, posting_date: day(),
+        currency: "IDR".into(),
         cogs_account_id: Uuid::new_v4(), inventory_account_id: Uuid::new_v4(),
         lines: vec![DeliveryLine { item_id: item, quantity: d("5") }],
     }).await.unwrap();
@@ -130,6 +132,7 @@ async fn insufficient_stock_rejected() {
     let did = w.create_delivery_note(NewDelivery {
         delivery_number: uq("DN"), company_id: company, branch_id: None, customer_id: Uuid::new_v4(),
         source_so_id: None, warehouse_id: wh, posting_date: day(),
+        currency: "IDR".into(),
         cogs_account_id: Uuid::new_v4(), inventory_account_id: Uuid::new_v4(),
         lines: vec![DeliveryLine { item_id: item, quantity: d("10") }],
     }).await.unwrap();
@@ -169,6 +172,7 @@ async fn reconciliation_computes_signed_difference() {
     receipt(&w, company, wh, item, "10", "100").await; // qty 10, value 1000, rate 100
     let rid = w.submit_reconciliation(NewReconciliation {
         recon_number: uq("SR"), company_id: company, warehouse_id: wh, posting_date: day(),
+        currency: "IDR".into(),
         inventory_account_id: Uuid::new_v4(), adjustment_account_id: Uuid::new_v4(),
         lines: vec![ReconLine { item_id: item, counted_qty: d("8"), counted_rate: Decimal::ZERO }],
     }, &StubGl).await.unwrap();
@@ -189,6 +193,7 @@ async fn validation_gates() {
     let e = w.create_purchase_receipt(NewReceipt {
         receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
+        currency: "IDR".into(),
         inventory_account_id: Uuid::new_v4(), grir_account_id: Uuid::new_v4(), lines: vec![],
     }).await.unwrap_err();
     assert!(matches!(e, InventoryError::EmptyDocument));
@@ -215,6 +220,7 @@ async fn concurrent_deliveries_do_not_oversell() {
             w.create_delivery_note(NewDelivery {
                 delivery_number: uq("DN"), company_id: company, branch_id: None, customer_id: Uuid::new_v4(),
                 source_so_id: None, warehouse_id: wh, posting_date: day(),
+                currency: "IDR".into(),
                 cogs_account_id: Uuid::new_v4(), inventory_account_id: Uuid::new_v4(),
                 lines: vec![DeliveryLine { item_id: item, quantity: d("6") }],
             }).await.unwrap()
@@ -253,6 +259,7 @@ async fn residual_flushes_to_zero_at_empty() {
         let did = w.create_delivery_note(NewDelivery {
             delivery_number: uq("DN"), company_id: company, branch_id: None, customer_id: Uuid::new_v4(),
             source_so_id: None, warehouse_id: wh, posting_date: day(),
+            currency: "IDR".into(),
             cogs_account_id: Uuid::new_v4(), inventory_account_id: Uuid::new_v4(),
             lines: vec![DeliveryLine { item_id: item, quantity: d("1") }],
         }).await.unwrap();
@@ -263,4 +270,59 @@ async fn residual_flushes_to_zero_at_empty() {
     assert_eq!(value, d("0.00"), "no stranded/negative residual at empty bin");
     assert_eq!(rate, d("0.000000"));
     assert_eq!(total_cogs, received, "Σ COGS == received value → subledger ties out with the GL");
+}
+
+// IVC-10 (council 2026-07-29): cancelling a receipt reverses the inflow at the ORIGINAL line amount,
+// so a blended bin reblends correctly — cancelling the first of two receipts leaves the second's rate.
+#[tokio::test]
+async fn cancel_receipt_reverses_inflow() {
+    let pool = pool().await;
+    let w = InventoryWriteService::new(pool.clone());
+    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let wh = warehouse(&w, company).await;
+    let r1 = receipt(&w, company, wh, item, "10", "100").await; // 10 @ 100
+    receipt(&w, company, wh, item, "10", "120").await;          // blended: 20 @ 110, value 2200
+    let (qty, rate, value) = bin(&pool, company, item, wh).await;
+    assert_eq!((qty, rate, value), (d("20.0000"), d("110.000000"), d("2200.00")));
+    // Cancel the first receipt: removes 10 units + 1000 of value → 10 @ 120.
+    let out = w.cancel_purchase_receipt(r1, &StubGl).await.unwrap();
+    assert!(out.posted);
+    let (qty, rate, value) = bin(&pool, company, item, wh).await;
+    assert_eq!(qty, d("10.0000"));
+    assert_eq!(rate, d("120.000000"), "reblended to the remaining receipt's rate");
+    assert_eq!(value, d("1200.00"));
+    let st: String = sqlx::query_scalar("SELECT status::text FROM inventory.purchase_receipts WHERE id=$1")
+        .bind(r1).fetch_one(&pool).await.unwrap();
+    assert_eq!(st, "cancelled");
+}
+
+// IVC-11 (council 2026-07-29): cancelling a delivery restores the bin to its pre-delivery state at
+// the stored COGS, and re-cancelling is idempotent (no extra SLEs appended).
+#[tokio::test]
+async fn cancel_delivery_restores_bin_and_is_idempotent() {
+    let pool = pool().await;
+    let w = InventoryWriteService::new(pool.clone());
+    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let wh = warehouse(&w, company).await;
+    receipt(&w, company, wh, item, "10", "100").await; // 10 @ 100, value 1000
+    let did = w.create_delivery_note(NewDelivery {
+        delivery_number: uq("DN"), company_id: company, branch_id: None, customer_id: Uuid::new_v4(),
+        source_so_id: None, warehouse_id: wh, posting_date: day(),
+        currency: "IDR".into(),
+        cogs_account_id: Uuid::new_v4(), inventory_account_id: Uuid::new_v4(),
+        lines: vec![DeliveryLine { item_id: item, quantity: d("4") }],
+    }).await.unwrap();
+    w.submit_delivery_note(did, &StubGl).await.unwrap(); // bin 6 @ 100, value 600
+    w.cancel_delivery_note(did, &StubGl).await.unwrap(); // bin restored to 10 @ 100, value 1000
+    let (qty, rate, value) = bin(&pool, company, item, wh).await;
+    assert_eq!((qty, rate, value), (d("10.0000"), d("100.000000"), d("1000.00")), "bin restored to pre-delivery state");
+    // Idempotent: a second cancel short-circuits (already cancelled) without appending more SLEs.
+    let n_before: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM inventory.stock_ledger_entries WHERE voucher_type='delivery_note' AND voucher_id=$1")
+        .bind(did).fetch_one(&pool).await.unwrap();
+    let _ = w.cancel_delivery_note(did, &StubGl).await.unwrap();
+    let n_after: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM inventory.stock_ledger_entries WHERE voucher_type='delivery_note' AND voucher_id=$1")
+        .bind(did).fetch_one(&pool).await.unwrap();
+    assert_eq!(n_before, n_after, "re-cancel does not append more SLEs");
 }

@@ -91,6 +91,7 @@ pub struct NewReceipt {
     pub source_po_id: Option<Uuid>,
     pub warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
+    pub currency: String,
     pub inventory_account_id: Uuid,
     pub grir_account_id: Uuid,
     pub lines: Vec<ReceiptLine>,
@@ -110,6 +111,7 @@ pub struct NewDelivery {
     pub source_so_id: Option<Uuid>,
     pub warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
+    pub currency: String,
     pub cogs_account_id: Uuid,
     pub inventory_account_id: Uuid,
     pub lines: Vec<DeliveryLine>,
@@ -137,6 +139,7 @@ pub struct NewReconciliation {
     pub company_id: Uuid,
     pub warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
+    pub currency: String,
     pub inventory_account_id: Uuid,
     pub adjustment_account_id: Uuid,
     pub lines: Vec<ReconLine>,
@@ -163,6 +166,15 @@ pub enum InventoryError {
     NotFound(Uuid),
     NotDraft(String),
     SameWarehouse,
+    /// A cancellation was attempted on a voucher whose status is not `submitted` (e.g. a draft —
+    /// delete it instead — or an already-cancelled one that has no GL post to recover).
+    NotSubmitted(Uuid),
+    /// A cancellation needs the original GL post to be `posted` (so it can be reversed); the original
+    /// is still `pending`/`failed`. Repost the voucher first.
+    GlNotPosted(Uuid),
+    /// A receipt cancellation would push a bin's quantity below zero (the received stock was already
+    /// issued). Reverse the issue first, or correct via a reconciliation.
+    InsufficientStockToReverse { item_id: Uuid, warehouse_id: Uuid, available: Decimal, requested: Decimal },
     GlRejected { code: String, message: String },
     Db(sqlx::Error),
 }
@@ -176,6 +188,9 @@ impl InventoryError {
             InventoryError::DuplicateNumber(_) => "duplicate_number".into(),
             InventoryError::NotFound(_) => "not_found".into(),
             InventoryError::NotDraft(_) => "not_draft".into(),
+            InventoryError::NotSubmitted(_) => "not_submitted".into(),
+            InventoryError::GlNotPosted(_) => "gl_not_posted".into(),
+            InventoryError::InsufficientStockToReverse { .. } => "insufficient_stock_to_reverse".into(),
             InventoryError::SameWarehouse => "same_warehouse".into(),
             InventoryError::GlRejected { code, .. } => code.clone(),
             InventoryError::Db(_) => "internal_error".into(),
@@ -291,6 +306,28 @@ impl InventoryWriteService {
                 ).await;
                 Err(InventoryError::GlRejected { code: rej.code, message: rej.message })
             }
+        }
+    }
+
+    /// Emit a `posting_type='reversal'` post and record its ids in the voucher's
+    /// `reversal_*` columns (council 2026-07-29, #3). Distinct from [`Self::emit_and_reconcile`]:
+    /// the original post is already `posted` and its ids stay intact, so on success we call
+    /// `mark_reversal_posted` (no `posting_state` guard); on failure we do NOT `mark_failed` (that
+    /// would clobber the original's `posted` state) — the voucher stays `cancelled` with a NULL
+    /// `reversal_accounting_post_id`, and re-calling cancel re-emits only this GL leg.
+    pub(super) async fn emit_reversal_and_reconcile(
+        &self, voucher: GlVoucher, voucher_id: Uuid, env: &AccountingPostEnvelope, sink: &dyn GlPostSink, gl_amount: Decimal,
+    ) -> Result<SubmitOutcome, InventoryError> {
+        debug_assert!(env.is_balanced());
+        match sink.post(env).await {
+            Ok(ack) => {
+                company_scope::with_company_scope(
+                    Some(env.company_id),
+                    self.gl.mark_reversal_posted(&self.db_pool, voucher, voucher_id, ack.journal_id, ack.post_id),
+                ).await?;
+                Ok(SubmitOutcome { voucher_id, posted: true, journal_id: Some(ack.journal_id), post_id: Some(ack.post_id), gl_amount })
+            }
+            Err(rej) => Err(InventoryError::GlRejected { code: rej.code, message: rej.message }),
         }
     }
 }

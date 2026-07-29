@@ -10,10 +10,12 @@
 
 use anyhow::Result;
 use rust_decimal::Decimal;
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use backbone_orm::company_scope;
+
+use super::gl_voucher_repository::GlSettlementState;
 
 use crate::domain::entity::StockReconciliation;
 
@@ -51,8 +53,23 @@ pub struct NewReconciliationRow<'a> {
     pub company_id: Uuid,
     pub warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
+    pub currency: &'a str,
     pub inventory_account_id: Uuid,
     pub adjustment_account_id: Uuid,
+}
+
+/// The repost path's header projection — rebuilds the SAME value-diff envelope from the stored
+/// header, never re-touching the SLE/Bin (the physical movement already happened). Mirrors the
+/// receipt/delivery repost headers (council 2026-07-29, parking-lot item: `repost_reconciliation`).
+pub struct ReconRepostHeaderRow {
+    pub company_id: Uuid,
+    pub recon_number: String,
+    pub posting_date: chrono::NaiveDate,
+    pub currency: String,
+    pub net_difference: Decimal,
+    pub inventory_account_id: Uuid,
+    pub adjustment_account_id: Uuid,
+    pub gl: GlSettlementState,
 }
 
 /// Hand-written StockReconciliation SQL. Lives here per the module's 4-layer rule.
@@ -71,11 +88,12 @@ impl StockReconciliationRepository {
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"INSERT INTO inventory.stock_reconciliations
-                (id, recon_number, company_id, warehouse_id, posting_date, net_difference,
+                (id, recon_number, company_id, warehouse_id, posting_date, currency, net_difference,
                  inventory_account_id, adjustment_account_id, status, posting_state)
-               VALUES ($1,$2,$3,$4,$5,0,$6,$7,'submitted'::doc_status,'pending'::gl_posting_state)"#,
+               VALUES ($1,$2,$3,$4,$5,$6,0,$7,$8,'submitted'::doc_status,'pending'::gl_posting_state)"#,
         )
         .bind(r.id).bind(r.recon_number).bind(r.company_id).bind(r.warehouse_id).bind(r.posting_date)
+        .bind(r.currency)
         .bind(r.inventory_account_id).bind(r.adjustment_account_id)
         .execute(conn)
         .await?;
@@ -112,6 +130,39 @@ impl StockReconciliationRepository {
         )
         .await?;
         Ok(())
+    }
+
+    /// Read the repost path's header. Same ID-only scope fence as the receipt/delivery repost
+    /// headers (`fetch_optional_row_scoped` rides the caller's `app.company_id`). Used by
+    /// `repost_reconciliation` to re-drive a stuck `pending`/`failed` post (or a `net==0` recon
+    /// that crashed before `mark_not_applicable`).
+    pub async fn fetch_repost_header(
+        &self,
+        pool: &PgPool,
+        id: Uuid,
+    ) -> Result<Option<ReconRepostHeaderRow>, sqlx::Error> {
+        let row = company_scope::fetch_optional_row_scoped(
+            pool,
+            sqlx::query(
+                r#"SELECT company_id, recon_number, posting_date, currency, net_difference,
+                          inventory_account_id, adjustment_account_id,
+                          posting_state::text AS ps, journal_id, accounting_post_id
+                   FROM inventory.stock_reconciliations WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
+            )
+            .bind(id),
+        )
+        .await?;
+        Ok(row.map(|h| ReconRepostHeaderRow {
+            company_id: h.get("company_id"), recon_number: h.get("recon_number"),
+            posting_date: h.get("posting_date"), currency: h.get("currency"),
+            net_difference: h.get("net_difference"),
+            inventory_account_id: h.get("inventory_account_id"),
+            adjustment_account_id: h.get("adjustment_account_id"),
+            gl: GlSettlementState {
+                posting_state: h.get("ps"), journal_id: h.get("journal_id"),
+                accounting_post_id: h.get("accounting_post_id"),
+            },
+        }))
     }
 }
 

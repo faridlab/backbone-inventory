@@ -41,6 +41,9 @@ use super::{
 struct ErrorBody { error: String, message: String }
 #[derive(Debug, Serialize)]
 struct IdResponse { id: Uuid }
+/// Serde default for the optional `currency` field on write bodies. Omitted → "IDR" (the module's
+/// historical single-currency behavior); a composing service sets it for a non-IDR ledger.
+fn default_currency() -> String { "IDR".into() }
 fn err(e: InventoryError) -> axum::response::Response {
     let s = StatusCode::from_u16(e.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     (s, Json(ErrorBody { error: e.code(), message: e.to_string() })).into_response()
@@ -79,6 +82,7 @@ struct CreateReceiptBody {
     #[serde(default)] source_po_id: Option<Uuid>,
     warehouse_id: Uuid,
     posting_date: chrono::NaiveDate,
+    #[serde(default = "default_currency")] currency: String,
     inventory_account_id: Uuid,
     grir_account_id: Uuid,
     lines: Vec<ReceiptLineBody>,
@@ -87,7 +91,7 @@ async fn create_receipt(State(svc): State<Arc<InventoryWriteService>>, tenant: C
     let r = NewReceipt {
         receipt_number: b.receipt_number, company_id: tenant.company_id, branch_id: tenant.branch_id,
         supplier_id: b.supplier_id, source_po_id: b.source_po_id, warehouse_id: b.warehouse_id,
-        posting_date: b.posting_date, inventory_account_id: b.inventory_account_id, grir_account_id: b.grir_account_id,
+        posting_date: b.posting_date, currency: b.currency, inventory_account_id: b.inventory_account_id, grir_account_id: b.grir_account_id,
         lines: b.lines.into_iter().map(|l| ReceiptLine { item_id: l.item_id, quantity: l.quantity, rate: l.rate }).collect(),
     };
     match svc.create_purchase_receipt(r).await {
@@ -108,6 +112,7 @@ struct CreateDeliveryBody {
     #[serde(default)] source_so_id: Option<Uuid>,
     warehouse_id: Uuid,
     posting_date: chrono::NaiveDate,
+    #[serde(default = "default_currency")] currency: String,
     cogs_account_id: Uuid,
     inventory_account_id: Uuid,
     lines: Vec<DeliveryLineBody>,
@@ -116,7 +121,7 @@ async fn create_delivery(State(svc): State<Arc<InventoryWriteService>>, tenant: 
     let dn = NewDelivery {
         delivery_number: b.delivery_number, company_id: tenant.company_id, branch_id: tenant.branch_id,
         customer_id: b.customer_id, source_so_id: b.source_so_id, warehouse_id: b.warehouse_id,
-        posting_date: b.posting_date, cogs_account_id: b.cogs_account_id, inventory_account_id: b.inventory_account_id,
+        posting_date: b.posting_date, currency: b.currency, cogs_account_id: b.cogs_account_id, inventory_account_id: b.inventory_account_id,
         lines: b.lines.into_iter().map(|l| DeliveryLine { item_id: l.item_id, quantity: l.quantity }).collect(),
     };
     match svc.create_delivery_note(dn).await {
@@ -148,7 +153,12 @@ struct AvailabilityQuery { company_id: Uuid, item_id: Uuid, warehouse_id: Uuid }
 async fn get_availability(State(svc): State<Arc<InventoryReadService>>, Query(q): Query<AvailabilityQuery>) -> axum::response::Response {
     match svc.availability(q.company_id, q.item_id, q.warehouse_id).await {
         Ok(view) => (StatusCode::OK, Json(view)).into_response(),
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorBody { error: "internal_error".into(), message: "availability query failed".into() })).into_response(),
+        Err(e) => {
+            // The read model returns a raw `sqlx::Error` (no domain taxonomy); log the typed error
+            // so a 500 here is diagnosable instead of a bare "availability query failed".
+            tracing::error!(target: "inventory.read", error = ?e, company_id = %q.company_id, item_id = %q.item_id, warehouse_id = %q.warehouse_id, "availability query failed");
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorBody { error: "internal_error".into(), message: "availability query failed".into() })).into_response()
+        }
     }
 }
 fn read_routes(svc: Arc<InventoryReadService>) -> Router {
@@ -169,6 +179,7 @@ struct DeliveryRequestedBody {
     #[serde(default)] source_so_id: Option<Uuid>,
     warehouse_id: Uuid,
     posting_date: chrono::NaiveDate,
+    #[serde(default = "default_currency")] currency: String,
     cogs_account_id: Uuid,
     inventory_account_id: Uuid,
     lines: Vec<DeliveryRequestLineBody>,
@@ -177,7 +188,7 @@ async fn post_delivery_requested(State(intake): State<Arc<DeliveryIntake>>, tena
     let req = DeliveryRequested {
         delivery_number: b.delivery_number, company_id: tenant.company_id, branch_id: tenant.branch_id,
         customer_id: b.customer_id, source_so_id: b.source_so_id, warehouse_id: b.warehouse_id,
-        posting_date: b.posting_date, cogs_account_id: b.cogs_account_id, inventory_account_id: b.inventory_account_id,
+        posting_date: b.posting_date, currency: b.currency, cogs_account_id: b.cogs_account_id, inventory_account_id: b.inventory_account_id,
         lines: b.lines.into_iter().map(|l| DeliveryRequestLine { item_id: l.item_id, quantity: l.quantity }).collect(),
     };
     match intake.on_delivery_requested(req).await {

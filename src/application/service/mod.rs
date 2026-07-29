@@ -36,6 +36,7 @@ pub mod inventory_transfer;
 pub mod inventory_reconciliation;
 pub mod inventory_read;
 pub mod inventory_intake;
+pub mod inventory_cancellation;
 // END CUSTOM
 
 pub use delivery_note_service::DeliveryNoteService;

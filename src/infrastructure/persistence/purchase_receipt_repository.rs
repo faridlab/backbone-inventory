@@ -44,9 +44,10 @@ impl PurchaseReceiptRepository {
 
 /// The exact row a draft Purchase Receipt header insert writes.
 ///
-/// Mirrors the raw column shape rather than the `PurchaseReceipt` entity: `currency`, `status` and
-/// `posting_state` are literals/casts in the statement ('IDR', `'draft'::doc_status`,
-/// `'pending'::gl_posting_state`), and `total_value` arrives already rounded.
+/// Mirrors the raw column shape rather than the `PurchaseReceipt` entity: `status` and
+/// `posting_state` are literal casts in the statement (`'draft'::doc_status`,
+/// `'pending'::gl_posting_state`), `currency` arrives from the caller (no longer a hardcoded
+/// 'IDR' — council 2026-07-29), and `total_value` arrives already rounded.
 pub struct NewReceiptRow<'a> {
     pub id: Uuid,
     pub receipt_number: &'a str,
@@ -56,6 +57,7 @@ pub struct NewReceiptRow<'a> {
     pub source_po_id: Option<Uuid>,
     pub warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
+    pub currency: &'a str,
     pub total_value: Decimal,
     pub inventory_account_id: Uuid,
     pub grir_account_id: Uuid,
@@ -69,6 +71,7 @@ pub struct ReceiptSubmitHeaderRow {
     pub warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
     pub source_po_id: Option<Uuid>,
+    pub currency: String,
     /// `status::text` — the submit path refuses anything but "draft".
     pub status: String,
     pub inventory_account_id: Uuid,
@@ -82,10 +85,33 @@ pub struct ReceiptRepostHeaderRow {
     pub branch_id: Option<Uuid>,
     pub receipt_number: String,
     pub posting_date: chrono::NaiveDate,
+    pub currency: String,
     pub total_value: Decimal,
     pub inventory_account_id: Uuid,
     pub grir_account_id: Uuid,
     pub gl: GlSettlementState,
+}
+
+/// The cancel path's header projection — everything needed to reverse the inflow and emit the
+/// `posting_type='reversal'` post. Carries the original `accounting_post_id` (to reverse) and any
+/// already-recorded `reversal_accounting_post_id` (the idempotency/recovery short-circuit).
+pub struct ReceiptCancelHeaderRow {
+    pub company_id: Uuid,
+    pub branch_id: Option<Uuid>,
+    pub warehouse_id: Uuid,
+    pub posting_date: chrono::NaiveDate,
+    pub currency: String,
+    pub receipt_number: String,
+    /// The original posted value — the reversal GL leg re-posts this amount (Dr GR/IR · Cr Inventory).
+    pub total_value: Decimal,
+    /// `status::text` — a fresh cancel requires "submitted"; "cancelled" is the idempotent/recovery
+    /// short-circuit.
+    pub status: String,
+    pub inventory_account_id: Uuid,
+    pub grir_account_id: Uuid,
+    pub gl: GlSettlementState,
+    pub reversal_journal_id: Option<Uuid>,
+    pub reversal_accounting_post_id: Option<Uuid>,
 }
 
 /// Hand-written PurchaseReceipt SQL. Lives here per the module's 4-layer rule.
@@ -107,10 +133,10 @@ impl PurchaseReceiptRepository {
                 (id, receipt_number, company_id, branch_id, supplier_id, source_po_id, warehouse_id,
                  posting_date, currency, total_value, inventory_account_id, grir_account_id,
                  status, posting_state)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'IDR',$9,$10,$11,'draft'::doc_status,'pending'::gl_posting_state)"#,
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'draft'::doc_status,'pending'::gl_posting_state)"#,
         )
         .bind(r.id).bind(r.receipt_number).bind(r.company_id).bind(r.branch_id).bind(r.supplier_id)
-        .bind(r.source_po_id).bind(r.warehouse_id).bind(r.posting_date).bind(r.total_value)
+        .bind(r.source_po_id).bind(r.warehouse_id).bind(r.posting_date).bind(r.currency).bind(r.total_value)
         .bind(r.inventory_account_id).bind(r.grir_account_id)
         .execute(conn)
         .await?;
@@ -130,7 +156,7 @@ impl PurchaseReceiptRepository {
             pool,
             sqlx::query(
                 r#"SELECT receipt_number, company_id, branch_id, warehouse_id, posting_date, source_po_id,
-                          status::text AS st, inventory_account_id, grir_account_id
+                          currency, status::text AS st, inventory_account_id, grir_account_id
                    FROM inventory.purchase_receipts WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
             )
             .bind(id),
@@ -140,6 +166,7 @@ impl PurchaseReceiptRepository {
             receipt_number: h.get("receipt_number"), company_id: h.get("company_id"),
             branch_id: h.get("branch_id"), warehouse_id: h.get("warehouse_id"),
             posting_date: h.get("posting_date"), source_po_id: h.get("source_po_id"),
+            currency: h.get("currency"),
             status: h.get("st"), inventory_account_id: h.get("inventory_account_id"),
             grir_account_id: h.get("grir_account_id"),
         }))
@@ -154,7 +181,7 @@ impl PurchaseReceiptRepository {
         let row = company_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
-                r#"SELECT company_id, branch_id, receipt_number, posting_date, total_value,
+                r#"SELECT company_id, branch_id, receipt_number, posting_date, currency, total_value,
                           inventory_account_id, grir_account_id, posting_state::text AS ps, journal_id, accounting_post_id
                    FROM inventory.purchase_receipts WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
             )
@@ -164,6 +191,7 @@ impl PurchaseReceiptRepository {
         Ok(row.map(|h| ReceiptRepostHeaderRow {
             company_id: h.get("company_id"), branch_id: h.get("branch_id"),
             receipt_number: h.get("receipt_number"), posting_date: h.get("posting_date"),
+            currency: h.get("currency"),
             total_value: h.get("total_value"), inventory_account_id: h.get("inventory_account_id"),
             grir_account_id: h.get("grir_account_id"),
             gl: GlSettlementState {
@@ -185,6 +213,55 @@ impl PurchaseReceiptRepository {
             .execute(conn)
             .await?;
         Ok(())
+    }
+
+    /// Flip the receipt submitted→cancelled. Must ride the cancellation's transaction, so the status
+    /// change commits with the compensating SLE + Bin writes it describes. Guarded on `submitted` so a
+    /// draft or an already-cancelled receipt is not touched here (the service gates those cases).
+    pub async fn mark_cancelled(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE inventory.purchase_receipts SET status='cancelled'::doc_status WHERE id=$1 AND status='submitted'::doc_status")
+            .bind(id)
+            .execute(conn)
+            .await?;
+        Ok(())
+    }
+
+    /// Read the cancel path's header. Same ID-only scope fence as [`Self::fetch_submit_header`].
+    pub async fn fetch_cancel_header(
+        &self,
+        pool: &PgPool,
+        id: Uuid,
+    ) -> Result<Option<ReceiptCancelHeaderRow>, sqlx::Error> {
+        let row = company_scope::fetch_optional_row_scoped(
+            pool,
+            sqlx::query(
+                r#"SELECT company_id, branch_id, warehouse_id, posting_date, currency, receipt_number,
+                          total_value, status::text AS st, inventory_account_id, grir_account_id,
+                          posting_state::text AS ps, journal_id, accounting_post_id,
+                          reversal_journal_id, reversal_accounting_post_id
+                   FROM inventory.purchase_receipts WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
+            )
+            .bind(id),
+        )
+        .await?;
+        Ok(row.map(|h| ReceiptCancelHeaderRow {
+            company_id: h.get("company_id"), branch_id: h.get("branch_id"),
+            warehouse_id: h.get("warehouse_id"), posting_date: h.get("posting_date"),
+            currency: h.get("currency"), receipt_number: h.get("receipt_number"),
+            total_value: h.get("total_value"),
+            status: h.get("st"), inventory_account_id: h.get("inventory_account_id"),
+            grir_account_id: h.get("grir_account_id"),
+            reversal_journal_id: h.get("reversal_journal_id"),
+            reversal_accounting_post_id: h.get("reversal_accounting_post_id"),
+            gl: GlSettlementState {
+                posting_state: h.get("ps"), journal_id: h.get("journal_id"),
+                accounting_post_id: h.get("accounting_post_id"),
+            },
+        }))
     }
 }
 

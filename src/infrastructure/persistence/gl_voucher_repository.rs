@@ -105,4 +105,31 @@ impl GlVoucherRepository {
         company_scope::execute_scoped(pool, sqlx::query(&sql).bind(voucher_id)).await?;
         Ok(())
     }
+
+    /// Record the GL REVERSAL post for a cancelled voucher (council 2026-07-29, #3).
+    ///
+    /// Distinct from [`Self::mark_posted`]: the original post is already `posted` with its own
+    /// `journal_id`/`accounting_post_id` (which stay intact — the original really happened). A
+    /// cancellation appends compensating SLEs and emits a `posting_type='reversal'` post; that
+    /// reversal's ids land in `reversal_journal_id`/`reversal_accounting_post_id`. There is no
+    /// `posting_state` guard here — the reversal is recorded regardless of the original's state.
+    pub async fn mark_reversal_posted(
+        &self,
+        pool: &PgPool,
+        voucher: GlVoucher,
+        voucher_id: Uuid,
+        journal_id: Uuid,
+        post_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        let sql = format!(
+            "UPDATE inventory.{} SET reversal_journal_id=$2, reversal_accounting_post_id=$3 WHERE id=$1",
+            voucher.table(),
+        );
+        company_scope::execute_scoped(
+            pool,
+            sqlx::query(&sql).bind(voucher_id).bind(journal_id).bind(post_id),
+        )
+        .await?;
+        Ok(())
+    }
 }

@@ -22,7 +22,7 @@ use crate::infrastructure::persistence::{
 use super::inventory_events::{InventoryEvent, StockReconciled};
 use super::inventory_gl::{AccountingPostEnvelope, GlPostLine, GlPostSink};
 use super::inventory_write_service::{
-    is_dup, money, InventoryError, InventoryWriteService, NewReconciliation,
+    is_dup, money, InventoryError, InventoryWriteService, NewReconciliation, SubmitOutcome,
 };
 
 impl InventoryWriteService {
@@ -45,6 +45,7 @@ impl InventoryWriteService {
             company_id: r.company_id,
             warehouse_id: r.warehouse_id,
             posting_date: r.posting_date,
+            currency: &r.currency,
             inventory_account_id: r.inventory_account_id,
             adjustment_account_id: r.adjustment_account_id,
         }).await;
@@ -95,7 +96,7 @@ impl InventoryWriteService {
             let env = AccountingPostEnvelope {
                 idempotency_key: id.to_string(), company_id: r.company_id, branch_id: None,
                 source_type: "inventory".into(), source_id: id, source_reference: Some(r.recon_number.clone()),
-                posting_date: r.posting_date, currency: "IDR".into(), posting_type: "original".into(), reverses_post_id: None,
+                posting_date: r.posting_date, currency: r.currency.clone(), posting_type: "original".into(), reverses_post_id: None,
                 description: Some("Stock reconciliation".into()), lines,
             };
             self.emit_and_reconcile(GlVoucher::StockReconciliation, id, &env, sink, net.abs()).await?;
@@ -109,5 +110,49 @@ impl InventoryWriteService {
             reconciliation_id: id, company_id: r.company_id, warehouse_id: r.warehouse_id, net_difference: net,
         }));
         Ok(id)
+    }
+
+    // ---- repost: re-drive a stuck reconciliation post (parking-lot item, council 2026-07-29) ----
+
+    /// Re-drive the GL leg for a reconciliation whose physical movement committed but whose post is
+    /// `pending` or `failed`, OR — the case this exists for — a `net==0` recon that crashed between
+    /// `tx.commit()` and `mark_not_applicable` and is stuck in `(submitted, pending)`. Mirrors the
+    /// receipt/delivery repost: rebuilds from the stored header, never re-touches the SLE/Bin.
+    ///
+    /// `net != 0` → re-emit the value-diff envelope (idempotent: accounting dedupes on
+    /// `(company, source_type, source_id, posting_type)`); `net == 0` → reconcile to
+    /// `not_applicable`. Already-`posted`/`not_applicable` short-circuits via `already_settled`.
+    pub async fn repost_reconciliation(&self, id: Uuid, sink: &dyn GlPostSink) -> Result<SubmitOutcome, InventoryError> {
+        let h = self.recons.fetch_repost_header(&self.db_pool, id).await?
+            .ok_or(InventoryError::NotFound(id))?;
+        if let Some(o) = Self::already_settled(&h.gl, id) { return Ok(o); }
+
+        if h.net_difference.is_zero() {
+            // net==0 carries no value to post; the recovery is the mark_not_applicable that the
+            // crash skipped. No event re-publish — the physical movement already committed.
+            company_scope::with_company_scope(
+                Some(h.company_id),
+                self.recons.mark_not_applicable(&self.db_pool, id),
+            ).await?;
+            return Ok(SubmitOutcome {
+                voucher_id: id, posted: false, journal_id: None, post_id: None, gl_amount: Decimal::ZERO,
+            });
+        }
+
+        let net = h.net_difference;
+        let (inv, adj) = (h.inventory_account_id, h.adjustment_account_id);
+        let lines = if net > Decimal::ZERO {
+            vec![GlPostLine::debit(inv, net).with_description("Inventory"), GlPostLine::credit(adj, net).with_description("Stock adjustment")]
+        } else {
+            let amt = -net;
+            vec![GlPostLine::debit(adj, amt).with_description("Stock adjustment"), GlPostLine::credit(inv, amt).with_description("Inventory")]
+        };
+        let env = AccountingPostEnvelope {
+            idempotency_key: id.to_string(), company_id: h.company_id, branch_id: None,
+            source_type: "inventory".into(), source_id: id, source_reference: Some(h.recon_number.clone()),
+            posting_date: h.posting_date, currency: h.currency.clone(), posting_type: "original".into(), reverses_post_id: None,
+            description: Some("Stock reconciliation (repost)".into()), lines,
+        };
+        self.emit_and_reconcile(GlVoucher::StockReconciliation, id, &env, sink, net.abs()).await
     }
 }

@@ -58,6 +58,15 @@ pub struct DeliveryItemRow {
     pub quantity: Decimal,
 }
 
+/// A delivery line as the CANCEL path reads it: the stored `cogs_amount` is the exact value the
+/// outflow consumed (for the drain-to-zero line, the whole remaining value) — the cancellation
+/// restores that exact amount, so the bin reblends to its pre-delivery state.
+pub struct DeliveryCancelItemRow {
+    pub item_id: Uuid,
+    pub quantity: Decimal,
+    pub cogs_amount: Decimal,
+}
+
 /// Hand-written DeliveryNoteItem SQL. Lives here per the module's 4-layer rule.
 impl DeliveryNoteItemRepository {
     /// Insert one delivery line. Takes the CALLER'S connection so it commits with its header; the
@@ -113,6 +122,27 @@ impl DeliveryNoteItemRepository {
             .execute(conn)
             .await?;
         Ok(())
+    }
+
+    /// Read the live lines with their stored COGS — what the cancel path reverses. Same scope/order
+    /// guarantees as [`Self::fetch_items`] (caller wraps in `with_company_scope`).
+    pub async fn fetch_cancel_items(
+        &self,
+        pool: &PgPool,
+        delivery_id: Uuid,
+    ) -> Result<Vec<DeliveryCancelItemRow>, sqlx::Error> {
+        let rows = company_scope::fetch_all_rows_scoped(
+            pool,
+            sqlx::query(
+                r#"SELECT item_id, quantity, cogs_amount FROM inventory.delivery_note_items
+                   WHERE delivery_id=$1 AND (metadata->>'deleted_at') IS NULL ORDER BY id"#,
+            )
+            .bind(delivery_id),
+        )
+        .await?;
+        Ok(rows.iter().map(|it| DeliveryCancelItemRow {
+            item_id: it.get("item_id"), quantity: it.get("quantity"), cogs_amount: it.get("cogs_amount"),
+        }).collect())
     }
 }
 

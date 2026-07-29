@@ -17,6 +17,10 @@ use super::inventory_write_service::{
     DeliveryLine, InventoryError, InventoryWriteService, NewDelivery, NewReceipt, ReceiptLine,
 };
 
+/// Serde default for the optional `currency` field on inbound intake requests. Existing callers that
+/// don't send a currency get "IDR" (the module's historical single-currency behavior).
+fn default_currency() -> String { "IDR".into() }
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DeliveryRequestLine {
     pub item_id: Uuid,
@@ -33,6 +37,9 @@ pub struct DeliveryRequested {
     pub source_so_id: Option<Uuid>,
     pub warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
+    /// Ledger currency of the GL post (defaults to "IDR" when omitted).
+    #[serde(default = "default_currency")]
+    pub currency: String,
     /// GL accounts are inventory config, supplied by the composing service (not by selling).
     pub cogs_account_id: Uuid,
     pub inventory_account_id: Uuid,
@@ -58,6 +65,9 @@ pub struct ReceiptExpected {
     pub source_po_id: Option<Uuid>,
     pub warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
+    /// Ledger currency of the GL post (defaults to "IDR" when omitted).
+    #[serde(default = "default_currency")]
+    pub currency: String,
     pub inventory_account_id: Uuid,
     pub grir_account_id: Uuid,
     pub lines: Vec<ReceiptRequestLine>,
@@ -85,6 +95,7 @@ impl DeliveryIntake {
             source_so_id: req.source_so_id,
             warehouse_id: req.warehouse_id,
             posting_date: req.posting_date,
+            currency: req.currency,
             cogs_account_id: req.cogs_account_id,
             inventory_account_id: req.inventory_account_id,
             lines: req.lines.into_iter().map(|l| DeliveryLine { item_id: l.item_id, quantity: l.quantity }).collect(),
@@ -103,6 +114,7 @@ impl DeliveryIntake {
             source_po_id: req.source_po_id,
             warehouse_id: req.warehouse_id,
             posting_date: req.posting_date,
+            currency: req.currency,
             inventory_account_id: req.inventory_account_id,
             grir_account_id: req.grir_account_id,
             lines: req.lines.into_iter().map(|l| ReceiptLine { item_id: l.item_id, quantity: l.quantity, rate: l.rate }).collect(),

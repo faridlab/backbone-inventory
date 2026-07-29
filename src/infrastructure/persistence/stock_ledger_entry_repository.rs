@@ -92,6 +92,26 @@ impl StockLedgerEntryRepository {
         .await?;
         Ok(())
     }
+
+    /// The highest `sle_no` a voucher has already used — so a cancellation can continue the sequence
+    /// with its compensating entries instead of colliding on the
+    /// `(voucher_type, voucher_id, sle_no)` unique index. Takes the caller's connection (rides the
+    /// movement's transaction). 0 when the voucher has no entries yet.
+    pub async fn fetch_max_sle_no(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        voucher_type: &str,
+        voucher_id: Uuid,
+    ) -> Result<i32, sqlx::Error> {
+        let max: Option<i32> = sqlx::query_scalar(
+            r#"SELECT MAX(sle_no) FROM inventory.stock_ledger_entries
+               WHERE voucher_type=$1::voucher_type AND voucher_id=$2 AND (metadata->>'deleted_at') IS NULL"#,
+        )
+        .bind(voucher_type).bind(voucher_id)
+        .fetch_one(conn)
+        .await?;
+        Ok(max.unwrap_or(0))
+    }
 }
 
 backbone_core::impl_crud_repository!(StockLedgerEntryRepository, StockLedgerEntry, soft_delete);
