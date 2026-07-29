@@ -32,11 +32,20 @@ impl GlPostSink for AccountingAdapter {
         req.source_reference = env.source_reference.clone();
         req.currency = env.currency.clone();
         req.description = env.description.clone();
-        req.lines = env.lines.iter().map(|l| PostingLine {
-            account_id: l.account_id, debit: l.debit, credit: l.credit,
-            party_type: l.party_type.clone(), party_id: l.party_id,
-            cost_center_id: None, project_id: None, department_id: None, description: l.description.clone(),
-        }).collect();
+        if env.posting_type == "reversal" {
+            // A reversal: hand accounting the original post id and NO lines — its PostingService reads
+            // the original via reverses_post_id and mirrors the lines (posting_type='reversal' is a
+            // distinct idempotency key from 'original', so it creates a new reversal journal).
+            req.posting_type = "reversal".into();
+            req.reverses_post_id = env.reverses_post_id;
+            req.lines = Vec::new();
+        } else {
+            req.lines = env.lines.iter().map(|l| PostingLine {
+                account_id: l.account_id, debit: l.debit, credit: l.credit,
+                party_type: l.party_type.clone(), party_id: l.party_id,
+                cost_center_id: None, project_id: None, department_id: None, description: l.description.clone(),
+            }).collect();
+        }
         match self.svc.post(req, None).await {
             Ok(r) => Ok(GlPostAck { post_id: r.post_id, journal_id: r.journal_id, idempotent_reuse: r.idempotent_reuse }),
             Err(e) => Err(GlPostRejected { code: e.code().to_string(), message: e.to_string() }),
@@ -352,4 +361,44 @@ async fn cancel_emits_balanced_reversal_envelope() {
     let rev: Option<Uuid> = sqlx::query_scalar("SELECT reversal_accounting_post_id FROM inventory.purchase_receipts WHERE id=$1")
         .bind(rid).fetch_one(&pool).await.unwrap();
     assert!(rev.is_some(), "reversal post id recorded on the header");
+}
+
+// ISEAM-9 (council 2026-07-29): end-to-end reversal through the REAL accounting ledger. Cancelling a
+// posted receipt lands a SECOND, balanced journal that MIRRORS the original (Dr GR/IR · Cr Inventory),
+// proving the inventory→accounting reversal seam works, not just inventory's envelope shape.
+#[tokio::test]
+async fn cancel_posts_a_real_reversal_journal() {
+    let pool = pool().await;
+    let (company, coa) = seed_coa(&pool).await;
+    let w = InventoryWriteService::new(pool.clone());
+    let adapter = AccountingAdapter { svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))) };
+    let wh = warehouse(&w, company).await;
+    let item = Uuid::new_v4();
+    let rid = w.create_purchase_receipt(NewReceipt {
+        receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
+        source_po_id: None, warehouse_id: wh, posting_date: day(),
+        currency: "IDR".into(),
+        inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
+        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") }],
+    }).await.unwrap();
+    let orig = w.submit_purchase_receipt(rid, &adapter).await.unwrap();
+    let orig_jid = orig.journal_id.unwrap();
+    assert_eq!(journal_count(&pool, company).await, 1);
+
+    // Cancel through the REAL adapter → accounting posts a distinct reversal journal.
+    let rev = w.cancel_purchase_receipt(rid, &adapter).await.unwrap();
+    assert!(rev.posted);
+    let rev_jid = rev.journal_id.unwrap();
+    assert_ne!(rev_jid, orig_jid, "reversal is a distinct journal");
+    assert_eq!(journal_count(&pool, company).await, 2, "original + reversal");
+
+    // The reversal mirrors the original (Dr Inventory·Cr GR/IR → Dr GR/IR · Cr Inventory).
+    assert_eq!(jrow(&pool, rev_jid).await, (d("1000"), d("1000")), "balanced reversal");
+    assert_eq!(line_amt(&pool, rev_jid, coa["2150"]).await.0, d("1000"), "Dr GR/IR (swapped)");
+    assert_eq!(line_amt(&pool, rev_jid, coa["1300"]).await.1, d("1000"), "Cr Inventory (swapped)");
+
+    // And the original journal is marked reversed by accounting.
+    let orig_reversed: bool = sqlx::query_scalar("SELECT is_reversed FROM accounting.journals WHERE id=$1")
+        .bind(orig_jid).fetch_one(&pool).await.unwrap();
+    assert!(orig_reversed, "accounting marked the original journal reversed");
 }
