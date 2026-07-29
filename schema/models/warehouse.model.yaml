@@ -97,7 +97,7 @@ models:
       valuation_method:
         type: ValuationMethod
         attributes: ["@default(moving_average)"]
-        description: "Cost method (moving-average default; FIFO opt-in)"
+        description: "Cost method (moving-average). FIFO was a declared-but-unimplemented option and has been removed (council 2026-07-29); re-add only when the FIFO engine ships."
 
       reorder_level:
         type: decimal
@@ -140,5 +140,3 @@ enums:
       - name: moving_average
         description: "Weighted moving average (SMB default)"
         default: true
-      - name: fifo
-        description: "First-in first-out lots"

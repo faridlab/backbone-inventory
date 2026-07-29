@@ -10,14 +10,12 @@ use utoipa::ToSchema;
 #[sqlx(type_name = "valuation_method", rename_all = "snake_case")]
 pub enum ValuationMethod {
     MovingAverage,
-    Fifo,
 }
 
 impl std::fmt::Display for ValuationMethod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::MovingAverage => write!(f, "moving_average"),
-            Self::Fifo => write!(f, "fifo"),
         }
     }
 }
@@ -28,7 +26,6 @@ impl FromStr for ValuationMethod {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "moving_average" => Ok(Self::MovingAverage),
-            "fifo" => Ok(Self::Fifo),
             _ => Err(format!("Unknown ValuationMethod variant: {}", s)),
         }
     }
