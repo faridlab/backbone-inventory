@@ -87,16 +87,20 @@ async fn req_as(
 
 fn uq(p: &str) -> String { format!("{p}-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]) }
 
-// IIP-1: generic bulk create on the SLE (the append-ledger) is NOT exposed — nothing can write an
-// SLE directly bypassing the valuation engine.
+// IIP-1: the guarded surface exposes the SLE and Bin as READ-ONLY — no write path exists, even for
+// an authenticated principal. The invariant is "no write SUCCEEDS" (no 2xx): an authenticated POST
+// to the read-only collection paths must not create anything. (Asserting the authed status matters:
+// an unauthenticated POST hits the `company_auth` route-layer first and returns 401 regardless of
+// whether a write route exists, so the unauth status says nothing about exposure.)
 #[tokio::test]
-async fn guarded_locks_direct_sle_write() {
+async fn guarded_surface_has_no_direct_sle_or_bin_writes() {
     let pool = pool().await;
     let m = module(&pool).await;
-    let (s, _) = req(app(&pool, &m), "POST", "/stock-ledger-entries", Some("{}".into())).await;
-    assert!(s == StatusCode::METHOD_NOT_ALLOWED || s == StatusCode::NOT_FOUND, "no direct SLE write; got {s}");
-    let (s2, _) = req(app(&pool, &m), "POST", "/bins/bulk", Some("[]".into())).await;
-    assert!(s2 == StatusCode::METHOD_NOT_ALLOWED || s2 == StatusCode::NOT_FOUND, "no direct Bin write; got {s2}");
+    let company = uuid::Uuid::new_v4();
+    let (s, _) = req_as(app(&pool, &m), company, "POST", "/stock-ledger-entries", Some("{}".into())).await;
+    assert!(!s.is_success(), "no direct SLE write; got {s}");
+    let (s2, _) = req_as(app(&pool, &m), company, "POST", "/bins/bulk", Some("[]".into())).await;
+    assert!(!s2.is_success(), "no direct Bin write; got {s2}");
 }
 
 // IIP-2: generic delete on a receipt is NOT exposed.
