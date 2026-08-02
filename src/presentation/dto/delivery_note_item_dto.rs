@@ -289,3 +289,4 @@ impl backbone_core::ApplyUpdateDto<UpdateDeliveryNoteItemDto> for DeliveryNoteIt
 // Add custom DTOs specific to DeliveryNoteItem here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

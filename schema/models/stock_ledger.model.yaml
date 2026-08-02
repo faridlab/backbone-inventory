@@ -47,7 +47,7 @@ models:
 
       qty_after_txn:
         type: decimal
-        attributes: ["@required", "@precision(18,4)"]
+        attributes: ["@required", "@precision(18,4)", "@immutable"]
         description: "Running balance quantity after this entry"
 
       incoming_rate:
@@ -57,17 +57,17 @@ models:
 
       valuation_rate:
         type: decimal
-        attributes: ["@default(0)", "@precision(18,6)", "@non_negative"]
+        attributes: ["@default(0)", "@precision(18,6)", "@non_negative", "@immutable"]
         description: "Moving-average unit cost after this entry"
 
       stock_value:
         type: decimal
-        attributes: ["@default(0)", "@precision(18,2)"]
+        attributes: ["@default(0)", "@precision(18,2)", "@immutable"]
         description: "Running total value after this entry (qty_after_txn * valuation_rate, 2dp)"
 
       stock_value_difference:
         type: decimal
-        attributes: ["@required", "@precision(18,2)"]
+        attributes: ["@required", "@precision(18,2)", "@immutable"]
         description: "Value delta of this entry (the amount posted to the GL)"
 
       voucher_type:
@@ -92,7 +92,7 @@ models:
 
       is_cancelled:
         type: bool
-        attributes: ["@default(false)"]
+        attributes: ["@default(false)", "@immutable"]
         description: "Reversed by a later correcting entry"
 
       metadata:
@@ -136,22 +136,22 @@ models:
 
       actual_qty:
         type: decimal
-        attributes: ["@default(0)", "@precision(18,4)"]
+        attributes: ["@default(0)", "@precision(18,4)", "@immutable"]
         description: "On-hand quantity"
 
       reserved_qty:
         type: decimal
-        attributes: ["@default(0)", "@precision(18,4)", "@non_negative"]
+        attributes: ["@default(0)", "@precision(18,4)", "@non_negative", "@immutable"]
         description: "Soft-reserved quantity (against sales orders)"
 
       valuation_rate:
         type: decimal
-        attributes: ["@default(0)", "@precision(18,6)", "@non_negative"]
+        attributes: ["@default(0)", "@precision(18,6)", "@non_negative", "@immutable"]
         description: "Current moving-average unit cost"
 
       stock_value:
         type: decimal
-        attributes: ["@default(0)", "@precision(18,2)"]
+        attributes: ["@default(0)", "@precision(18,2)", "@immutable"]
         description: "Current total value (actual_qty * valuation_rate, 2dp)"
 
       metadata:

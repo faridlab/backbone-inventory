@@ -302,3 +302,4 @@ impl backbone_core::ApplyUpdateDto<UpdateStockReconciliationItemDto> for StockRe
 // Add custom DTOs specific to StockReconciliationItem here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

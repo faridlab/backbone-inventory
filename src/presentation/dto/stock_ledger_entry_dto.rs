@@ -102,16 +102,8 @@ pub struct UpdateStockLedgerEntryDto {
     pub posting_date: NaiveDate,
     #[serde(alias = "actual_qty")]
     pub actual_qty: Decimal,
-    #[serde(alias = "qty_after_txn")]
-    pub qty_after_txn: Decimal,
     #[serde(alias = "incoming_rate")]
     pub incoming_rate: Decimal,
-    #[serde(alias = "valuation_rate")]
-    pub valuation_rate: Decimal,
-    #[serde(alias = "stock_value")]
-    pub stock_value: Decimal,
-    #[serde(alias = "stock_value_difference")]
-    pub stock_value_difference: Decimal,
     #[serde(alias = "voucher_type")]
     pub voucher_type: VoucherType,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -124,9 +116,6 @@ pub struct UpdateStockLedgerEntryDto {
     #[cfg_attr(feature = "openapi", schema(example = 42))]
     #[serde(alias = "sle_no")]
     pub sle_no: i32,
-    #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "is_cancelled")]
-    pub is_cancelled: bool,
 }
 
 // =============================================================================
@@ -156,16 +145,8 @@ pub struct PatchStockLedgerEntryDto {
     pub posting_date: Option<NaiveDate>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "actual_qty")]
     pub actual_qty: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "qty_after_txn")]
-    pub qty_after_txn: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "incoming_rate")]
     pub incoming_rate: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "valuation_rate")]
-    pub valuation_rate: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "stock_value")]
-    pub stock_value: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "stock_value_difference")]
-    pub stock_value_difference: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "voucher_type")]
     pub voucher_type: Option<VoucherType>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -178,15 +159,12 @@ pub struct PatchStockLedgerEntryDto {
     #[cfg_attr(feature = "openapi", schema(example = 42))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "sle_no")]
     pub sle_no: Option<i32>,
-    #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "is_cancelled")]
-    pub is_cancelled: Option<bool>,
 }
 
 impl PatchStockLedgerEntryDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.company_id.is_some() || self.item_id.is_some() || self.warehouse_id.is_some() || self.posting_date.is_some() || self.actual_qty.is_some() || self.qty_after_txn.is_some() || self.incoming_rate.is_some() || self.valuation_rate.is_some() || self.stock_value.is_some() || self.stock_value_difference.is_some() || self.voucher_type.is_some() || self.voucher_id.is_some() || self.voucher_no.is_some() || self.sle_no.is_some() || self.is_cancelled.is_some()
+        self.company_id.is_some() || self.item_id.is_some() || self.warehouse_id.is_some() || self.posting_date.is_some() || self.actual_qty.is_some() || self.incoming_rate.is_some() || self.voucher_type.is_some() || self.voucher_id.is_some() || self.voucher_no.is_some() || self.sle_no.is_some()
     }
 }
 
@@ -392,16 +370,11 @@ impl backbone_core::ApplyUpdateDto<UpdateStockLedgerEntryDto> for StockLedgerEnt
         self.warehouse_id = dto.warehouse_id;
         self.posting_date = dto.posting_date;
         self.actual_qty = dto.actual_qty;
-        self.qty_after_txn = dto.qty_after_txn;
         self.incoming_rate = dto.incoming_rate;
-        self.valuation_rate = dto.valuation_rate;
-        self.stock_value = dto.stock_value;
-        self.stock_value_difference = dto.stock_value_difference;
         self.voucher_type = dto.voucher_type;
         self.voucher_id = dto.voucher_id;
         self.voucher_no = dto.voucher_no;
         self.sle_no = dto.sle_no;
-        self.is_cancelled = dto.is_cancelled;
         Ok(self)
     }
 }
@@ -414,3 +387,4 @@ impl backbone_core::ApplyUpdateDto<UpdateStockLedgerEntryDto> for StockLedgerEnt
 // Add custom DTOs specific to StockLedgerEntry here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

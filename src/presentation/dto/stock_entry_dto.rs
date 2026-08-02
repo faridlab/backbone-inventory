@@ -330,3 +330,4 @@ impl backbone_core::ApplyUpdateDto<UpdateStockEntryDto> for StockEntry {
 // Add custom DTOs specific to StockEntry here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

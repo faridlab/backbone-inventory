@@ -23,6 +23,7 @@ pub mod infrastructure;
 pub mod application;
 pub mod presentation;
 pub mod seeders;
+pub mod exports;
 
 // Re-exports for convenience - Domain entities
 pub use domain::entity::*;
@@ -43,25 +44,6 @@ pub use application::service::StockReconciliationService;
 pub use application::service::StockReconciliationItemService;
 pub use application::service::WarehouseService;
 pub use application::service::StockItemService;
-
-// Re-exports - The validated write surface (council 2026-07-29, finding #4).
-// `InventoryWriteService` is the module's most important contract: it is the ONLY path that moves
-// stock (lock → append SLE → update Bin → balanced GL post). A composing service/job drives it
-// in-process with a `GlPostSink`; the typed inputs and errors below are its published vocabulary.
-// Re-exported at the crate root so consumers reach the movement contract without the deep
-// `application::service::…` path.
-pub use application::service::InventoryWriteService;
-pub use application::service::InventoryError;
-pub use application::service::SubmitOutcome;
-pub use application::service::NewWarehouse;
-pub use application::service::NewStockItem;
-pub use application::service::NewReceipt;
-pub use application::service::ReceiptLine;
-pub use application::service::NewDelivery;
-pub use application::service::DeliveryLine;
-pub use application::service::NewTransfer;
-pub use application::service::NewReconciliation;
-pub use application::service::ReconLine;
 
 // Re-exports - Workflows
 pub use application::workflows::*;
@@ -95,6 +77,8 @@ pub struct InventoryModule {
     pub(crate) stock_reconciliation_item_service: Arc<StockReconciliationItemService>,
     pub(crate) warehouse_service: Arc<WarehouseService>,
     pub(crate) stock_item_service: Arc<StockItemService>,
+    // <<< CUSTOM FIELDS
+    // END CUSTOM
 }
 
 impl InventoryModule {
@@ -103,38 +87,38 @@ impl InventoryModule {
         InventoryModuleBuilder::new()
     }
 
-    /// Mount generated CRUD endpoints with NO domain validation — the fully
-    /// **unguarded** surface. A well-formed request can create invalid rows or
-    /// soft-delete a referenced master out from under its dependents. Prefer a guarded
-    /// composition (read + validated writes) for any real deployment; use this only in
-    /// trusted/admin/seeding contexts.
-    ///
-    /// **Engine-owned tables are deliberately excluded** (council 2026-07-29, ADR-0010):
-    /// the child line tables (`*_items`) and the running-balance `bins` table. A `Bin` is
-    /// the moving-average balance that must stay in lockstep with the append-only SLE and
-    /// the GL — it may only be touched by `InventoryWriteService` (lock → append SLE →
-    /// balanced post). Generic CRUD on `bins` (update/patch/upsert/soft_delete) would
-    /// rewrite `actual_qty`/`valuation_rate`/`stock_value` with no row lock, no SLE, and
-    /// no GL post — silent subledger drift that `repost_*` cannot repair. Child line items
-    /// are owned by their parent document and are likewise written only via the engine.
-    /// `tests/route_surface_guard.rs` fails CI if a schema regen re-adds any of them.
+    /// Mount ALL generated CRUD endpoints (12 per entity) with NO domain
+    /// validation — the fully **unguarded** surface. A well-formed request can
+    /// create invalid rows or soft-delete a referenced master out from under its
+    /// dependents. Prefer a guarded composition (read + validated writes) for any
+    /// real deployment; use this only in trusted/admin/seeding contexts.
     pub fn all_crud_routes(&self) -> Router {
         use presentation::http::{
             create_delivery_note_routes,
+            create_delivery_note_item_routes,
             create_purchase_receipt_routes,
+            create_purchase_receipt_item_routes,
             create_stock_entry_routes,
+            create_stock_entry_item_routes,
             create_stock_ledger_entry_routes,
+            create_bin_routes,
             create_stock_reconciliation_routes,
+            create_stock_reconciliation_item_routes,
             create_warehouse_routes,
             create_stock_item_routes,
         };
 
         Router::new()
             .merge(create_delivery_note_routes(self.delivery_note_service.clone()))
+            .merge(create_delivery_note_item_routes(self.delivery_note_item_service.clone()))
             .merge(create_purchase_receipt_routes(self.purchase_receipt_service.clone()))
+            .merge(create_purchase_receipt_item_routes(self.purchase_receipt_item_service.clone()))
             .merge(create_stock_entry_routes(self.stock_entry_service.clone()))
+            .merge(create_stock_entry_item_routes(self.stock_entry_item_service.clone()))
             .merge(create_stock_ledger_entry_routes(self.stock_ledger_entry_service.clone()))
+            .merge(create_bin_routes(self.bin_service.clone()))
             .merge(create_stock_reconciliation_routes(self.stock_reconciliation_service.clone()))
+            .merge(create_stock_reconciliation_item_routes(self.stock_reconciliation_item_service.clone()))
             .merge(create_warehouse_routes(self.warehouse_service.clone()))
             .merge(create_stock_item_routes(self.stock_item_service.clone()))
     }

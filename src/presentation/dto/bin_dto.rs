@@ -74,14 +74,6 @@ pub struct UpdateBinDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "warehouse_id")]
     pub warehouse_id: Uuid,
-    #[serde(alias = "actual_qty")]
-    pub actual_qty: Decimal,
-    #[serde(alias = "reserved_qty")]
-    pub reserved_qty: Decimal,
-    #[serde(alias = "valuation_rate")]
-    pub valuation_rate: Decimal,
-    #[serde(alias = "stock_value")]
-    pub stock_value: Decimal,
 }
 
 // =============================================================================
@@ -106,20 +98,12 @@ pub struct PatchBinDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
     pub warehouse_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "actual_qty")]
-    pub actual_qty: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "reserved_qty")]
-    pub reserved_qty: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "valuation_rate")]
-    pub valuation_rate: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "stock_value")]
-    pub stock_value: Option<Decimal>,
 }
 
 impl PatchBinDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.company_id.is_some() || self.item_id.is_some() || self.warehouse_id.is_some() || self.actual_qty.is_some() || self.reserved_qty.is_some() || self.valuation_rate.is_some() || self.stock_value.is_some()
+        self.company_id.is_some() || self.item_id.is_some() || self.warehouse_id.is_some()
     }
 }
 
@@ -286,10 +270,6 @@ impl backbone_core::ApplyUpdateDto<UpdateBinDto> for Bin {
         self.company_id = dto.company_id;
         self.item_id = dto.item_id;
         self.warehouse_id = dto.warehouse_id;
-        self.actual_qty = dto.actual_qty;
-        self.reserved_qty = dto.reserved_qty;
-        self.valuation_rate = dto.valuation_rate;
-        self.stock_value = dto.stock_value;
         Ok(self)
     }
 }
@@ -302,3 +282,4 @@ impl backbone_core::ApplyUpdateDto<UpdateBinDto> for Bin {
 // Add custom DTOs specific to Bin here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+
