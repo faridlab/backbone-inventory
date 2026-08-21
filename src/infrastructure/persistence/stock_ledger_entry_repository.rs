@@ -42,7 +42,7 @@ impl StockLedgerEntryRepository {
 ///
 /// Mirrors the raw column shape rather than the `StockLedgerEntry` entity: `voucher_type` is
 /// supplied as a free string and cast at the DB (`$12::voucher_type`) so a bad value fails as a DB
-/// error, and `is_cancelled` is a literal FALSE (the SLE is append-only — a correction is a new
+/// error, and `status` is a literal 'active' (the SLE is append-only — a correction is a new
 /// entry, never an edit).
 pub struct NewSleRow<'a> {
     pub company_id: Uuid,
@@ -81,8 +81,8 @@ impl StockLedgerEntryRepository {
             r#"INSERT INTO inventory.stock_ledger_entries
                 (id, company_id, item_id, warehouse_id, posting_date, actual_qty, qty_after_txn,
                  incoming_rate, valuation_rate, stock_value, stock_value_difference, voucher_type,
-                 voucher_id, voucher_no, sle_no, is_cancelled)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::voucher_type,$13,$14,$15,FALSE)"#,
+                 voucher_id, voucher_no, sle_no, status)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::voucher_type,$13,$14,$15,'active')"#,
         )
         .bind(Uuid::new_v4()).bind(e.company_id).bind(e.item_id).bind(e.warehouse_id).bind(e.posting_date)
         .bind(e.actual_qty).bind(e.qty_after_txn).bind(e.incoming_rate).bind(e.valuation_rate)

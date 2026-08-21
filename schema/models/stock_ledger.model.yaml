@@ -90,10 +90,11 @@ models:
         attributes: ["@required"]
         description: "Sequence of this SLE within its voucher (part of the idempotency key)"
 
-      is_cancelled:
-        type: bool
-        attributes: ["@default(false)", "@immutable"]
-        description: "Reversed by a later correcting entry"
+      # replaces is_cancelled (boolean flipped to lifecycle enum)
+      status:
+        type: StockLedgerStatus
+        attributes: ["@default(active)", "@immutable"]
+        description: "Lifecycle (a cancelled entry is reversed by a later correcting entry; the row itself is never edited)"
 
       metadata:
         type: Metadata
@@ -181,3 +182,12 @@ enums:
         description: "Internal transfer / repack / issue / receipt"
       - name: stock_reconciliation
         description: "Physical-count adjustment"
+
+  - name: StockLedgerStatus
+    description: "Lifecycle of a stock ledger entry"
+    variants:
+      - name: active
+        description: "The entry contributes to bin balances and valuation"
+        default: true
+      - name: cancelled
+        description: "Reversed by a later correcting entry; the row itself is never edited"

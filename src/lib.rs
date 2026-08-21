@@ -103,6 +103,8 @@ impl InventoryModule {
             create_stock_item_routes,
         };
 
+        // Engine-owned tables (child line items + `bins`) are deliberately NOT mounted here — see
+        // tests/route_surface_guard.rs. They are written via InventoryWriteService only.
         Router::new()
             .merge(create_delivery_note_routes(self.delivery_note_service.clone()))
             .merge(create_purchase_receipt_routes(self.purchase_receipt_service.clone()))
@@ -118,10 +120,49 @@ impl InventoryModule {
     /// mount exposes unguarded writes. Compose a guarded router (read + validated
     /// writes) for production, or call `all_crud_routes()` to opt into the full
     /// unguarded surface explicitly.
-    #[deprecated(note = "mounts unvalidated generic CRUD on every entity; compose a guarded router for production, or call all_crud_routes() for the intentional full/unguarded surface")]
+    #[deprecated(note = "mounts unvalidated generic CRUD; prefer readonly_routes() + validated writes, or all_crud_routes() for the full/unguarded surface")]
     pub fn routes(&self) -> Router {
         self.all_crud_routes()
     }
+
+    /// Read-only routes for every entity (GET endpoints only) — the safe base.
+    ///
+    /// Generic mutation can't reach here, so this surface cannot bypass a
+    /// validated write service's invariants. Use this as the production base and
+    /// merge validated write routes (or a write service's HTTP layer) onto it.
+    pub fn readonly_routes(&self) -> Router {
+        use presentation::http::{
+            create_delivery_note_read_routes,
+            create_delivery_note_item_read_routes,
+            create_purchase_receipt_read_routes,
+            create_purchase_receipt_item_read_routes,
+            create_stock_entry_read_routes,
+            create_stock_entry_item_read_routes,
+            create_stock_ledger_entry_read_routes,
+            create_bin_read_routes,
+            create_stock_reconciliation_read_routes,
+            create_stock_reconciliation_item_read_routes,
+            create_warehouse_read_routes,
+            create_stock_item_read_routes,
+        };
+
+        Router::new()
+            .merge(create_delivery_note_read_routes(self.delivery_note_service.clone()))
+            .merge(create_delivery_note_item_read_routes(self.delivery_note_item_service.clone()))
+            .merge(create_purchase_receipt_read_routes(self.purchase_receipt_service.clone()))
+            .merge(create_purchase_receipt_item_read_routes(self.purchase_receipt_item_service.clone()))
+            .merge(create_stock_entry_read_routes(self.stock_entry_service.clone()))
+            .merge(create_stock_entry_item_read_routes(self.stock_entry_item_service.clone()))
+            .merge(create_stock_ledger_entry_read_routes(self.stock_ledger_entry_service.clone()))
+            .merge(create_bin_read_routes(self.bin_service.clone()))
+            .merge(create_stock_reconciliation_read_routes(self.stock_reconciliation_service.clone()))
+            .merge(create_stock_reconciliation_item_read_routes(self.stock_reconciliation_item_service.clone()))
+            .merge(create_warehouse_read_routes(self.warehouse_service.clone()))
+            .merge(create_stock_item_read_routes(self.stock_item_service.clone()))
+    }
+
+    // <<< CUSTOM METHODS
+    // END CUSTOM
 }
 
 /// Builder for InventoryModule

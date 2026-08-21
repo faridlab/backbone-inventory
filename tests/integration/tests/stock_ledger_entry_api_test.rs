@@ -38,7 +38,7 @@ impl TestDataGenerator for StockLedgerEntryTestData {
             "voucher_id": Uuid::new_v4().to_string(),
             "voucher_no": format!("Test {}", Uuid::new_v4().to_string().split('-').next().unwrap()),
             "sle_no": 1,
-            "is_cancelled": false,
+            "status": "active",
             "metadata": json!({}),
         })
     }
@@ -61,7 +61,7 @@ impl TestDataGenerator for StockLedgerEntryTestData {
             "voucher_id": Uuid::new_v4().to_string(),
             "voucher_no": format!("Test {}", Uuid::new_v4().to_string().split('-').next().unwrap()),
             "sle_no": 1,
-            "is_cancelled": false,
+            "status": "active",
             "metadata": json!({}),
         })
     }

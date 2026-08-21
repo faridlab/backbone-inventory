@@ -18,6 +18,7 @@ pub mod doc_status;
 pub mod gl_posting_state;
 pub mod stock_entry_type;
 pub mod voucher_type;
+pub mod stock_ledger_status;
 pub mod warehouse_type;
 pub mod valuation_method;
 
@@ -62,6 +63,7 @@ pub use doc_status::DocStatus;
 pub use gl_posting_state::GlPostingState;
 pub use stock_entry_type::StockEntryType;
 pub use voucher_type::VoucherType;
+pub use stock_ledger_status::StockLedgerStatus;
 pub use warehouse_type::WarehouseType;
 pub use valuation_method::ValuationMethod;
 

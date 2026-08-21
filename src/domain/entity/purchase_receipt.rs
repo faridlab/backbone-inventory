@@ -77,7 +77,7 @@ pub struct PurchaseReceipt {
 impl PurchaseReceipt {
     /// Create a builder for PurchaseReceipt
     pub fn builder() -> PurchaseReceiptBuilder {
-        PurchaseReceiptBuilder::default()
+        <PurchaseReceiptBuilder as Default>::default()
     }
 
     /// Create a new PurchaseReceipt with required fields
@@ -488,8 +488,8 @@ impl PurchaseReceiptBuilder {
             total_value: self.total_value.unwrap_or(Decimal::from(0)),
             inventory_account_id,
             grir_account_id,
-            status: self.status.unwrap_or(DocStatus::default()),
-            posting_state: self.posting_state.unwrap_or(GlPostingState::default()),
+            status: self.status.unwrap_or_default(),
+            posting_state: self.posting_state.unwrap_or_default(),
             journal_id: self.journal_id,
             accounting_post_id: self.accounting_post_id,
             posted_at: self.posted_at,

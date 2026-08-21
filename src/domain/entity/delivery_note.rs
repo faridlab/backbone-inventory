@@ -76,7 +76,7 @@ pub struct DeliveryNote {
 impl DeliveryNote {
     /// Create a builder for DeliveryNote
     pub fn builder() -> DeliveryNoteBuilder {
-        DeliveryNoteBuilder::default()
+        <DeliveryNoteBuilder as Default>::default()
     }
 
     /// Create a new DeliveryNote with required fields
@@ -475,8 +475,8 @@ impl DeliveryNoteBuilder {
             total_cogs: self.total_cogs.unwrap_or(Decimal::from(0)),
             cogs_account_id,
             inventory_account_id,
-            status: self.status.unwrap_or(DocStatus::default()),
-            posting_state: self.posting_state.unwrap_or(GlPostingState::default()),
+            status: self.status.unwrap_or_default(),
+            posting_state: self.posting_state.unwrap_or_default(),
             journal_id: self.journal_id,
             accounting_post_id: self.accounting_post_id,
             posted_at: self.posted_at,

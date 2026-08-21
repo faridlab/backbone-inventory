@@ -66,7 +66,7 @@ pub struct StockItem {
 impl StockItem {
     /// Create a builder for StockItem
     pub fn builder() -> StockItemBuilder {
-        StockItemBuilder::default()
+        <StockItemBuilder as Default>::default()
     }
 
     /// Create a new StockItem with required fields
@@ -304,7 +304,7 @@ impl StockItemBuilder {
             stock_uom,
             is_stock_item: self.is_stock_item.unwrap_or(true),
             has_batch: self.has_batch.unwrap_or(false),
-            valuation_method: self.valuation_method.unwrap_or(ValuationMethod::default()),
+            valuation_method: self.valuation_method.unwrap_or_default(),
             reorder_level: self.reorder_level.unwrap_or(Decimal::from(0)),
             metadata: AuditMetadata::default(),
         })

@@ -5,6 +5,7 @@ use uuid::Uuid;
 use rust_decimal::Decimal;
 
 use super::VoucherType;
+use super::StockLedgerStatus;
 use super::AuditMetadata;
 
 /// Strongly-typed ID for StockLedgerEntry
@@ -65,7 +66,7 @@ pub struct StockLedgerEntry {
     pub voucher_id: Uuid,
     pub voucher_no: String,
     pub sle_no: i32,
-    pub is_cancelled: bool,
+    pub status: StockLedgerStatus,
     #[serde(default)]
     #[sqlx(json)]
     pub metadata: AuditMetadata,
@@ -74,11 +75,11 @@ pub struct StockLedgerEntry {
 impl StockLedgerEntry {
     /// Create a builder for StockLedgerEntry
     pub fn builder() -> StockLedgerEntryBuilder {
-        StockLedgerEntryBuilder::default()
+        <StockLedgerEntryBuilder as Default>::default()
     }
 
     /// Create a new StockLedgerEntry with required fields
-    pub fn new(company_id: Uuid, item_id: Uuid, warehouse_id: Uuid, posting_date: NaiveDate, actual_qty: Decimal, qty_after_txn: Decimal, incoming_rate: Decimal, valuation_rate: Decimal, stock_value: Decimal, stock_value_difference: Decimal, voucher_type: VoucherType, voucher_id: Uuid, voucher_no: String, sle_no: i32, is_cancelled: bool) -> Self {
+    pub fn new(company_id: Uuid, item_id: Uuid, warehouse_id: Uuid, posting_date: NaiveDate, actual_qty: Decimal, qty_after_txn: Decimal, incoming_rate: Decimal, valuation_rate: Decimal, stock_value: Decimal, stock_value_difference: Decimal, voucher_type: VoucherType, voucher_id: Uuid, voucher_no: String, sle_no: i32, status: StockLedgerStatus) -> Self {
         Self {
             id: Uuid::new_v4(),
             company_id,
@@ -95,7 +96,7 @@ impl StockLedgerEntry {
             voucher_id,
             voucher_no,
             sle_no,
-            is_cancelled,
+            status,
             metadata: AuditMetadata::default(),
         }
     }
@@ -150,6 +151,11 @@ impl StockLedgerEntry {
         self.metadata.deleted_by.as_ref()
     }
 
+    /// Get the current status
+    pub fn status(&self) -> &StockLedgerStatus {
+        &self.status
+    }
+
 
     // ==========================================================
     // Partial Update
@@ -201,8 +207,8 @@ impl StockLedgerEntry {
                 "sle_no" => {
                     if let Ok(v) = serde_json::from_value(value) { self.sle_no = v; }
                 }
-                "is_cancelled" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.is_cancelled = v; }
+                "status" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.status = v; }
                 }
                 _ => {} // ignore unknown fields
             }
@@ -263,6 +269,7 @@ impl backbone_orm::EntityRepoMeta for StockLedgerEntry {
         m.insert("warehouse_id".to_string(), "uuid".to_string());
         m.insert("voucher_id".to_string(), "uuid".to_string());
         m.insert("voucher_type".to_string(), "voucher_type".to_string());
+        m.insert("status".to_string(), "stock_ledger_status".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
@@ -293,7 +300,7 @@ pub struct StockLedgerEntryBuilder {
     voucher_id: Option<Uuid>,
     voucher_no: Option<String>,
     sle_no: Option<i32>,
-    is_cancelled: Option<bool>,
+    status: Option<StockLedgerStatus>,
 }
 
 impl StockLedgerEntryBuilder {
@@ -381,9 +388,9 @@ impl StockLedgerEntryBuilder {
         self
     }
 
-    /// Set the is_cancelled field (default: `false`)
-    pub fn is_cancelled(mut self, value: bool) -> Self {
-        self.is_cancelled = Some(value);
+    /// Set the status field (default: `StockLedgerStatus::default()`)
+    pub fn status(mut self, value: StockLedgerStatus) -> Self {
+        self.status = Some(value);
         self
     }
 
@@ -419,7 +426,7 @@ impl StockLedgerEntryBuilder {
             voucher_id,
             voucher_no,
             sle_no,
-            is_cancelled: self.is_cancelled.unwrap_or(false),
+            status: self.status.unwrap_or_default(),
             metadata: AuditMetadata::default(),
         })
     }

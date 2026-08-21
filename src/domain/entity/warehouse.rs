@@ -64,7 +64,7 @@ pub struct Warehouse {
 impl Warehouse {
     /// Create a builder for Warehouse
     pub fn builder() -> WarehouseBuilder {
-        WarehouseBuilder::default()
+        <WarehouseBuilder as Default>::default()
     }
 
     /// Create a new Warehouse with required fields
@@ -299,7 +299,7 @@ impl WarehouseBuilder {
             company_id,
             code,
             name,
-            warehouse_type: self.warehouse_type.unwrap_or(WarehouseType::default()),
+            warehouse_type: self.warehouse_type.unwrap_or_default(),
             parent_warehouse_id: self.parent_warehouse_id,
             is_group: self.is_group.unwrap_or(false),
             metadata: AuditMetadata::default(),

@@ -442,7 +442,7 @@ pub struct StockLedgerEntryDto {
     pub voucher_id: Uuid,
     pub voucher_no: String,
     pub sle_no: i32,
-    pub is_cancelled: bool,
+    pub status: StockLedgerStatus,
     pub metadata: serde_json::Value,
 }
 
@@ -450,6 +450,7 @@ pub struct StockLedgerEntryDto {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StockLedgerEntrySummary {
     pub id: StockLedgerEntryId,
+    pub status: StockLedgerStatus,
 }
 
 /// Reference to StockLedgerEntry for foreign key relationships

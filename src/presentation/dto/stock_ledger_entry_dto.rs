@@ -19,6 +19,7 @@ use validator::Validate;
 
 use crate::domain::entity::StockLedgerEntry;
 use crate::domain::entity::AuditMetadata;
+use crate::domain::entity::StockLedgerStatus;
 use crate::domain::entity::VoucherType;
 
 // =============================================================================
@@ -70,9 +71,7 @@ pub struct CreateStockLedgerEntryDto {
     #[cfg_attr(feature = "openapi", schema(example = 42))]
     #[serde(alias = "sle_no")]
     pub sle_no: i32,
-    #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "is_cancelled")]
-    pub is_cancelled: bool,
+    pub status: StockLedgerStatus,
 }
 
 // =============================================================================
@@ -203,8 +202,7 @@ pub struct StockLedgerEntryResponseDto {
     pub voucher_no: String,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
     pub sle_no: i32,
-    #[cfg_attr(feature = "openapi", schema(example = true))]
-    pub is_cancelled: bool,
+    pub status: StockLedgerStatus,
     pub metadata: AuditMetadata,
 }
 
@@ -290,7 +288,7 @@ impl From<StockLedgerEntry> for StockLedgerEntryResponseDto {
             voucher_id: entity.voucher_id,
             voucher_no: entity.voucher_no,
             sle_no: entity.sle_no,
-            is_cancelled: entity.is_cancelled,
+            status: entity.status,
             metadata: entity.metadata,
         }
     }
@@ -327,7 +325,7 @@ impl From<CreateStockLedgerEntryDto> for StockLedgerEntry {
             voucher_id: dto.voucher_id,
             voucher_no: dto.voucher_no,
             sle_no: dto.sle_no,
-            is_cancelled: dto.is_cancelled,
+            status: dto.status,
             metadata: AuditMetadata::default(),
         }
     }
@@ -351,7 +349,7 @@ impl From<&StockLedgerEntry> for StockLedgerEntryResponseDto {
             voucher_id: entity.voucher_id.clone(),
             voucher_no: entity.voucher_no.clone(),
             sle_no: entity.sle_no.clone(),
-            is_cancelled: entity.is_cancelled.clone(),
+            status: entity.status.clone(),
             metadata: entity.metadata.clone(),
         }
     }
@@ -387,4 +385,3 @@ impl backbone_core::ApplyUpdateDto<UpdateStockLedgerEntryDto> for StockLedgerEnt
 // Add custom DTOs specific to StockLedgerEntry here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
-

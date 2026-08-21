@@ -64,7 +64,7 @@ pub struct Bin {
 impl Bin {
     /// Create a builder for Bin
     pub fn builder() -> BinBuilder {
-        BinBuilder::default()
+        <BinBuilder as Default>::default()
     }
 
     /// Create a new Bin with required fields

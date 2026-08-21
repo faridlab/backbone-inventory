@@ -282,4 +282,3 @@ impl backbone_core::ApplyUpdateDto<UpdateBinDto> for Bin {
 // Add custom DTOs specific to Bin here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
-

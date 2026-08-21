@@ -297,4 +297,3 @@ impl backbone_core::ApplyUpdateDto<UpdateWarehouseDto> for Warehouse {
 // Add custom DTOs specific to Warehouse here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
-

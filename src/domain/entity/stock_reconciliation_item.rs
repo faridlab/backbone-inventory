@@ -64,7 +64,7 @@ pub struct StockReconciliationItem {
 impl StockReconciliationItem {
     /// Create a builder for StockReconciliationItem
     pub fn builder() -> StockReconciliationItemBuilder {
-        StockReconciliationItemBuilder::default()
+        <StockReconciliationItemBuilder as Default>::default()
     }
 
     /// Create a new StockReconciliationItem with required fields

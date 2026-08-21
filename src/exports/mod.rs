@@ -8,7 +8,7 @@
 //! ## Usage from other modules
 //!
 //! ```text
-//! use inventory::exports::{DeliveryNoteDto, InventoryQueryService};
+//! use inventory::exports::{DeliveryNoteDto};
 //! ```
 
 mod types;
@@ -63,9 +63,6 @@ pub use events::*;
 /// - `StockItemDto` - Data transfer object for StockItem
 /// - `StockItemSummary` - Summary view of StockItem
 /// - `StockItemId` - Type-safe ID wrapper
-///
-/// ## Public Services
-/// - `InventoryQueryService` - Read-only queries
 ///
 /// ## Public Events
 /// - `DeliveryNoteCreatedEvent` - Published when DeliveryNote is created

@@ -61,7 +61,7 @@ pub struct StockEntryItem {
 impl StockEntryItem {
     /// Create a builder for StockEntryItem
     pub fn builder() -> StockEntryItemBuilder {
-        StockEntryItemBuilder::default()
+        <StockEntryItemBuilder as Default>::default()
     }
 
     /// Create a new StockEntryItem with required fields

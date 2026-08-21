@@ -63,7 +63,7 @@ pub struct DeliveryNoteItem {
 impl DeliveryNoteItem {
     /// Create a builder for DeliveryNoteItem
     pub fn builder() -> DeliveryNoteItemBuilder {
-        DeliveryNoteItemBuilder::default()
+        <DeliveryNoteItemBuilder as Default>::default()
     }
 
     /// Create a new DeliveryNoteItem with required fields

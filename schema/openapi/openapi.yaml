@@ -5612,7 +5612,7 @@ components:
         - voucher_id
         - voucher_no
         - sle_no
-        - is_cancelled
+        - status
         - metadata
       properties:
         id:
@@ -5653,8 +5653,8 @@ components:
         sle_no:
           type: integer
           format: int32
-        is_cancelled:
-          type: boolean
+        status:
+          type: string
         metadata:
           type: object
 
@@ -5688,7 +5688,7 @@ components:
         - voucher_id
         - voucher_no
         - sle_no
-        - is_cancelled
+        - status
         - metadata
       properties:
         company_id:
@@ -5726,8 +5726,8 @@ components:
         sle_no:
           type: integer
           format: int32
-        is_cancelled:
-          type: boolean
+        status:
+          type: string
         metadata:
           type: object
 
@@ -5748,7 +5748,7 @@ components:
         - voucher_id
         - voucher_no
         - sle_no
-        - is_cancelled
+        - status
         - metadata
       properties:
         company_id:
@@ -5786,8 +5786,8 @@ components:
         sle_no:
           type: integer
           format: int32
-        is_cancelled:
-          type: boolean
+        status:
+          type: string
         metadata:
           type: object
 
@@ -5829,8 +5829,8 @@ components:
         sle_no:
           type: integer
           format: int32
-        is_cancelled:
-          type: boolean
+        status:
+          type: string
         metadata:
           type: object
 

@@ -69,7 +69,7 @@ pub struct StockEntry {
 impl StockEntry {
     /// Create a builder for StockEntry
     pub fn builder() -> StockEntryBuilder {
-        StockEntryBuilder::default()
+        <StockEntryBuilder as Default>::default()
     }
 
     /// Create a new StockEntry with required fields
@@ -356,12 +356,12 @@ impl StockEntryBuilder {
             id: Uuid::new_v4(),
             entry_number,
             company_id,
-            stock_entry_type: self.stock_entry_type.unwrap_or(StockEntryType::default()),
+            stock_entry_type: self.stock_entry_type.unwrap_or_default(),
             from_warehouse_id: self.from_warehouse_id,
             to_warehouse_id: self.to_warehouse_id,
             posting_date,
-            status: self.status.unwrap_or(DocStatus::default()),
-            posting_state: self.posting_state.unwrap_or(GlPostingState::default()),
+            status: self.status.unwrap_or_default(),
+            posting_state: self.posting_state.unwrap_or_default(),
             notes: self.notes,
             metadata: AuditMetadata::default(),
         })

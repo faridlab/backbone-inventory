@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use anyhow::Result;
 use uuid::Uuid;
 
-use crate::domain::entity::{StockLedgerEntry, VoucherType};
+use crate::domain::entity::{StockLedgerEntry, StockLedgerStatus, VoucherType};
 
 /// Pagination parameters for list queries
 #[derive(Debug, Clone, Default)]
@@ -50,13 +50,13 @@ pub struct StockLedgerEntryFilter {
     pub voucher_type: Option<VoucherType>,
     pub voucher_id: Option<Uuid>,
     pub voucher_no: Option<String>,
-    pub is_cancelled: Option<bool>,
+    pub status: Option<StockLedgerStatus>,
 }
 
 impl StockLedgerEntryFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.company_id.is_some() || self.item_id.is_some() || self.warehouse_id.is_some() || self.voucher_type.is_some() || self.voucher_id.is_some() || self.voucher_no.is_some() || self.is_cancelled.is_some()
+        self.company_id.is_some() || self.item_id.is_some() || self.warehouse_id.is_some() || self.voucher_type.is_some() || self.voucher_id.is_some() || self.voucher_no.is_some() || self.status.is_some()
     }
 }
 

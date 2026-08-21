@@ -72,7 +72,7 @@ pub struct StockReconciliation {
 impl StockReconciliation {
     /// Create a builder for StockReconciliation
     pub fn builder() -> StockReconciliationBuilder {
-        StockReconciliationBuilder::default()
+        <StockReconciliationBuilder as Default>::default()
     }
 
     /// Create a new StockReconciliation with required fields
@@ -402,8 +402,8 @@ impl StockReconciliationBuilder {
             net_difference: self.net_difference.unwrap_or(Decimal::from(0)),
             inventory_account_id,
             adjustment_account_id,
-            status: self.status.unwrap_or(DocStatus::default()),
-            posting_state: self.posting_state.unwrap_or(GlPostingState::default()),
+            status: self.status.unwrap_or_default(),
+            posting_state: self.posting_state.unwrap_or_default(),
             journal_id: self.journal_id,
             accounting_post_id: self.accounting_post_id,
             posted_at: self.posted_at,

@@ -63,7 +63,7 @@ pub struct PurchaseReceiptItem {
 impl PurchaseReceiptItem {
     /// Create a builder for PurchaseReceiptItem
     pub fn builder() -> PurchaseReceiptItemBuilder {
-        PurchaseReceiptItemBuilder::default()
+        <PurchaseReceiptItemBuilder as Default>::default()
     }
 
     /// Create a new PurchaseReceiptItem with required fields
