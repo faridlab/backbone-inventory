@@ -186,6 +186,8 @@ enums:
         description: "Internal transfer / repack / issue / receipt"
       - name: stock_reconciliation
         description: "Physical-count adjustment"
+      - name: landed_cost
+        description: "Landed-cost value adjustment (qty 0, the remaining-share value delta; minted only by the move engine's adjustment verb)"
 
   - name: StockLedgerStatus
     description: "Lifecycle of a stock ledger entry"

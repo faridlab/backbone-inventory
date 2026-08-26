@@ -174,6 +174,11 @@ models:
         attributes: ["@default(0)", "@precision(18,2)", "@non_negative"]
         description: "quantity * rate (computed, 2dp)"
 
+      is_landed_costs_line:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Landed-cost service line (the seam is owned by inventory): the receipt door SKIPS move-minting for flagged lines — they carry cost into a LandedCost document, not stock"
+
       metadata:
         type: Metadata
         attributes: ["@audit_metadata"]

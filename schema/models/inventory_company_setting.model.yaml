@@ -1,0 +1,86 @@
+# =============================================================================
+# # Domain: Inventory
+# Entity: InventoryCompanySetting
+# Description: Per-company valuation posture — the cost-method vocabulary, the
+# perpetual-vs-periodic posting axis, and the anglo-saxon delivery-debit
+# posture. One row per company; an ABSENT row means the runtime defaults
+# (average / perpetual / anglo off), which are exactly today's behavior — so
+# rolling the module out without creating settings rows changes nothing.
+#
+# FIFO and standard are SETTINGS VOCABULARY ONLY in this pass: there is no FIFO
+# costing engine and no standard-price recompute (removal-strategy
+# FIFO/LIFO/FEFO is picking, not costing). `average` is the moving-average SLE
+# engine that stays the single valuation writer.
+# =============================================================================
+
+models:
+  - name: InventoryCompanySetting
+    collection: inventory_company_settings
+    description: "Per-company valuation posture (cost method, perpetual/periodic posting, anglo-saxon interim delivery debit); absent row = runtime defaults"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique settings row identifier"
+
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Owning company # logical FK to organization.Company.id; settings are per-company by definition — this table is STRICT-fenced (NOT NULL company_id, one row per company)"
+
+      cost_method:
+        type: InventoryCostMethod
+        attributes: ["@default(average)"]
+        description: "Inventory cost method. `average` (the moving-average SLE engine) is the only costing engine shipped; `fifo`/`standard` are vocabulary for later increments (landed-cost validation refuses loudly under `standard`)"
+
+      valuation_policy:
+        type: ValuationPolicy
+        attributes: ["@default(perpetual)"]
+        description: "Perpetual books stock GL legs in real time (today's behavior); periodic suppresses real-time stock posts (doors + engine legs stay not_applicable) until a later closing increment lands"
+
+      anglo_saxon_accounting:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Anglo-saxon posting posture: when true, the delivery debit leg swaps COGS for the stock-interim-delivered account (COGS recognition deferred to the invoice side). No second ledger — only which account the leg uses"
+
+      stock_interim_delivered_account_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Stock interim delivered account (GR/IR-family leg the delivery debits under the anglo-saxon posture) # logical FK to accounting.Account.id; required loudly (fail-closed) when anglo_saxon_accounting is true"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata (created_at, updated_at, deleted_at, created_by, updated_by, deleted_by)"
+
+    indexes:
+      - type: unique
+        fields: [company_id]
+        where: "deleted_at IS NULL"
+        description: "One settings row per company"
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: InventoryCostMethod
+    description: "Company inventory cost method — `average` is the shipped moving-average engine; fifo/standard are settings vocabulary for later increments"
+    variants:
+      - name: average
+        description: "Moving average (the SLE engine — the single valuation writer)"
+        default: true
+      - name: fifo
+        description: "FIFO costing — vocabulary only, no engine yet"
+      - name: standard
+        description: "Standard price — vocabulary only, no recompute engine yet (landed-cost validation refuses loudly under it)"
+
+  - name: ValuationPolicy
+    description: "When stock GL legs post: in real time (perpetual) or suppressed to a later closing flow (periodic)"
+    variants:
+      - name: perpetual
+        description: "Real-time stock posting (today's behavior)"
+        default: true
+      - name: periodic
+        description: "No real-time stock posts — the closing flow (a later increment) books them"

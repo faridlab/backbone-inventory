@@ -1,0 +1,273 @@
+# =============================================================================
+# Domain: Inventory
+# Entity: LandedCost (+ LandedCostLine + LandedCostAdjustmentLine)
+# Description: Landed-cost overlay on the EXISTING stock estate. A LandedCost
+# document revalues the DONE receipt moves of one target purchase receipt:
+# cost lines split over the target lines by quantity / value / weight, the
+# effective (remaining-share) portion of each allocation is written to the bin
+# through the move engine's adjustment verb (one SLE row per target line,
+# voucher_type 'landed_cost'), and ONE balanced AccountingPost (Dr inventory
+# valuation / Cr per cost line) is emitted through the same posting_state
+# machinery the voucher doors use.
+#
+# Retroactive-revaluation asymmetry (deliberate, preserved from the reference
+# ERP): only the REMAINING portion of a target line revalues the bin; the
+# already-consumed portion produces NO correcting entry — no COGS true-up.
+# Both GL sides carry only the remaining-portion value so the post balances.
+#
+# The adjustment lines are a TRANSIENT WORKSHEET, not a ledger: the rows are
+# deleted and recreated on every (re)compute, ordered by move_line_id so the
+# last-line-eats-the-rounding-diff recipient is deterministic; the only
+# accounting identity is the posted journal entry.
+# =============================================================================
+
+models:
+  - name: LandedCost
+    collection: landed_costs
+    description: "Landed-cost document: allocates cost lines over one target receipt's done move lines and revalues the remaining stock through the move engine"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique landed-cost identifier"
+
+      lc_number:
+        type: string
+        attributes: ["@required", "@max(40)"]
+        description: "Human reference (unique per company; the SLE voucher_no prefix)"
+
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Acting company (the LC books in its own company; strict fence) # logical FK to organization.Company.id"
+
+      branch_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Branch # logical FK to organization.Branch.id"
+
+      target_receipt_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "The purchase-receipt voucher whose DONE moves are revalued # logical FK to PurchaseReceipt.id (no physical FK — resolved through the receipt's minted moves at validate time)"
+
+      transfer_id:
+        type: uuid?
+        attributes: ["@foreign_key(Transfer.id)"]
+        description: "The transfer the target receipt minted, when known (informational; the revaluation walks the receipt's moves, not the projection)"
+
+      currency:
+        type: string
+        attributes: ["@default(\"IDR\")", "@max(3)"]
+        description: "ISO currency code of the cost lines"
+
+      posting_date:
+        type: date
+        attributes: ["@required"]
+        description: "Landed-cost posting date"
+
+      state:
+        type: LandedCostState
+        attributes: ["@default(draft)"]
+        lifecycle:
+          shape: hand_set
+        description: "Document lifecycle (hand_set, ADR-0016 document vocabulary): draft -> done via validate, draft -> cancel; a done LC can never cancel — a negative-amount LC is the reversal pattern"
+
+      amount_total:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,2)"]
+        description: "Σ cost line amounts (negative whole documents are the reversal pattern, so no non-negative check)"
+
+      posting_state:
+        type: GlPostingState
+        attributes: ["@default(pending)"]
+        description: "GL reconciliation state (same machinery as the voucher doors)"
+
+      journal_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Resulting journal # logical FK to accounting.Journal.id"
+
+      accounting_post_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "The AccountingPost record # logical FK to accounting.AccountingPost.id"
+
+      posted_at:
+        type: datetime?
+        description: "When the GL post was confirmed"
+
+      notes:
+        type: string?
+        attributes: ["@max(1000)"]
+        description: "Free-text notes"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    relations:
+      lines:
+        type: LandedCostLine[]
+        attributes: ["@one_to_many"]
+        description: "Cost lines"
+        inverse: landed_cost
+
+    indexes:
+      - type: unique
+        fields: [company_id, lc_number]
+        where: "deleted_at IS NULL"
+        description: "LC number unique per company"
+      - type: index
+        fields: [state]
+        description: "Lifecycle worklist"
+      - type: index
+        fields: [posting_state]
+        description: "The pending/failed GL sweep worklist (mirrors idx_stock_moves_posting_state)"
+      - type: index
+        fields: [target_receipt_id]
+        description: "Target-receipt lookup (which receipts already carry a landed cost)"
+
+  - name: LandedCostLine
+    collection: landed_cost_lines
+    description: "One landed-cost charge line (amount split over the target lines by its method; credit side is its account)"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique cost line id"
+
+      lc_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(LandedCost.id)"]
+        description: "Owning landed cost (service-level cascade: the worksheet and lines are rewritten with the document)"
+
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Owning company, denormalized from LandedCost to FORCE RLS on the child (ADR-0010 Decision A)"
+
+      name:
+        type: string
+        attributes: ["@required", "@max(150)"]
+        description: "Charge label (e.g. 'Sea freight', 'Customs duty')"
+
+      account_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Credit-side account for this charge # logical FK to accounting.Account.id (required — a cost line without an account is rejected)"
+
+      split_method:
+        type: LandedCostSplitMethod
+        attributes: ["@default(quantity)"]
+        description: "How this charge splits over the target lines: by done quantity, by carried value, or by weight (Σ qty × item weight_per_unit)"
+
+      amount:
+        type: decimal
+        attributes: ["@required", "@precision(18,2)"]
+        description: "Charge amount (negative = the reversal pattern; debit/credit swap verbatim on a negative LC)"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    relations:
+      landed_cost:
+        type: LandedCost
+        attributes: ["@one", "@foreign_key(lc_id)"]
+        description: "Owning landed cost"
+        inverse: lines
+
+    indexes:
+      - type: index
+        fields: [lc_id]
+        description: "Parent lookup"
+
+  - name: LandedCostAdjustmentLine
+    collection: landed_cost_adjustment_lines
+    description: "TRANSIENT allocation worksheet (NOT a ledger): deleted and recreated on every recompute; readonly to clients"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique worksheet row id (monotonic within a recompute — the last row by move_line_id eats the rounding diff deterministically)"
+
+      lc_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(LandedCost.id)"]
+        description: "Owning landed cost (service-level cascade: the worksheet is rewritten with the document)"
+
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Owning company, denormalized from LandedCost to FORCE RLS on the child (ADR-0010 Decision A)"
+
+      move_line_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Target receipt move line this allocation lands on # logical FK to StockMoveLine.id"
+
+      cost_line_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "The cost line this share came from # logical FK to LandedCostLine.id"
+
+      share:
+        type: decimal
+        attributes: ["@required", "@precision(18,2)"]
+        description: "This cost line's rounded allocation onto the target line (HALF-UP at the currency minor unit; the last target line by move_line_id absorbs the rounding diff)"
+
+      additional_landed_cost:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,2)"]
+        description: "CUMULATIVE landed cost allocated onto this target line across ALL cost lines"
+
+      remaining_qty:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,4)"]
+        description: "The target line's still-on-hand quantity at validate time (read-only FIFO attribution over the SLE history — attribution only, NOT FIFO costing)"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    indexes:
+      - type: index
+        fields: [lc_id]
+        description: "Parent lookup (the worksheet is read per document)"
+      - type: index
+        fields: [move_line_id]
+        description: "Target-line lookup (what landed on this receipt line)"
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: LandedCostState
+    description: "Landed-cost document lifecycle"
+    variants:
+      - name: draft
+        description: "Being prepared; no revaluation yet"
+        default: true
+      - name: done
+        description: "Validated: bins revalued, SLE rows minted, GL post emitted"
+      - name: cancel
+        description: "Abandoned before validation (a done LC can never cancel — a negative LC is the reversal pattern)"
+
+  - name: LandedCostSplitMethod
+    description: "How a cost line's amount splits over the target receipt lines"
+    variants:
+      - name: quantity
+        description: "Pro rata by done quantity"
+        default: true
+      - name: value
+        description: "Pro rata by carried value (the target lines' SLE in-values)"
+      - name: weight
+        description: "Pro rata by weight (Σ done qty × stock item weight_per_unit)"

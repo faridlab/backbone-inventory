@@ -45,6 +45,10 @@ schema: inventory
 #   StockLedgerEntry     -> strict
 #   Bin                  -> strict
 #   vouchers x4 + lines  -> strict
+#   InventoryCompanySetting -> strict (settings are per-company by definition —
+#                           NOT NULL company_id, one row per company, no
+#                           shared_blank escape)
+#   LandedCost + lines   -> strict (the LC books in its acting company)
 # -----------------------------------------------------------------------------
 company_fence: shared_blank
 
@@ -111,3 +115,5 @@ imports:
   - purchase_receipt.model.yaml
   - delivery_note.model.yaml
   - stock_reconciliation.model.yaml
+  - inventory_company_setting.model.yaml
+  - landed_cost.model.yaml

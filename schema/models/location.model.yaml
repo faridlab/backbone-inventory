@@ -90,6 +90,11 @@ models:
         type: date?
         description: "Next planned count (last_inventory_date + cyclic_inventory_frequency)"
 
+      valuation_account_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Per-location valuation account override — when set, inventory GL legs that touch this location resolve to it ahead of the door-header account (smallest-first override: location beats document header) # logical FK to accounting.Account.id"
+
       metadata:
         type: Metadata
         attributes: ["@audit_metadata"]
