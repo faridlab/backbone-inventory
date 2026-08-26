@@ -11,6 +11,7 @@ use utoipa::ToSchema;
 pub enum CreateBackorder {
     Ask,
     Always,
+    Delayed,
     Never,
 }
 
@@ -19,6 +20,7 @@ impl std::fmt::Display for CreateBackorder {
         match self {
             Self::Ask => write!(f, "ask"),
             Self::Always => write!(f, "always"),
+            Self::Delayed => write!(f, "delayed"),
             Self::Never => write!(f, "never"),
         }
     }
@@ -31,6 +33,7 @@ impl FromStr for CreateBackorder {
         match s.to_lowercase().as_str() {
             "ask" => Ok(Self::Ask),
             "always" => Ok(Self::Always),
+            "delayed" => Ok(Self::Delayed),
             "never" => Ok(Self::Never),
             _ => Err(format!("Unknown CreateBackorder variant: {}", s)),
         }

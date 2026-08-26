@@ -1,28 +1,29 @@
 //! The Delivery Note path: draft → submit → repost (hand-authored, user-owned).
 //!
 //! An `impl InventoryWriteService` chunk over the vocabulary in [`super::inventory_write_service`]:
-//! the goods-out voucher. `create_delivery_note` opens a draft; `submit_delivery_note` runs the
-//! **outflow** half of the moving-average valuation engine (`cogs = qty·rate; value -= cogs; qty -=
-//! qty; rate unchanged by an outflow`) with availability check + the residual-flush rule (draining a
-//! bin to 0 carries its entire remaining value so stock_value returns to exactly 0); a balanced
-//! `AccountingPost` (`Dr COGS · Cr Inventory`) follows. `repost_delivery_note` is the exit from a
-//! stuck `failed` GL post.
+//! the goods-out voucher. `create_delivery_note` opens a draft; `submit_delivery_note` mints ONE
+//! stock move per line through the converged engine (the warehouse's stock location → the
+//! customer location) — move application runs the **outflow** half of the moving-average
+//! valuation engine (`cogs = qty·rate; value -= cogs; qty -= qty; rate unchanged by an
+//! outflow`, with the residual-flush rule when the bin drains to 0): the source quant draws,
+//! the Bin reblends, the SLE row mints; then the voucher's ONE balanced `AccountingPost`
+//! (`Dr COGS · Cr Inventory`) is emitted and eventually reconciled. `repost_delivery_note` is
+//! the exit from a stuck `failed` GL post.
 //!
 //! Per the module's 4-layer rule this file holds no SQL — the statements live on
-//! `DeliveryNoteRepository` / `DeliveryNoteItemRepository` / `BinRepository` /
-//! `StockLedgerEntryRepository`, whose write methods take THIS service's transaction so the SLE + Bin
-//! + line valuation + header status commit together with the delivery.
+//! `DeliveryNoteRepository` / `DeliveryNoteItemRepository` and the engine's repositories.
 
 use backbone_orm::company_scope;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
-use crate::infrastructure::persistence::{GlVoucher, NewDeliveryItemRow, NewDeliveryRow, NewSleRow};
+use crate::infrastructure::persistence::{GlVoucher, NewDeliveryItemRow, NewDeliveryRow};
 
 use super::inventory_events::{InventoryEvent, StockDelivered};
 use super::inventory_gl::{AccountingPostEnvelope, GlPostLine, GlPostSink};
+use super::inventory_move_engine::{BackorderPolicy, MoveGlDirective, NewStockMove};
 use super::inventory_write_service::{
-    is_dup, money, InventoryError, InventoryWriteService, NewDelivery, SubmitOutcome,
+    is_dup, money, DoorOwnedGlSink, InventoryError, InventoryWriteService, NewDelivery, SubmitOutcome,
 };
 
 impl InventoryWriteService {
@@ -65,6 +66,23 @@ impl InventoryWriteService {
 
     // ---- submit: Delivery Note (COGS post) ---------------------------------
 
+    /// Submit the goods-out voucher. Every line mints ONE stock move through the converged
+    /// engine (the warehouse's stock location → the customer location): confirm → assign
+    /// (reserves against the source quants — the door refuses a line the reservation cannot
+    /// cover WHOLE, preserving the voucher's all-or-nothing availability posture) → done,
+    /// which releases the reservation, draws the source quant, reblends the Bin (`cogs =
+    /// qty·rate; rate unchanged`; residual flush when the bin drains to 0) and mints the SLE
+    /// row. The voucher keeps its identity verbatim — header status + per-line COGS snapshot,
+    /// the ONE `Dr COGS · Cr Inventory` envelope, the posting_state/repost machinery, the
+    /// `StockDelivered` event; the moves post no GL (empty directive + the door-owned-GL
+    /// tripwire sink).
+    ///
+    /// Not cross-move atomic (each engine verb commits its own transaction): a crash mid-way
+    /// leaves the delivery `draft` with some line moves landed — the deterministic move names
+    /// (`{delivery_number}/{seq}`, `origin` = the delivery number) make a re-submit RESUME
+    /// instead of double-shipping. A refusal mid-way (a line the reservation cannot cover)
+    /// unreserves that line's move and leaves the voucher `draft`: no stock moved, no
+    /// reservation held.
     pub async fn submit_delivery_note(&self, id: Uuid, sink: &dyn GlPostSink) -> Result<SubmitOutcome, InventoryError> {
         // RLS scope (ADR-0008), ID-only: fenced by the request/inherited scope.
         let hdr = self.deliveries.fetch_submit_header(&self.db_pool, id).await?
@@ -86,41 +104,104 @@ impl InventoryWriteService {
             self.delivery_items.fetch_items(&self.db_pool, id),
         ).await?;
 
-        let mut tx = self.db_pool.begin().await?;
-        // RLS scope (ADR-0008): MUST be bound before any bin read — an unbound connection is fenced
-        // to zero rows, so the FOR UPDATE below would read every bin as empty (and every delivery
-        // would then fail the availability check).
-        company_scope::bind_company_on(&mut tx, company).await?;
-        let mut total_cogs = Decimal::ZERO;
-        let mut sle_no = 0i32;
-        for it in &items {
-            let (line_id, item, qty) = (it.id, it.item_id, it.quantity);
-            let bin = self.bins.lock_or_init(&mut tx, company, item, warehouse).await?;
-            if bin.actual_qty < qty {
-                return Err(InventoryError::InsufficientStock { item_id: item, warehouse_id: warehouse, available: bin.actual_qty, requested: qty });
+        // The door's move endpoints: the warehouse's stock location (internal source) and the
+        // company's customer location (virtual destination) — resolve-or-bootstrap each.
+        let (customer_loc, stock_loc) = self.door_move_endpoints(company, warehouse, "customer").await?;
+
+        // ---- all-or-nothing availability pre-check, under the Bin locks -----------------------
+        // Same posture the voucher path always had: EVERY line's demand must be coverable
+        // before anything mints (the engine's draw guard re-checks at the quant grain). Also
+        // captures each line's valuation-rate snapshot — the per-line COGS copy the voucher
+        // rows carry.
+        let mut line_rates: std::collections::HashMap<Uuid, Decimal> = std::collections::HashMap::new();
+        {
+            let mut tx = self.db_pool.begin().await?;
+            // RLS scope (ADR-0008): MUST be bound before any bin read — an unbound connection
+            // is fenced to zero rows, so the FOR UPDATE below would read every bin as empty.
+            company_scope::bind_company_on(&mut tx, company).await?;
+            for it in &items {
+                if it.quantity.is_zero() { continue; }
+                let bin = self.bins.lock_or_init(&mut tx, company, it.item_id, warehouse).await?;
+                line_rates.insert(it.item_id, bin.valuation_rate);
+                if bin.actual_qty < it.quantity {
+                    return Err(InventoryError::InsufficientStock {
+                        item_id: it.item_id, warehouse_id: warehouse,
+                        available: bin.actual_qty, requested: it.quantity,
+                    });
+                }
+                // The quant-surface heal: stock seeded through the legacy direct-write paths
+                // wrote Bins without quants — seed the quant from the (locked) Bin once, so the
+                // line move's reservation has a surface to reserve against.
+                self.pickings.ensure_quant_surface(&mut tx, company, it.item_id, stock_loc, Some(warehouse)).await?;
             }
-            let new_qty = bin.actual_qty - qty;
-            // On the FINAL outflow (bin drained to 0), the last units absorb the moving-average
-            // rounding residual: COGS = the entire remaining value, so stock_value returns to
-            // EXACTLY 0 and the Inventory subledger ties out with the GL at zero stock (council
-            // 2026-07-04). Otherwise COGS consumes the current 2dp-rounded average.
-            let cogs = if new_qty.is_zero() { bin.stock_value } else { money(qty * bin.valuation_rate) };
-            let new_value = bin.stock_value - cogs;
-            // Moving-average: rate is unchanged by an outflow.
-            let new_rate = if new_qty > Decimal::ZERO { bin.valuation_rate } else { Decimal::ZERO };
-            self.bins.update_balance(&mut tx, company, item, warehouse, new_qty, new_rate, new_value).await?;
-            self.delivery_items.update_valuation(&mut tx, line_id, bin.valuation_rate, cogs).await?;
-            sle_no += 1;
-            self.sles.insert_sle(&mut tx, &NewSleRow {
-                company_id: company, item_id: item, warehouse_id: warehouse, posting_date,
-                actual_qty: -qty, qty_after_txn: new_qty, incoming_rate: Decimal::ZERO,
-                valuation_rate: new_rate, stock_value: new_value, stock_value_difference: -cogs,
-                voucher_type: "delivery_note", voucher_id: id, voucher_no: &voucher_no, sle_no,
-            }).await?;
+            tx.commit().await?;
+        }
+
+        // ---- physical movement: one minted move per line, engine-driven ----
+        let mut total_cogs = Decimal::ZERO;
+        for (idx, it) in items.iter().enumerate() {
+            if it.quantity.is_zero() { continue; } // a zero line moves nothing and mints nothing
+            let name = format!("{}/{}", voucher_no, idx + 1);
+            let mid = match self.mint_line_move(NewStockMove {
+                name: name.clone(),
+                company_id: company,
+                item_id: it.item_id,
+                demand_qty: it.quantity,
+                price_unit: Decimal::ZERO, // an outflow is valued at the source average, never priced
+                procure_method: "make_to_stock".into(),
+                picking_id: None,
+                origin: Some(voucher_no.clone()),
+                location_id: stock_loc,
+                location_dest_id: customer_loc,
+                partner_id: None,
+                warehouse_id: Some(warehouse),
+                orderpoint_id: None,
+                move_orig_ids: vec![],
+                move_dest_ids: vec![],
+                is_inventory: false,
+                scrapped: false,
+                forced_value: None,
+            }).await? {
+                Some(mid) => mid,
+                None => {
+                    // The line already landed in a prior (crashed) attempt: its COGS is the
+                    // value its move carried — recover it from the move's SLE leg.
+                    let prior_cogs = self.sles.sum_move_value(&self.db_pool, company, &name).await?;
+                    total_cogs += prior_cogs;
+                    continue;
+                }
+            };
+            let state = self.advance_move_to_assigned(mid).await?;
+            if state != "assigned" {
+                // The all-or-nothing posture: a line the reservation cannot cover WHOLE
+                // refuses the delivery. Release whatever the partial assign took; no stock
+                // moved, no reservation held, the voucher stays draft (retryable).
+                self.unreserve_move(mid).await?;
+                let on_hand = self.quants.fetch_on_hand(&self.db_pool, company, it.item_id, stock_loc).await?;
+                return Err(InventoryError::InsufficientStock {
+                    item_id: it.item_id, warehouse_id: warehouse,
+                    available: on_hand.on_hand_qty, requested: it.quantity,
+                });
+            }
+            let outcome = self.action_done(mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
+            // The engine's OUT leg IS the line's COGS (average or residual-flush — the same
+            // arithmetic the voucher path always used); snapshot it on the voucher row.
+            let cogs = outcome.out_value;
+            let rate = line_rates.get(&it.item_id).copied().unwrap_or(Decimal::ZERO);
+            {
+                let mut tx = self.db_pool.begin().await?;
+                company_scope::bind_company_on(&mut tx, company).await?;
+                self.delivery_items.update_valuation(&mut tx, it.id, rate, cogs).await?;
+                tx.commit().await?;
+            }
             total_cogs += cogs;
         }
-        self.deliveries.mark_submitted_with_cogs(&mut tx, id, total_cogs).await?;
-        tx.commit().await?;
+        {
+            let mut tx = self.db_pool.begin().await?;
+            company_scope::bind_company_on(&mut tx, company).await?;
+            self.deliveries.mark_submitted_with_cogs(&mut tx, id, total_cogs).await?;
+            tx.commit().await?;
+        }
 
         let env = AccountingPostEnvelope {
             idempotency_key: id.to_string(), company_id: company, branch_id: branch,

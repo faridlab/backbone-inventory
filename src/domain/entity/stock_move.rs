@@ -5,6 +5,7 @@ use uuid::Uuid;
 use rust_decimal::Decimal;
 
 use super::MoveState;
+use super::GlPostingState;
 use super::Priority;
 use super::ProcureMethod;
 use super::AuditMetadata;
@@ -55,6 +56,7 @@ pub struct StockMove {
     pub id: Uuid,
     pub name: String,
     pub state: MoveState,
+    pub posting_state: GlPostingState,
     pub priority: Priority,
     pub create_date: DateTime<Utc>,
     pub date: DateTime<Utc>,
@@ -62,6 +64,7 @@ pub struct StockMove {
     pub demand_qty: Decimal,
     pub quantity: Decimal,
     pub price_unit: Decimal,
+    pub forced_value: Option<Decimal>,
     pub procure_method: ProcureMethod,
     pub picking_id: Option<Uuid>,
     pub origin: Option<String>,
@@ -89,11 +92,12 @@ impl StockMove {
     }
 
     /// Create a new StockMove with required fields
-    pub fn new(name: String, state: MoveState, priority: Priority, create_date: DateTime<Utc>, date: DateTime<Utc>, item_id: Uuid, demand_qty: Decimal, quantity: Decimal, price_unit: Decimal, procure_method: ProcureMethod, location_id: Uuid, location_dest_id: Uuid, company_id: Uuid, move_orig_ids: Vec<Uuid>, move_dest_ids: Vec<Uuid>, is_inventory: bool, scrapped: bool, propagate_cancel: bool) -> Self {
+    pub fn new(name: String, state: MoveState, posting_state: GlPostingState, priority: Priority, create_date: DateTime<Utc>, date: DateTime<Utc>, item_id: Uuid, demand_qty: Decimal, quantity: Decimal, price_unit: Decimal, procure_method: ProcureMethod, location_id: Uuid, location_dest_id: Uuid, company_id: Uuid, move_orig_ids: Vec<Uuid>, move_dest_ids: Vec<Uuid>, is_inventory: bool, scrapped: bool, propagate_cancel: bool) -> Self {
         Self {
             id: Uuid::new_v4(),
             name,
             state,
+            posting_state,
             priority,
             create_date,
             date,
@@ -101,6 +105,7 @@ impl StockMove {
             demand_qty,
             quantity,
             price_unit,
+            forced_value: None,
             procure_method,
             picking_id: None,
             origin: None,
@@ -175,6 +180,12 @@ impl StockMove {
     // Fluent Setters (with_* for optional fields)
     // ==========================================================
 
+    /// Set the forced_value field (chainable)
+    pub fn with_forced_value(mut self, value: Decimal) -> Self {
+        self.forced_value = Some(value);
+        self
+    }
+
     /// Set the picking_id field (chainable)
     pub fn with_picking_id(mut self, value: Uuid) -> Self {
         self.picking_id = Some(value);
@@ -225,6 +236,9 @@ impl StockMove {
                 "state" => {
                     if let Ok(v) = serde_json::from_value(value) { self.state = v; }
                 }
+                "posting_state" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.posting_state = v; }
+                }
                 "priority" => {
                     if let Ok(v) = serde_json::from_value(value) { self.priority = v; }
                 }
@@ -245,6 +259,9 @@ impl StockMove {
                 }
                 "price_unit" => {
                     if let Ok(v) = serde_json::from_value(value) { self.price_unit = v; }
+                }
+                "forced_value" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.forced_value = v; }
                 }
                 "procure_method" => {
                     if let Ok(v) = serde_json::from_value(value) { self.procure_method = v; }
@@ -355,6 +372,7 @@ impl backbone_orm::EntityRepoMeta for StockMove {
         m.insert("warehouse_id".to_string(), "uuid".to_string());
         m.insert("orderpoint_id".to_string(), "uuid".to_string());
         m.insert("state".to_string(), "move_state".to_string());
+        m.insert("posting_state".to_string(), "gl_posting_state".to_string());
         m.insert("priority".to_string(), "priority".to_string());
         m.insert("procure_method".to_string(), "procure_method".to_string());
         m
@@ -378,6 +396,7 @@ impl backbone_orm::EntityRepoMeta for StockMove {
 pub struct StockMoveBuilder {
     name: Option<String>,
     state: Option<MoveState>,
+    posting_state: Option<GlPostingState>,
     priority: Option<Priority>,
     create_date: Option<DateTime<Utc>>,
     date: Option<DateTime<Utc>>,
@@ -385,6 +404,7 @@ pub struct StockMoveBuilder {
     demand_qty: Option<Decimal>,
     quantity: Option<Decimal>,
     price_unit: Option<Decimal>,
+    forced_value: Option<Decimal>,
     procure_method: Option<ProcureMethod>,
     picking_id: Option<Uuid>,
     origin: Option<String>,
@@ -412,6 +432,12 @@ impl StockMoveBuilder {
     /// Set the state field (default: `MoveState::default()`)
     pub fn state(mut self, value: MoveState) -> Self {
         self.state = Some(value);
+        self
+    }
+
+    /// Set the posting_state field (default: `GlPostingState::default()`)
+    pub fn posting_state(mut self, value: GlPostingState) -> Self {
+        self.posting_state = Some(value);
         self
     }
 
@@ -454,6 +480,12 @@ impl StockMoveBuilder {
     /// Set the price_unit field (default: `Decimal::from(0)`)
     pub fn price_unit(mut self, value: Decimal) -> Self {
         self.price_unit = Some(value);
+        self
+    }
+
+    /// Set the forced_value field (optional)
+    pub fn forced_value(mut self, value: Decimal) -> Self {
+        self.forced_value = Some(value);
         self
     }
 
@@ -563,6 +595,7 @@ impl StockMoveBuilder {
             id: Uuid::new_v4(),
             name,
             state: self.state.unwrap_or_default(),
+            posting_state: self.posting_state.unwrap_or_default(),
             priority: self.priority.unwrap_or_default(),
             create_date: self.create_date.unwrap_or(Utc::now()),
             date: self.date.unwrap_or(Utc::now()),
@@ -570,6 +603,7 @@ impl StockMoveBuilder {
             demand_qty: self.demand_qty.unwrap_or(Decimal::from(0)),
             quantity: self.quantity.unwrap_or(Decimal::from(0)),
             price_unit: self.price_unit.unwrap_or(Decimal::from(0)),
+            forced_value: self.forced_value,
             procure_method: self.procure_method.unwrap_or_default(),
             picking_id: self.picking_id,
             origin: self.origin,

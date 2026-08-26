@@ -1,27 +1,29 @@
 //! The Purchase Receipt path: draft → submit → repost (hand-authored, user-owned).
 //!
 //! An `impl InventoryWriteService` chunk over the vocabulary in [`super::inventory_write_service`]:
-//! the goods-in voucher. `create_purchase_receipt` opens a draft; `submit_purchase_receipt` runs the
-//! **inflow** half of the moving-average valuation engine (`value += qty·rate; qty += qty; rate =
-//! value/qty`) — the physical movement (SLE + Bin) commits first, then a balanced `AccountingPost`
-//! (`Dr Inventory · Cr GR/IR`) is emitted and eventually reconciled; `repost_purchase_receipt` is the
-//! exit from a stuck `failed` GL post.
+//! the goods-in voucher. `create_purchase_receipt` opens a draft; `submit_purchase_receipt` mints
+//! ONE stock move per line through the converged engine (supplier location → the warehouse's
+//! stock location) — move application runs the **inflow** half of the moving-average valuation
+//! engine (`value += qty·rate; qty += qty; rate = value/qty`): the quant materializes, the Bin
+//! reblends, the SLE row mints — then the voucher's ONE balanced `AccountingPost` (`Dr Inventory ·
+//! Cr GR/IR`) is emitted and eventually reconciled; `repost_purchase_receipt` is the exit from a
+//! stuck `failed` GL post. The moves post no GL of their own: the voucher owns the single
+//! envelope its posting_state/repost/reversal machinery keys on.
 //!
 //! Per the module's 4-layer rule this file holds no SQL — the statements live on
-//! `PurchaseReceiptRepository` / `PurchaseReceiptItemRepository` / `BinRepository` /
-//! `StockLedgerEntryRepository`, whose write methods take THIS service's transaction so the SLE + Bin
-//! + header status commit together with the receipt.
+//! `PurchaseReceiptRepository` / `PurchaseReceiptItemRepository` and the engine's repositories.
 
 use backbone_orm::company_scope;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
-use crate::infrastructure::persistence::{GlVoucher, NewReceiptItemRow, NewReceiptRow, NewSleRow};
+use crate::infrastructure::persistence::{GlVoucher, NewReceiptItemRow, NewReceiptRow};
 
 use super::inventory_events::{InventoryEvent, StockReceived};
 use super::inventory_gl::{AccountingPostEnvelope, GlPostLine, GlPostSink};
+use super::inventory_move_engine::{BackorderPolicy, MoveGlDirective, NewStockMove};
 use super::inventory_write_service::{
-    is_dup, money, rate6, InventoryError, InventoryWriteService, NewReceipt, SubmitOutcome,
+    is_dup, money, DoorOwnedGlSink, InventoryError, InventoryWriteService, NewReceipt, SubmitOutcome,
 };
 
 impl InventoryWriteService {
@@ -68,6 +70,19 @@ impl InventoryWriteService {
 
     // ---- submit: Purchase Receipt (asset post) -----------------------------
 
+    /// Submit the goods-in voucher. Every line mints ONE stock move through the converged
+    /// engine (supplier location → the warehouse's stock location): confirm → assign (an
+    /// inbound move's supply is unconditionally available, so the execution line covers the
+    /// full line) → done, which materializes the destination quant, reblends the Bin
+    /// (`value += qty·rate; rate = value/qty`) and mints the SLE row. The voucher keeps its
+    /// identity verbatim — header status, the ONE `Dr Inventory · Cr GR/IR` envelope, the
+    /// posting_state/repost machinery, the `StockReceived` event; the moves post no GL (empty
+    /// directive + the door-owned-GL tripwire sink).
+    ///
+    /// Not cross-move atomic (each engine verb commits its own transaction): a crash mid-way
+    /// leaves the receipt `draft` with some line moves landed — the deterministic move names
+    /// (`{receipt_number}/{seq}`, `origin` = the receipt number) make a re-submit RESUME
+    /// instead of double-receiving.
     pub async fn submit_purchase_receipt(&self, id: Uuid, sink: &dyn GlPostSink) -> Result<SubmitOutcome, InventoryError> {
         // RLS scope (ADR-0008), ID-only: fenced by the request/inherited scope.
         let hdr = self.receipts.fetch_submit_header(&self.db_pool, id).await?
@@ -89,32 +104,49 @@ impl InventoryWriteService {
             self.receipt_items.fetch_items(&self.db_pool, id),
         ).await?;
 
-        // ---- physical movement: SLE + Bin, one transaction ----
-        let mut tx = self.db_pool.begin().await?;
-        // RLS scope (ADR-0008): MUST be bound before any bin read — an unbound connection is fenced
-        // to zero rows, so the FOR UPDATE below would read every bin as empty.
-        company_scope::bind_company_on(&mut tx, company).await?;
-        let mut total_debit = Decimal::ZERO;
-        let mut sle_no = 0i32;
-        for it in &items {
-            let (item, qty, in_rate) = (it.item_id, it.quantity, it.rate);
-            let bin = self.bins.lock_or_init(&mut tx, company, item, warehouse).await?;
-            let in_amount = money(qty * in_rate);
-            let new_qty = bin.actual_qty + qty;
-            let new_value = bin.stock_value + in_amount;
-            let new_rate = if new_qty > Decimal::ZERO { rate6(new_value / new_qty) } else { Decimal::ZERO };
-            self.bins.update_balance(&mut tx, company, item, warehouse, new_qty, new_rate, new_value).await?;
-            sle_no += 1;
-            self.sles.insert_sle(&mut tx, &NewSleRow {
-                company_id: company, item_id: item, warehouse_id: warehouse, posting_date,
-                actual_qty: qty, qty_after_txn: new_qty, incoming_rate: in_rate,
-                valuation_rate: new_rate, stock_value: new_value, stock_value_difference: in_amount,
-                voucher_type: "purchase_receipt", voucher_id: id, voucher_no: &voucher_no, sle_no,
-            }).await?;
-            total_debit += in_amount;
+        // The door's move endpoints: the company's supplier location (virtual source) and the
+        // warehouse's stock location (internal destination) — resolve-or-bootstrap each.
+        let (supplier_loc, stock_loc) = self.door_move_endpoints(company, warehouse, "supplier").await?;
+
+        // ---- physical movement: one minted move per line, engine-driven ----
+        for (idx, it) in items.iter().enumerate() {
+            if it.quantity.is_zero() { continue; } // a zero line moves nothing and mints nothing
+            let name = format!("{}/{}", voucher_no, idx + 1);
+            let mid = match self.mint_line_move(NewStockMove {
+                name: name.clone(),
+                company_id: company,
+                item_id: it.item_id,
+                demand_qty: it.quantity,
+                price_unit: it.rate, // the IN leg values the inflow at the line's rate
+                procure_method: "make_to_stock".into(),
+                picking_id: None,
+                origin: Some(voucher_no.clone()),
+                location_id: supplier_loc,
+                location_dest_id: stock_loc,
+                partner_id: None,
+                warehouse_id: Some(warehouse),
+                orderpoint_id: None,
+                move_orig_ids: vec![],
+                move_dest_ids: vec![],
+                is_inventory: false,
+                scrapped: false,
+                forced_value: None,
+            }).await? {
+                Some(mid) => mid,
+                None => continue, // the line already landed in a prior (crashed) attempt
+            };
+            self.advance_move_to_assigned(mid).await?;
+            self.action_done(mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
         }
-        self.receipts.mark_submitted(&mut tx, id).await?;
-        tx.commit().await?;
+        // The GL amount is the voucher's own arithmetic (Σ money(qty·rate)) — identical to the
+        // Σ of the moves' IN-leg carries by construction.
+        let total_debit: Decimal = items.iter().map(|l| money(l.quantity * l.rate)).sum();
+        {
+            let mut tx = self.db_pool.begin().await?;
+            company_scope::bind_company_on(&mut tx, company).await?;
+            self.receipts.mark_submitted(&mut tx, id).await?;
+            tx.commit().await?;
+        }
 
         // ---- GL post (eventually consistent) ----
         let env = AccountingPostEnvelope {

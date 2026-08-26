@@ -320,6 +320,58 @@ impl StockPickingRepository {
         Ok(id)
     }
 
+    /// Resolve the company's location of a partner usage (`supplier` / `customer`): the
+    /// company-owned one first, the shared root (company NULL) as fallback. `None` when
+    /// neither exists — the caller decides whether to bootstrap one.
+    pub async fn resolve_partner_location(
+        &self,
+        conn: &mut PgConnection,
+        company_id: Uuid,
+        usage: &str,
+    ) -> Result<Option<Uuid>, sqlx::Error> {
+        let row = sqlx::query(
+            r#"SELECT id FROM inventory.locations
+               WHERE usage = $2::location_usage AND active
+                 AND (metadata->>'deleted_at') IS NULL
+                 AND (company_id = $1 OR company_id IS NULL)
+               ORDER BY (company_id IS NOT NULL) DESC, name ASC LIMIT 1"#,
+        )
+        .bind(company_id)
+        .bind(usage)
+        .fetch_optional(conn)
+        .await?;
+        Ok(row.map(|r| r.get("id")))
+    }
+
+    /// Bootstrap the company's counterpart location for a partner usage (`supplier` — the
+    /// far end of every goods receipt; `customer` — the far end of every delivery). Voucher
+    /// doors are warehouse-grain, moves are location-grain: this is the resolve-or-mint that
+    /// gives the door's moves their virtual counterpart endpoint.
+    pub async fn ensure_partner_location(
+        &self,
+        conn: &mut PgConnection,
+        company_id: Uuid,
+        usage: &str,
+    ) -> Result<Uuid, sqlx::Error> {
+        if let Some(id) = self.resolve_partner_location(conn, company_id, usage).await? {
+            return Ok(id);
+        }
+        let id = Uuid::new_v4();
+        let name = if usage == "supplier" { "Suppliers" } else { "Customers" };
+        sqlx::query(
+            r#"INSERT INTO inventory.locations
+                 (id, name, complete_name, usage, active, company_id, parent_path)
+               VALUES ($1, $2, $2, $3::location_usage, TRUE, $4, $1::text)"#,
+        )
+        .bind(id)
+        .bind(name)
+        .bind(usage)
+        .bind(company_id)
+        .execute(conn)
+        .await?;
+        Ok(id)
+    }
+
     /// The quant-surface backfill: guarantee a quant row exists at the bin grain
     /// (item, location, all tracking dims NULL), initialized from the Bin balance of the
     /// location's warehouse. Stock seeded through the legacy voucher paths wrote Bins without

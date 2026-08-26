@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use anyhow::Result;
 use uuid::Uuid;
 
-use crate::domain::entity::{StockMove, MoveState, Priority, ProcureMethod};
+use crate::domain::entity::{StockMove, GlPostingState, MoveState, Priority, ProcureMethod};
 
 /// Pagination parameters for list queries
 #[derive(Debug, Clone, Default)]
@@ -46,6 +46,7 @@ pub struct StockMovePaginatedResult {
 pub struct StockMoveFilter {
     pub name: Option<String>,
     pub state: Option<MoveState>,
+    pub posting_state: Option<GlPostingState>,
     pub priority: Option<Priority>,
     pub item_id: Option<Uuid>,
     pub procure_method: Option<ProcureMethod>,
@@ -66,7 +67,7 @@ pub struct StockMoveFilter {
 impl StockMoveFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.name.is_some() || self.state.is_some() || self.priority.is_some() || self.item_id.is_some() || self.procure_method.is_some() || self.picking_id.is_some() || self.origin.is_some() || self.location_id.is_some() || self.location_dest_id.is_some() || self.partner_id.is_some() || self.company_id.is_some() || self.rule_id.is_some() || self.warehouse_id.is_some() || self.orderpoint_id.is_some() || self.is_inventory.is_some() || self.scrapped.is_some() || self.propagate_cancel.is_some()
+        self.name.is_some() || self.state.is_some() || self.posting_state.is_some() || self.priority.is_some() || self.item_id.is_some() || self.procure_method.is_some() || self.picking_id.is_some() || self.origin.is_some() || self.location_id.is_some() || self.location_dest_id.is_some() || self.partner_id.is_some() || self.company_id.is_some() || self.rule_id.is_some() || self.warehouse_id.is_some() || self.orderpoint_id.is_some() || self.is_inventory.is_some() || self.scrapped.is_some() || self.propagate_cancel.is_some()
     }
 }
 

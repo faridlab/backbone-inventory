@@ -286,12 +286,14 @@ async fn partial_validate_keeps_projection_open_via_backorder() {
     // Only 4 were on hand: the prepare pass reserved them; _action_done drew exactly that.
     assert_eq!(validated.validated_moves[0].done_qty, d("4"));
     let (header, moves) = svc.fetch_picking(company, created.transfer_id).await.unwrap();
-    // One done member + the minted backorder (draft): the projection stays OPEN — the
-    // least-advanced live move keeps the transfer below `done` (and below `assigned`).
+    // One done member + the minted backorder (confirmed, unreserved — nothing is left on the
+    // source to reserve): the projection stays OPEN — the least-advanced live move keeps the
+    // transfer below `done` (and below `assigned`).
     assert_ne!(header.state, "done");
     assert_ne!(header.state, "assigned");
     assert!(moves.iter().any(|m| m.state == "done"));
-    assert!(moves.iter().any(|m| m.state == "draft"));
+    assert!(moves.iter().any(|m| m.state == "confirmed"),
+        "the backorder is minted confirmed (reserve-on-mint found nothing free to hold)");
     // Stock truth: the source quant holds none of the drawn 4; the customer location got 4.
     assert_eq!(on_hand(&pool, company, item, stock).await, d("0"));
     assert_eq!(on_hand(&pool, company, item, customer).await, d("4"));
@@ -632,15 +634,17 @@ async fn projection_rederives_after_every_move_transition() {
     assert_eq!(h.state, "confirmed", "probe after mint+confirm");
 
     // Partial validate (4 of 6 on hand): the member goes `done` and the backorder member is
-    // minted `draft` — the projection re-derives DOWNWARD to the least-advanced live move.
+    // minted CONFIRMED (the minting policy confirms it; reserve-on-mint finds nothing free —
+    // the source is drained) — the projection re-derives DOWNWARD to the least-advanced live
+    // move (below `done`, which the lone done member would have projected).
     let validated = svc.validate_picking(company, tid, &adj_gl(), &*sink).await.unwrap();
     assert_eq!(validated.validated_moves[0].done_qty, d("4"));
     let (h, moves) = probe(tid).await;
-    assert_eq!(h.state, "draft", "open backorder re-derives the projection down");
-    let backorder = moves.iter().find(|m| m.state == "draft").expect("backorder member").id;
+    assert_eq!(h.state, "confirmed", "open backorder re-derives the projection down");
+    let backorder = moves.iter().find(|m| m.state == "confirmed").expect("backorder member").id;
     assert_eq!(moves.iter().find(|m| m.state == "done").expect("done member").demand_qty, d("6"));
 
-    // Land the remaining supply, then confirm + assign the backorder member.
+    // Land the remaining supply, then assign the (already-confirmed) backorder member.
     sqlx::query(
         "UPDATE inventory.stock_quants SET quantity = quantity + 2, available_quantity = available_quantity + 2 \
          WHERE company_id=$1 AND item_id=$2 AND location_id=$3",
@@ -650,9 +654,8 @@ async fn projection_rederives_after_every_move_transition() {
          WHERE company_id=$1 AND item_id=$2 AND warehouse_id=$3",
     ).bind(company).bind(item).bind(wh).execute(&pool).await.unwrap();
 
-    svc.action_confirm(backorder).await.unwrap();
     let (h, _) = probe(tid).await;
-    assert_eq!(h.state, "confirmed", "probe after backorder confirm");
+    assert_eq!(h.state, "confirmed", "probe with the confirmed backorder live");
 
     let a = svc.action_assign(backorder).await.unwrap();
     assert_eq!(a.state, "assigned");
@@ -666,7 +669,7 @@ async fn projection_rederives_after_every_move_transition() {
         price_unit: Decimal::ZERO, procure_method: "make_to_stock".into(), picking_id: Some(tid),
         origin: None, location_id: supplier, location_dest_id: customer, partner_id: None,
         warehouse_id: None, orderpoint_id: None, move_orig_ids: vec![backorder],
-        move_dest_ids: vec![], is_inventory: false, scrapped: false,
+        move_dest_ids: vec![], is_inventory: false, scrapped: false, forced_value: None,
     };
     let child = svc.create_move(chained.clone()).await.unwrap();
     let (h, _) = probe(tid).await;

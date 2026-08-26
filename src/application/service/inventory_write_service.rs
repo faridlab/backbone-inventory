@@ -266,6 +266,27 @@ pub(super) fn is_dup(e: &sqlx::Error) -> bool {
     e.as_database_error().map(|d| d.is_unique_violation()).unwrap_or(false)
 }
 
+/// The GL-posting tripwire for voucher doors whose legs are minted through the move engine.
+/// A re-wired door (receipt / delivery / their cancels) owns ONE GL post per voucher — its
+/// envelope, `posting_state`, repost and reversal machinery key on the voucher id — so its
+/// moves are minted with an empty [`super::inventory_move_engine::MoveGlDirective`] (a leg
+/// whose accounts are absent posts nothing). This sink exists so a move can never post GL
+/// SILENTLY under such a door: if a directive ever grows accounts and the engine builds an
+/// envelope, the loud rejection surfaces it instead of a phantom second journal.
+pub(in crate::application::service) struct DoorOwnedGlSink;
+#[async_trait::async_trait]
+impl super::inventory_gl::GlPostSink for DoorOwnedGlSink {
+    async fn post(
+        &self,
+        _e: &super::inventory_gl::AccountingPostEnvelope,
+    ) -> Result<super::inventory_gl::GlPostAck, super::inventory_gl::GlPostRejected> {
+        Err(super::inventory_gl::GlPostRejected {
+            code: "gl_owned_by_voucher_door".into(),
+            message: "voucher doors post one door-owned GL envelope; their moves post none".into(),
+        })
+    }
+}
+
 #[derive(Clone)]
 pub struct InventoryWriteService {
     pub(super) db_pool: PgPool,
@@ -383,5 +404,102 @@ impl InventoryWriteService {
             }
             Err(rej) => Err(InventoryError::GlRejected { code: rej.code, message: rej.message }),
         }
+    }
+
+    // ---- shared: voucher doors minting their legs through the move engine ------------------
+    //
+    // The receipt/delivery voucher doors (and their cancel verbs) no longer write Bins or SLEs
+    // directly: each line mints ONE stock move through the engine (create → confirm → assign →
+    // done), so the quant flips, the Bin reblende and the SLE rows come from move application —
+    // one stock estate, one writer. The voucher keeps its identity (header, item rows, events,
+    // its ONE GL envelope + posting_state/repost/reversal machinery); the moves post no GL
+    // (empty directive + the DoorOwnedGlSink tripwire above).
+
+    /// Mint (or resume) the move a voucher line maps to. The mapping is the deterministic move
+    /// name — `{voucher}/{seq}` for forward legs, `{voucher}/REV/{seq}` for reversal legs —
+    /// looked up among the moves stamped with the voucher number as `origin`:
+    ///
+    /// - no move under the name → mint a fresh DRAFT move through the engine;
+    /// - a DONE move → the line already landed in a prior (crashed) attempt — `None`, the
+    ///   caller skips the line (a door is not cross-move atomic; the name mapping is what makes
+    ///   a retry converge instead of double-moving stock);
+    /// - a LIVE move (draft/confirmed/…) → hand it back for the caller to keep driving;
+    /// - a CANCELLED move → refuse loudly: someone cancelled the voucher's leg by hand, and
+    ///   silently re-minting under a new name would double-count the line.
+    pub(in crate::application::service) async fn mint_line_move(
+        &self,
+        m: super::inventory_move_engine::NewStockMove,
+    ) -> Result<Option<Uuid>, InventoryError> {
+        let origin = m.origin.clone().unwrap_or_default();
+        let existing = {
+            let mut tx = self.db_pool.begin().await?;
+            company_scope::bind_company_on(&mut tx, m.company_id).await?;
+            let rows = self.moves.fetch_moves_by_origin(&mut tx, m.company_id, &origin).await?;
+            tx.commit().await?;
+            rows
+        };
+        if let Some(prior) = existing.iter().find(|mv| mv.name == m.name) {
+            return match prior.state.as_str() {
+                "done" => Ok(None),
+                "cancel" => Err(InventoryError::WrongMoveState {
+                    move_id: prior.id, action: "mint", current: "cancel".into(),
+                }),
+                _ => Ok(Some(prior.id)),
+            };
+        }
+        Ok(Some(self.create_move(m).await?))
+    }
+
+    /// Advance a door-minted move to the most-reserved state it can reach: confirm (if still
+    /// draft), then an assign pass (if confirmed/partial). Returns the post-advance state —
+    /// `assigned` when the full demand is covered, less when not. The door decides what a
+    /// short advance means (the delivery refuses; the inbound receipt never is).
+    pub(in crate::application::service) async fn advance_move_to_assigned(
+        &self,
+        move_id: Uuid,
+    ) -> Result<String, InventoryError> {
+        let mut state = self.move_state_of(move_id).await?;
+        if state == "draft" {
+            self.action_confirm(move_id).await?;
+            state = self.move_state_of(move_id).await?;
+        }
+        if state == "confirmed" || state == "partially_available" {
+            let outcome = self.action_assign(move_id).await?;
+            state = outcome.state;
+        }
+        Ok(state)
+    }
+
+    /// Read one move's current state under the company fence. The door drives the engine's
+    /// verbs; this re-read between verbs is how it follows the state the ENGINE wrote (the
+    /// door never derives or asserts move state itself).
+    pub(in crate::application::service) async fn move_state_of(
+        &self,
+        move_id: Uuid,
+    ) -> Result<String, InventoryError> {
+        let mut tx = self.db_pool.begin().await?;
+        let mv = self.moves.fetch_move(&mut tx, move_id).await?
+            .ok_or(InventoryError::NotFound(move_id))?;
+        company_scope::bind_company_on(&mut tx, mv.company_id).await?;
+        tx.commit().await?;
+        Ok(mv.state)
+    }
+
+    /// Resolve the endpoints a voucher door's line moves run between: the warehouse's stock
+    /// location (internal, resolve-or-bootstrap) and the company's counterpart partner
+    /// location (supplier for receipts, customer for deliveries — resolve-or-bootstrap).
+    /// Returns `(partner_location_id, stock_location_id)`.
+    pub(in crate::application::service) async fn door_move_endpoints(
+        &self,
+        company_id: Uuid,
+        warehouse_id: Uuid,
+        partner_usage: &str,
+    ) -> Result<(Uuid, Uuid), InventoryError> {
+        let mut tx = self.db_pool.begin().await?;
+        company_scope::bind_company_on(&mut tx, company_id).await?;
+        let partner = self.pickings.ensure_partner_location(&mut tx, company_id, partner_usage).await?;
+        let stock = self.pickings.ensure_internal_location(&mut tx, warehouse_id, company_id).await?;
+        tx.commit().await?;
+        Ok((partner, stock))
     }
 }

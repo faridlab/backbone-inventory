@@ -10,7 +10,7 @@
 
 use anyhow::Result;
 use rust_decimal::Decimal;
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::domain::entity::StockLedgerEntry;
@@ -111,6 +111,63 @@ impl StockLedgerEntryRepository {
         .fetch_one(conn)
         .await?;
         Ok(max.unwrap_or(0))
+    }
+
+    /// The total value one move carried off its source bin: the NEGATED sum of the move's
+    /// signed SLE value deltas (a move's rows ride `voucher_type='stock_entry'` with
+    /// `voucher_no` = the move name; an outflow's delta is negative, so negating yields the
+    /// positive value the move took out — the COGS of a delivery-shaped move). A voucher door
+    /// resuming a crashed submit uses this to recover an already-landed line's value without
+    /// re-reading the bins. 0 when the move has no rows.
+    pub async fn sum_move_value(
+        &self,
+        pool: &PgPool,
+        company_id: Uuid,
+        move_name: &str,
+    ) -> Result<Decimal, sqlx::Error> {
+        let row = backbone_orm::company_scope::fetch_one_row_scoped(
+            pool,
+            sqlx::query(
+                r#"SELECT COALESCE(-SUM(stock_value_difference), 0) AS carried
+                   FROM inventory.stock_ledger_entries
+                   WHERE company_id=$1 AND voucher_no=$2 AND voucher_type='stock_entry'
+                     AND (metadata->>'deleted_at') IS NULL"#,
+            )
+            .bind(company_id)
+            .bind(move_name),
+        )
+        .await?;
+        Ok(row.get("carried"))
+    }
+
+    /// The value legs ONE move minted, split by direction: `(out_value, in_value)` — the
+    /// negated sum of the move's negative `stock_value_difference` rows (what the OUT leg
+    /// carried off the source bin) and the sum of its positive rows (what the IN leg blended
+    /// into the destination). Keyed on `voucher_id` = the move id (the exact grain the mint
+    /// wrote; move names are descriptive, ids are unique). A GL repost uses this to rebuild the
+    /// move's envelope from the committed ledger without re-reading the bins. `(0, 0)` when the
+    /// move minted no rows.
+    pub async fn move_leg_values(
+        &self,
+        pool: &PgPool,
+        company_id: Uuid,
+        move_id: Uuid,
+    ) -> Result<(Decimal, Decimal), sqlx::Error> {
+        let row = backbone_orm::company_scope::fetch_one_row_scoped(
+            pool,
+            sqlx::query(
+                r#"SELECT
+                       COALESCE(-SUM(stock_value_difference) FILTER (WHERE stock_value_difference < 0), 0) AS out_value,
+                       COALESCE(SUM(stock_value_difference) FILTER (WHERE stock_value_difference > 0), 0) AS in_value
+                   FROM inventory.stock_ledger_entries
+                   WHERE company_id=$1 AND voucher_type='stock_entry' AND voucher_id=$2
+                     AND (metadata->>'deleted_at') IS NULL"#,
+            )
+            .bind(company_id)
+            .bind(move_id),
+        )
+        .await?;
+        Ok((row.get("out_value"), row.get("in_value")))
     }
 }
 

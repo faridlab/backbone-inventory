@@ -1,52 +1,79 @@
 //! The cancellation/reversal path (hand-authored, user-owned) — council 2026-07-29, finding #3.
 //!
 //! An `impl InventoryWriteService` chunk: `cancel_purchase_receipt` and `cancel_delivery_note`. A
-//! cancellation REVERSES a submitted voucher: per original line it appends a COMPENSATING SLE that is
-//! the exact negation of the original SLE (so the bin reblends to its pre-movement state), flips the
-//! header submitted→cancelled, and emits a balanced `posting_type='reversal'` AccountingPost whose
-//! `reverses_post_id` references the original post. The original `journal_id`/`accounting_post_id`
-//! stay intact; the reversal's ids land in `reversal_journal_id`/`reversal_accounting_post_id`.
+//! cancellation REVERSES a submitted voucher: per original line it mints ONE REVERSE stock move
+//! through the converged engine (the mirror image of the line's forward move — the moves the
+//! submit door minted), drives it confirm → assign → done, so the quant flips, the Bin reblende
+//! and the compensating Stock Ledger Entry all come from MOVE APPLICATION — the cancel NEVER
+//! writes Bins or SLEs directly and NEVER deletes rows. The header flips submitted→cancelled,
+//! and a balanced `posting_type='reversal'` AccountingPost whose `reverses_post_id` references
+//! the original post is emitted. The original `journal_id`/`accounting_post_id` stay intact; the
+//! reversal's ids land in `reversal_journal_id`/`reversal_accounting_post_id`.
 //!
-//! Idempotent + crash-recoverable: if the physical reversal committed but the GL reversal failed
-//! (status='cancelled', `reversal_accounting_post_id` NULL), re-calling re-emits ONLY the GL — it
-//! never re-appends SLEs. An already-fully-reversed voucher short-circuits with the recorded ids.
+//! **Valuation: `forced_value`.** Each reverse move carries `forced_value` = the value the
+//! original line carried (the receipt line's `money(qty·rate)`; the delivery line's stored
+//! `cogs_amount` — the whole remaining value for a drain-to-zero line). The valuation core uses
+//! it instead of the average/price-derived carry, so the reversed estate returns to EXACTLY its
+//! pre-movement state — the same arithmetic the direct-write cancellation produced.
 //!
-//! **Receipt cancel** reverses an INFLOW: push the received qty back out and remove the value it
-//! added. Requires the bin still hold the qty (else `InsufficientStockToReverse` — the stock was
-//! issued). Uses the stored line amount (`money(qty·rate)`) so the bin returns to its exact
-//! pre-receipt value. GL: swaps the original `Dr Inventory · Cr GR/IR` to `Dr GR/IR · Cr Inventory`.
+//! **GL legs.** The reverse moves post no GL of their own (empty directive + the door-owned-GL
+//! tripwire sink); the voucher's ONE reversal envelope is unchanged — the net GL effect per door
+//! is identical to the direct-write era.
 //!
-//! **Delivery cancel** reverses an OUTFLOW: push the delivered qty back in and restore the COGS
-//! consumed. Always safe (qty only increases). Uses the stored `cogs_amount` (for a drain-to-zero
-//! line, the whole remaining value) so the bin reblends exactly. GL: swaps `Dr COGS · Cr Inventory`
-//! to `Dr Inventory · Cr COGS`.
+//! Idempotent + crash-recoverable: the reverse move names are deterministic
+//! (`{voucher_no}/REV/{seq}`, `origin` = the voucher number), so a crash mid-way leaves the
+//! voucher `submitted` with some reverse moves landed — a re-call RESUMES (a DONE reverse move
+//! is skipped) instead of double-reversing. If the physical reversal committed but the GL
+//! reversal failed (status='cancelled', `reversal_accounting_post_id` NULL), re-calling
+//! re-emits ONLY the GL — it never re-mints moves. An already-fully-reversed voucher
+//! short-circuits with the recorded ids.
 //!
-//! Per the module's 4-layer rule this file holds no SQL — the statements live on the repositories,
-//! whose write methods take THIS service's transaction so the compensating SLE + Bin + header status
-//! commit together.
+//! **Receipt cancel** reverses an INFLOW: push the received qty back out (stock location → the
+//! supplier location) and remove the value it added. Requires the stock still hold the qty
+//! (else `InsufficientStockToReverse` — the goods were issued), and that the source quant's
+//! FREE availability cover the whole reversal (stock reserved for someone else is not
+//! returnable stock). GL: swaps the original `Dr Inventory · Cr GR/IR` to `Dr GR/IR · Cr Inventory`.
+//!
+//! **Delivery cancel** reverses an OUTFLOW: push the delivered qty back in (the customer
+//! location → the stock location) and restore the COGS consumed. Always safe (qty only
+//! increases). GL: swaps `Dr COGS · Cr Inventory` to `Dr Inventory · Cr COGS`.
+//!
+//! Per the module's 4-layer rule this file holds no SQL — the statements live on the repositories
+//! and the move engine; every engine verb runs its own guarded transaction.
 
 use backbone_orm::company_scope;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use crate::infrastructure::persistence::{
-    DeliveryCancelHeaderRow, GlVoucher, NewSleRow, ReceiptCancelHeaderRow,
+    DeliveryCancelHeaderRow, GlVoucher, MoveRow, ReceiptCancelHeaderRow,
 };
 
 use super::inventory_gl::{AccountingPostEnvelope, GlPostLine, GlPostSink};
+use super::inventory_move_engine::{BackorderPolicy, MoveGlDirective, NewStockMove};
 use super::inventory_write_service::{
-    money, rate6, InventoryError, InventoryWriteService, SubmitOutcome,
+    money, DoorOwnedGlSink, InventoryError, InventoryWriteService, SubmitOutcome,
 };
 
 impl InventoryWriteService {
-    // ---- cancel: Purchase Receipt (reverse the inflow + reversal GL post) -----------------
+    // ---- cancel: Purchase Receipt (reverse the inflow through the move engine) ------------
 
+    /// Cancel the goods-in voucher: per line, ONE reverse move (stock location → supplier
+    /// location) minted with `forced_value = money(qty·rate)` — the exact value the inflow
+    /// added — confirm → assign (reserves against the stock quants; the door refuses a line
+    /// whose free availability cannot cover the WHOLE reversal) → done, which draws the source
+    /// quant, reblends the Bin back to its pre-receipt state and mints the compensating SLE row.
+    /// The voucher's ONE reversal envelope (`Dr GR/IR · Cr Inventory`) is unchanged.
+    ///
+    /// Not cross-move atomic (each engine verb commits its own transaction): a crash mid-way
+    /// leaves the voucher `submitted` with some reverse moves landed — the deterministic names
+    /// (`{receipt_number}/REV/{seq}`) make a re-cancel RESUME instead of double-reversing.
     pub async fn cancel_purchase_receipt(&self, id: Uuid, sink: &dyn GlPostSink) -> Result<SubmitOutcome, InventoryError> {
         let h = self.receipts.fetch_cancel_header(&self.db_pool, id).await?
             .ok_or(InventoryError::NotFound(id))?;
 
         // Recovery / idempotency: the physical reversal already committed. Re-emit ONLY the GL leg —
-        // never re-append SLEs. An already-recorded reversal short-circuits with its ids.
+        // never re-mint reverse moves. An already-recorded reversal short-circuits with its ids.
         if h.status == "cancelled" {
             return self.receipt_reversal_gl(id, h, sink).await;
         }
@@ -61,38 +88,99 @@ impl InventoryWriteService {
             self.receipt_items.fetch_items(&self.db_pool, id),
         ).await?;
 
-        let mut tx = self.db_pool.begin().await?;
-        // RLS scope (ADR-0008): MUST be bound before any bin read.
-        company_scope::bind_company_on(&mut tx, h.company_id).await?;
-        let mut sle_no = self.sles.fetch_max_sle_no(&mut tx, "purchase_receipt", id).await?;
-        let mut total = Decimal::ZERO;
-        for it in &items {
-            let (item, qty_in, rate) = (it.item_id, it.quantity, it.rate);
+        // The door's move endpoints — the mirror image of the submit door's pair: the warehouse's
+        // stock location is now the SOURCE, the company's supplier location the destination the
+        // received goods return to.
+        let (supplier_loc, stock_loc) = self.door_move_endpoints(h.company_id, h.warehouse_id, "supplier").await?;
+
+        // The reversal legs already landed in a prior (crashed) attempt: a DONE move under the
+        // line's reverse name means the bin draw already happened — the pre-check below skips it.
+        let prior = self.door_moves_by_origin(h.company_id, &h.receipt_number).await?;
+        let rev_name = |idx: usize| format!("{}/REV/{}", h.receipt_number, idx + 1);
+
+        // ---- all-or-nothing availability pre-check, under the Bin locks -----------------------
+        // Same posture the direct-write cancellation always had: EVERY un-landed line's qty must
+        // still be on the bin before anything mints (the engine's quant draw guard re-checks at
+        // the quant grain). A landed line is skipped — its bin draw already committed.
+        {
+            let mut tx = self.db_pool.begin().await?;
+            // RLS scope (ADR-0008): MUST be bound before any bin read — an unbound connection is
+            // fenced to zero rows, so the FOR UPDATE below would read every bin as empty.
+            company_scope::bind_company_on(&mut tx, h.company_id).await?;
+            for (idx, it) in items.iter().enumerate() {
+                if it.quantity.is_zero() { continue; }
+                let already_reversed = prior.iter()
+                    .any(|m| m.name == rev_name(idx) && m.state == "done");
+                if already_reversed { continue; }
+                let bin = self.bins.lock_or_init(&mut tx, h.company_id, it.item_id, h.warehouse_id).await?;
+                if bin.actual_qty < it.quantity {
+                    return Err(InventoryError::InsufficientStockToReverse {
+                        item_id: it.item_id, warehouse_id: h.warehouse_id,
+                        available: bin.actual_qty, requested: it.quantity,
+                    });
+                }
+                // The quant-surface heal: stock received through the legacy direct-write paths
+                // wrote Bins without quants — seed the quant from the (locked) Bin once, so the
+                // reverse move's reservation has a surface to reserve against.
+                self.pickings.ensure_quant_surface(&mut tx, h.company_id, it.item_id, stock_loc, Some(h.warehouse_id)).await?;
+            }
+            tx.commit().await?;
+        }
+
+        // ---- physical reversal: one reverse move per line, engine-driven -----------------------
+        for (idx, it) in items.iter().enumerate() {
+            if it.quantity.is_zero() { continue; } // a zero line moved nothing and reverses nothing
             // The exact value the original inflow added — negating it restores the bin precisely.
-            let reverse_value = money(qty_in * rate);
-            let bin = self.bins.lock_or_init(&mut tx, h.company_id, item, h.warehouse_id).await?;
-            if bin.actual_qty < qty_in {
+            let reverse_value = money(it.quantity * it.rate);
+            let mid = match self.mint_line_move(NewStockMove {
+                name: rev_name(idx),
+                company_id: h.company_id,
+                item_id: it.item_id,
+                demand_qty: it.quantity,
+                price_unit: Decimal::ZERO, // the reversal is valued by its forced_value, never a price
+                procure_method: "make_to_stock".into(),
+                picking_id: None,
+                origin: Some(h.receipt_number.clone()),
+                location_id: stock_loc,
+                location_dest_id: supplier_loc,
+                partner_id: None,
+                warehouse_id: Some(h.warehouse_id),
+                orderpoint_id: None,
+                move_orig_ids: vec![],
+                move_dest_ids: vec![],
+                is_inventory: false,
+                scrapped: false,
+                forced_value: Some(reverse_value),
+            }).await? {
+                Some(mid) => mid,
+                None => continue, // the line already reversed in a prior (crashed) attempt
+            };
+            let state = self.advance_move_to_assigned(mid).await?;
+            if state != "assigned" {
+                // The stock quant's free availability cannot cover the WHOLE reversal — the
+                // received goods are (partly) reserved for someone else. Release whatever the
+                // partial assign took; no stock moved, no reservation held, the voucher stays
+                // submitted (retryable once the reservation clears).
+                self.unreserve_move(mid).await?;
+                let on_hand = self.quants.fetch_on_hand(&self.db_pool, h.company_id, it.item_id, stock_loc).await?;
                 return Err(InventoryError::InsufficientStockToReverse {
-                    item_id: item, warehouse_id: h.warehouse_id, available: bin.actual_qty, requested: qty_in,
+                    item_id: it.item_id, warehouse_id: h.warehouse_id,
+                    available: on_hand.on_hand_qty - on_hand.reserved_qty,
+                    requested: it.quantity,
                 });
             }
-            let new_qty = bin.actual_qty - qty_in;
-            let new_value = bin.stock_value - reverse_value;
-            let new_rate = if new_qty > Decimal::ZERO { rate6(new_value / new_qty) } else { Decimal::ZERO };
-            self.bins.update_balance(&mut tx, h.company_id, item, h.warehouse_id, new_qty, new_rate, new_value).await?;
-            sle_no += 1;
-            self.sles.insert_sle(&mut tx, &NewSleRow {
-                company_id: h.company_id, item_id: item, warehouse_id: h.warehouse_id, posting_date: h.posting_date,
-                actual_qty: -qty_in, qty_after_txn: new_qty, incoming_rate: Decimal::ZERO,
-                valuation_rate: new_rate, stock_value: new_value, stock_value_difference: -reverse_value,
-                voucher_type: "purchase_receipt", voucher_id: id, voucher_no: &h.receipt_number, sle_no,
-            }).await?;
-            total += reverse_value;
+            self.action_done(mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
         }
-        self.receipts.mark_cancelled(&mut tx, id).await?;
-        tx.commit().await?;
+        {
+            let mut tx = self.db_pool.begin().await?;
+            company_scope::bind_company_on(&mut tx, h.company_id).await?;
+            self.receipts.mark_cancelled(&mut tx, id).await?;
+            tx.commit().await?;
+        }
 
-        // GL reversal: swap the original Dr Inventory · Cr GR/IR.
+        // GL reversal: swap the original Dr Inventory · Cr GR/IR. The amount is the voucher's own
+        // arithmetic (Σ money(qty·rate)) — identical to the Σ of the reverse moves' forced values.
+        let total: Decimal = items.iter().map(|l| money(l.quantity * l.rate)).sum();
         let env = AccountingPostEnvelope {
             idempotency_key: format!("{id}-reversal"), company_id: h.company_id, branch_id: h.branch_id,
             source_type: "inventory".into(), source_id: id, source_reference: Some(h.receipt_number.clone()),
@@ -107,8 +195,15 @@ impl InventoryWriteService {
         self.emit_reversal_and_reconcile(GlVoucher::PurchaseReceipt, id, &env, sink, total).await
     }
 
-    // ---- cancel: Delivery Note (reverse the outflow + reversal GL post) -------------------
+    // ---- cancel: Delivery Note (reverse the outflow through the move engine) --------------
 
+    /// Cancel the goods-out voucher: per line, ONE reverse move (the customer location → the
+    /// stock location) minted with `forced_value = cogs_amount` — the EXACT value the outflow
+    /// consumed (the whole remaining value for a drain-to-zero line) — confirm → assign (an
+    /// external source's supply is unconditionally available, so the full line is covered) →
+    /// done, which materializes the stock quant, reblends the Bin back to its pre-delivery
+    /// state and mints the compensating SLE row. The voucher's ONE reversal envelope
+    /// (`Dr Inventory · Cr COGS`) is unchanged. Always safe — qty only increases.
     pub async fn cancel_delivery_note(&self, id: Uuid, sink: &dyn GlPostSink) -> Result<SubmitOutcome, InventoryError> {
         let h = self.deliveries.fetch_cancel_header(&self.db_pool, id).await?
             .ok_or(InventoryError::NotFound(id))?;
@@ -126,31 +221,62 @@ impl InventoryWriteService {
             self.delivery_items.fetch_cancel_items(&self.db_pool, id),
         ).await?;
 
-        let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, h.company_id).await?;
-        let mut sle_no = self.sles.fetch_max_sle_no(&mut tx, "delivery_note", id).await?;
-        let mut total = Decimal::ZERO;
-        for it in &items {
-            let (item, qty, cogs) = (it.item_id, it.quantity, it.cogs_amount);
-            let bin = self.bins.lock_or_init(&mut tx, h.company_id, item, h.warehouse_id).await?;
-            // Reverse the outflow: qty comes back, value restored by the exact COGS consumed.
-            let new_qty = bin.actual_qty + qty;
-            let new_value = bin.stock_value + cogs;
-            let new_rate = if new_qty > Decimal::ZERO { rate6(new_value / new_qty) } else { Decimal::ZERO };
-            self.bins.update_balance(&mut tx, h.company_id, item, h.warehouse_id, new_qty, new_rate, new_value).await?;
-            sle_no += 1;
-            self.sles.insert_sle(&mut tx, &NewSleRow {
-                company_id: h.company_id, item_id: item, warehouse_id: h.warehouse_id, posting_date: h.posting_date,
-                actual_qty: qty, qty_after_txn: new_qty, incoming_rate: Decimal::ZERO,
-                valuation_rate: new_rate, stock_value: new_value, stock_value_difference: cogs,
-                voucher_type: "delivery_note", voucher_id: id, voucher_no: &h.delivery_number, sle_no,
-            }).await?;
-            total += cogs;
-        }
-        self.deliveries.mark_cancelled(&mut tx, id).await?;
-        tx.commit().await?;
+        // The door's move endpoints — the mirror image of the submit door's pair: the company's
+        // customer location is now the SOURCE, the warehouse's stock location the destination
+        // the delivered goods return to.
+        let (customer_loc, stock_loc) = self.door_move_endpoints(h.company_id, h.warehouse_id, "customer").await?;
 
-        // GL reversal: swap the original Dr COGS · Cr Inventory.
+        // ---- physical reversal: one reverse move per line, engine-driven -----------------------
+        for (idx, it) in items.iter().enumerate() {
+            if it.quantity.is_zero() { continue; } // a zero line moved nothing and reverses nothing
+            let name = format!("{}/REV/{}", h.delivery_number, idx + 1);
+            let mid = match self.mint_line_move(NewStockMove {
+                name,
+                company_id: h.company_id,
+                item_id: it.item_id,
+                demand_qty: it.quantity,
+                price_unit: Decimal::ZERO, // the reversal is valued by its forced_value, never a price
+                procure_method: "make_to_stock".into(),
+                picking_id: None,
+                origin: Some(h.delivery_number.clone()),
+                location_id: customer_loc,
+                location_dest_id: stock_loc,
+                partner_id: None,
+                warehouse_id: Some(h.warehouse_id),
+                orderpoint_id: None,
+                move_orig_ids: vec![],
+                move_dest_ids: vec![],
+                is_inventory: false,
+                scrapped: false,
+                // The exact COGS the outflow consumed — restoring it reblends the bin exactly
+                // (a drain-to-zero line carried the whole remaining value).
+                forced_value: Some(it.cogs_amount),
+            }).await? {
+                Some(mid) => mid,
+                None => continue, // the line already reversed in a prior (crashed) attempt
+            };
+            let state = self.advance_move_to_assigned(mid).await?;
+            if state != "assigned" {
+                // Unreachable in practice (an external source's supply is unconditionally
+                // available, so assign always covers the full demand) — but a delivery cancel
+                // must restore the WHOLE line, so a partial advance fails loudly instead of
+                // silently short-restoring the estate.
+                return Err(InventoryError::WrongMoveState {
+                    move_id: mid, action: "cancel", current: state,
+                });
+            }
+            self.action_done(mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
+        }
+        {
+            let mut tx = self.db_pool.begin().await?;
+            company_scope::bind_company_on(&mut tx, h.company_id).await?;
+            self.deliveries.mark_cancelled(&mut tx, id).await?;
+            tx.commit().await?;
+        }
+
+        // GL reversal: swap the original Dr COGS · Cr Inventory. The amount is the voucher's own
+        // stored Σ COGS — identical to the Σ of the reverse moves' forced values.
+        let total: Decimal = items.iter().map(|l| l.cogs_amount).sum();
         let env = AccountingPostEnvelope {
             idempotency_key: format!("{id}-reversal"), company_id: h.company_id, branch_id: h.branch_id,
             source_type: "inventory".into(), source_id: id, source_reference: Some(h.delivery_number.clone()),
@@ -165,12 +291,29 @@ impl InventoryWriteService {
         self.emit_reversal_and_reconcile(GlVoucher::DeliveryNote, id, &env, sink, total).await
     }
 
+    // ---- shared: the door-minted moves of one voucher origin ------------------------------
+
+    /// The moves minted under one voucher origin (voucher doors stamp the voucher number in
+    /// `origin`), company-fenced. The cancel doors read them to tell an already-landed reverse
+    /// leg from a fresh one (crash recovery) — the mapping is the deterministic move NAME.
+    async fn door_moves_by_origin(
+        &self,
+        company_id: Uuid,
+        origin: &str,
+    ) -> Result<Vec<MoveRow>, InventoryError> {
+        let mut tx = self.db_pool.begin().await?;
+        company_scope::bind_company_on(&mut tx, company_id).await?;
+        let rows = self.moves.fetch_moves_by_origin(&mut tx, company_id, origin).await?;
+        tx.commit().await?;
+        Ok(rows)
+    }
+
     // ---- shared: the GL-only recovery leg for an already-cancelled voucher ----------------
     //
-    // Reached when status is already 'cancelled': the physical reversal (SLE + Bin) committed in a
-    // prior call. If the reversal GL also landed, short-circuit with the recorded ids; if it didn't
-    // (crash window, or a transient accounting outage), rebuild the reversal envelope from the stored
-    // header total and re-emit — never re-touching the SLE/Bin.
+    // Reached when status is already 'cancelled': the physical reversal (the reverse moves)
+    // committed in a prior call. If the reversal GL also landed, short-circuit with the recorded
+    // ids; if it didn't (crash window, or a transient accounting outage), rebuild the reversal
+    // envelope from the stored header total and re-emit — never re-minting moves.
 
     async fn receipt_reversal_gl(
         &self, id: Uuid, h: ReceiptCancelHeaderRow, sink: &dyn GlPostSink,

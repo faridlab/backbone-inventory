@@ -502,4 +502,131 @@ impl ProcurementRepository {
     pub async fn bind_company(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
         backbone_orm::company_scope::bind_current_company(conn).await
     }
+
+    /// Insert a new route (procurement configuration).
+    pub async fn insert_route<'e, E>(executor: E, id: Uuid, name: &str, active: bool, sequence: i32, company_id: Option<Uuid>) -> Result<(), sqlx::Error>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
+        sqlx::query(
+            r#"INSERT INTO inventory.routes (id, name, active, sequence, company_id)
+               VALUES ($1, $2, $3, $4, $5)"#,
+        )
+        .bind(id)
+        .bind(name)
+        .bind(active)
+        .bind(sequence)
+        .bind(company_id)
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+
+    /// Insert a new route rule after service-layer pre-checks.
+    pub async fn insert_rule<'e, E>(
+        executor: E,
+        id: Uuid,
+        name: &str,
+        sequence: i32,
+        action: &str,
+        auto: &str,
+        procure_method: &str,
+        delay: i32,
+        location_src_id: Option<Uuid>,
+        location_dest_id: Uuid,
+        picking_type_id: Uuid,
+        route_id: Uuid,
+        warehouse_id: Option<Uuid>,
+        company_id: Option<Uuid>,
+        propagate_cancel: bool,
+    ) -> Result<(), sqlx::Error>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
+        sqlx::query(
+            r#"INSERT INTO inventory.route_rules
+                   (id, name, active, sequence, action, auto, procure_method, delay,
+                    location_src_id, location_dest_id, picking_type_id, route_id,
+                    warehouse_id, company_id, propagate_cancel)
+               VALUES ($1, $2, TRUE, $3, $4::rule_action, $5::rule_auto,
+                       $6::procure_method, $7, $8, $9, $10, $11, $12, $13, $14)"#,
+        )
+        .bind(id)
+        .bind(name)
+        .bind(sequence)
+        .bind(action)
+        .bind(auto)
+        .bind(procure_method)
+        .bind(delay)
+        .bind(location_src_id)
+        .bind(location_dest_id)
+        .bind(picking_type_id)
+        .bind(route_id)
+        .bind(warehouse_id)
+        .bind(company_id)
+        .bind(propagate_cancel)
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+
+    /// Insert a new orderpoint (reordering rule) after service-layer duplicate check.
+    pub async fn insert_orderpoint<'e, E>(
+        executor: E,
+        id: Uuid,
+        name: &str,
+        trigger: &str,
+        item_id: Uuid,
+        location_id: Uuid,
+        warehouse_id: Uuid,
+        company_id: Uuid,
+        item_min_qty: Decimal,
+        item_max_qty: Decimal,
+        route_id: Option<Uuid>,
+    ) -> Result<(), sqlx::Error>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
+        sqlx::query(
+            r#"INSERT INTO inventory.reordering_rules
+                   (id, name, trigger, active, item_id, location_id, warehouse_id, company_id,
+                    item_min_qty, item_max_qty, route_id)
+               VALUES ($1, $2, $3::orderpoint_trigger, TRUE, $4, $5, $6, $7, $8, $9, $10)"#,
+        )
+        .bind(id)
+        .bind(name)
+        .bind(trigger)
+        .bind(item_id)
+        .bind(location_id)
+        .bind(warehouse_id)
+        .bind(company_id)
+        .bind(item_min_qty)
+        .bind(item_max_qty)
+        .bind(route_id)
+        .execute(executor)
+        .await?;
+        Ok(())
+    }
+
+    /// Check for existing orderpoint covering (item, location, company).
+    pub async fn orderpoint_exists<'e, E>(
+        executor: E,
+        item_id: Uuid,
+        location_id: Uuid,
+        company_id: Uuid,
+    ) -> Result<i64, sqlx::Error>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
+        sqlx::query_scalar::<_, i64>(
+            r#"SELECT COUNT(*) FROM inventory.reordering_rules
+               WHERE item_id = $1 AND location_id = $2 AND company_id = $3
+                 AND (metadata->>'deleted_at') IS NULL"#,
+        )
+        .bind(item_id)
+        .bind(location_id)
+        .bind(company_id)
+        .fetch_one(executor)
+        .await
+    }
 }

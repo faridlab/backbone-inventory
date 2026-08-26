@@ -19,6 +19,7 @@ use validator::Validate;
 
 use crate::domain::entity::StockMove;
 use crate::domain::entity::AuditMetadata;
+use crate::domain::entity::GlPostingState;
 use crate::domain::entity::MoveState;
 use crate::domain::entity::Priority;
 use crate::domain::entity::ProcureMethod;
@@ -40,6 +41,8 @@ pub struct CreateStockMoveDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub name: String,
     pub state: MoveState,
+    #[serde(alias = "posting_state")]
+    pub posting_state: GlPostingState,
     pub priority: Priority,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
     #[serde(alias = "create_date")]
@@ -54,6 +57,8 @@ pub struct CreateStockMoveDto {
     pub quantity: Decimal,
     #[serde(alias = "price_unit")]
     pub price_unit: Decimal,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "forced_value")]
+    pub forced_value: Option<Decimal>,
     #[serde(alias = "procure_method")]
     pub procure_method: ProcureMethod,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "picking_id")]
@@ -109,6 +114,8 @@ pub struct UpdateStockMoveDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub name: String,
     pub state: MoveState,
+    #[serde(alias = "posting_state")]
+    pub posting_state: GlPostingState,
     pub priority: Priority,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
     #[serde(alias = "create_date")]
@@ -123,6 +130,8 @@ pub struct UpdateStockMoveDto {
     pub quantity: Decimal,
     #[serde(alias = "price_unit")]
     pub price_unit: Decimal,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "forced_value")]
+    pub forced_value: Option<Decimal>,
     #[serde(alias = "procure_method")]
     pub procure_method: ProcureMethod,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "picking_id")]
@@ -180,6 +189,8 @@ pub struct PatchStockMoveDto {
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<MoveState>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "posting_state")]
+    pub posting_state: Option<GlPostingState>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub priority: Option<Priority>,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
@@ -197,6 +208,8 @@ pub struct PatchStockMoveDto {
     pub quantity: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "price_unit")]
     pub price_unit: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "forced_value")]
+    pub forced_value: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "procure_method")]
     pub procure_method: Option<ProcureMethod>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "picking_id")]
@@ -239,7 +252,7 @@ pub struct PatchStockMoveDto {
 impl PatchStockMoveDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.name.is_some() || self.state.is_some() || self.priority.is_some() || self.create_date.is_some() || self.date.is_some() || self.item_id.is_some() || self.demand_qty.is_some() || self.quantity.is_some() || self.price_unit.is_some() || self.procure_method.is_some() || self.picking_id.is_some() || self.origin.is_some() || self.location_id.is_some() || self.location_dest_id.is_some() || self.partner_id.is_some() || self.company_id.is_some() || self.rule_id.is_some() || self.warehouse_id.is_some() || self.orderpoint_id.is_some() || self.move_orig_ids.is_some() || self.move_dest_ids.is_some() || self.is_inventory.is_some() || self.scrapped.is_some() || self.propagate_cancel.is_some()
+        self.name.is_some() || self.state.is_some() || self.posting_state.is_some() || self.priority.is_some() || self.create_date.is_some() || self.date.is_some() || self.item_id.is_some() || self.demand_qty.is_some() || self.quantity.is_some() || self.price_unit.is_some() || self.forced_value.is_some() || self.procure_method.is_some() || self.picking_id.is_some() || self.origin.is_some() || self.location_id.is_some() || self.location_dest_id.is_some() || self.partner_id.is_some() || self.company_id.is_some() || self.rule_id.is_some() || self.warehouse_id.is_some() || self.orderpoint_id.is_some() || self.move_orig_ids.is_some() || self.move_dest_ids.is_some() || self.is_inventory.is_some() || self.scrapped.is_some() || self.propagate_cancel.is_some()
     }
 }
 
@@ -260,6 +273,7 @@ pub struct StockMoveResponseDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub name: String,
     pub state: MoveState,
+    pub posting_state: GlPostingState,
     pub priority: Priority,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
     pub create_date: DateTime<Utc>,
@@ -270,6 +284,7 @@ pub struct StockMoveResponseDto {
     pub demand_qty: Decimal,
     pub quantity: Decimal,
     pub price_unit: Decimal,
+    pub forced_value: Option<Decimal>,
     pub procure_method: ProcureMethod,
     pub picking_id: Option<Uuid>,
     pub origin: Option<String>,
@@ -350,7 +365,7 @@ pub struct StockMoveSummaryDto {
     pub id: Uuid,
     pub name: String,
     pub state: MoveState,
-    pub priority: Priority,
+    pub posting_state: GlPostingState,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -364,6 +379,7 @@ impl From<StockMove> for StockMoveResponseDto {
             id: entity.id,
             name: entity.name,
             state: entity.state,
+            posting_state: entity.posting_state,
             priority: entity.priority,
             create_date: entity.create_date,
             date: entity.date,
@@ -371,6 +387,7 @@ impl From<StockMove> for StockMoveResponseDto {
             demand_qty: entity.demand_qty,
             quantity: entity.quantity,
             price_unit: entity.price_unit,
+            forced_value: entity.forced_value,
             procure_method: entity.procure_method,
             picking_id: entity.picking_id,
             origin: entity.origin,
@@ -398,7 +415,7 @@ impl From<StockMove> for StockMoveSummaryDto {
             id: entity.id,
             name: entity.name,
             state: entity.state,
-            priority: entity.priority,
+            posting_state: entity.posting_state,
             created_at,
         }
     }
@@ -410,6 +427,7 @@ impl From<CreateStockMoveDto> for StockMove {
             id: Uuid::new_v4(),
             name: dto.name,
             state: dto.state,
+            posting_state: dto.posting_state,
             priority: dto.priority,
             create_date: dto.create_date,
             date: dto.date,
@@ -417,6 +435,7 @@ impl From<CreateStockMoveDto> for StockMove {
             demand_qty: dto.demand_qty,
             quantity: dto.quantity,
             price_unit: dto.price_unit,
+            forced_value: dto.forced_value,
             procure_method: dto.procure_method,
             picking_id: dto.picking_id,
             origin: dto.origin,
@@ -443,6 +462,7 @@ impl From<&StockMove> for StockMoveResponseDto {
             id: entity.id.clone(),
             name: entity.name.clone(),
             state: entity.state.clone(),
+            posting_state: entity.posting_state.clone(),
             priority: entity.priority.clone(),
             create_date: entity.create_date.clone(),
             date: entity.date.clone(),
@@ -450,6 +470,7 @@ impl From<&StockMove> for StockMoveResponseDto {
             demand_qty: entity.demand_qty.clone(),
             quantity: entity.quantity.clone(),
             price_unit: entity.price_unit.clone(),
+            forced_value: entity.forced_value.clone(),
             procure_method: entity.procure_method.clone(),
             picking_id: entity.picking_id.clone(),
             origin: entity.origin.clone(),
@@ -480,6 +501,7 @@ impl backbone_core::ApplyUpdateDto<UpdateStockMoveDto> for StockMove {
     fn apply_update(mut self, dto: UpdateStockMoveDto) -> backbone_core::ServiceResult<Self> {
         self.name = dto.name;
         self.state = dto.state;
+        self.posting_state = dto.posting_state;
         self.priority = dto.priority;
         self.create_date = dto.create_date;
         self.date = dto.date;
@@ -487,6 +509,7 @@ impl backbone_core::ApplyUpdateDto<UpdateStockMoveDto> for StockMove {
         self.demand_qty = dto.demand_qty;
         self.quantity = dto.quantity;
         self.price_unit = dto.price_unit;
+        self.forced_value = dto.forced_value;
         self.procure_method = dto.procure_method;
         self.picking_id = dto.picking_id;
         self.origin = dto.origin;

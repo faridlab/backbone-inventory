@@ -295,6 +295,7 @@ impl InventoryWriteService {
                     move_dest_ids: vec![],
                     is_inventory: true,
                     scrapped: false,
+                    forced_value: None, // ordinary demand: the diff is valued at the current average
                 }).await?
             }
         };
@@ -303,14 +304,14 @@ impl InventoryWriteService {
         // Sequence the verbs, re-reading the state between them: the engine owns the state
         // (this method never asserts it), and the assign step is what mints the execution
         // line the done verb requires (R24 at move grain).
-        let mut state = self.move_state_of(company_id, move_id).await?;
+        let mut state = self.move_state_of(move_id).await?;
         if state == "draft" {
             self.action_confirm(move_id).await?;
-            state = self.move_state_of(company_id, move_id).await?;
+            state = self.move_state_of(move_id).await?;
         }
         if state == "confirmed" || state == "partially_available" {
             self.action_assign(move_id).await?;
-            state = self.move_state_of(company_id, move_id).await?;
+            state = self.move_state_of(move_id).await?;
         }
         if state != "assigned" {
             // An adjustment must land WHOLE: a partial draw would leave the on-hand short of
@@ -332,18 +333,6 @@ impl InventoryWriteService {
             quant_id, location_id, counted_qty: counted, diff_qty: staged_diff,
             move_id: Some(move_id), applied: true,
         })
-    }
-
-    /// Read one move's current state under the company fence. The apply door sequences the
-    /// engine's verbs; this re-read between verbs is how it follows the state the ENGINE
-    /// wrote (the door never derives or asserts move state itself).
-    async fn move_state_of(&self, company_id: Uuid, move_id: Uuid) -> Result<String, InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, company_id).await?;
-        let row = self.moves.fetch_move(&mut tx, move_id).await?
-            .ok_or(InventoryError::NotFound(move_id))?;
-        tx.commit().await?;
-        Ok(row.state)
     }
 
     /// The pending-count worklist at a location (the partial index

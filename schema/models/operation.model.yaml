@@ -299,6 +299,8 @@ enums:
         default: true
       - name: always
         description: "Always create the backorder"
+      - name: delayed
+        description: "Create the backorder but defer its reservation (no reserve on mint; the scheduler's assign sweep reserves it later)"
       - name: never
         description: "Never create a backorder"
 

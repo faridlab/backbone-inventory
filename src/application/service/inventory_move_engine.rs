@@ -33,10 +33,19 @@
 //!
 //! **Voucher identity note.** Move-minted SLE rows ride `voucher_type='stock_entry'` (the generic
 //! stock-operation door) with `voucher_id = move_id` — the `voucher_type` enum has no
-//! `stock_move` variant. GL legs are emitted with `idempotency_key = move_id`; moves carry no
-//! `posting_state` column, so a rejected post surfaces as an error while the physical movement
-//! stays committed (the module's eventually-consistent posture); a `repost`-style re-drive needs a
-//! posting-state surface on moves and is registered as an open seam.
+//! `stock_move` variant, and none is needed: consumers discriminate by the id columns, not the
+//! type string. GL legs are emitted with `idempotency_key = move_id` under
+//! `source_type='inventory'`, `source_id = move_id`, `posting_type='original'` — the same
+//! producer name the voucher doors use, disambiguated by the source id (each post's source is
+//! exactly one document: a voucher OR a move, never both). The move's GL settlement is recorded
+//! on the move itself: `_action_done` arms `posting_state='pending'` in the movement's own
+//! transaction when it built an envelope, and reconciles to `posted`/`failed` once the sink
+//! answers. A rejected post does NOT roll the physical movement back — the move parks in
+//! `failed` (a durable, sweepable record of the missing GL leg) and `repost_move_gl` re-drives
+//! it; accounting's dedupe on `(company, source_type, source_id, posting_type)` makes the
+//! re-drive idempotent. Moves that post no GL of their own (voucher-door legs whose GL is owned
+//! by the voucher, value-neutral warehouse-to-warehouse shapes, directives without the needed
+//! accounts) stay `not_applicable`.
 //!
 //! Per the module's 4-layer rule this file holds no SQL — the statements live on
 //! `QuantRepository` / `StockMoveRepository` / `StockMoveLineRepository` / `BinRepository` /
@@ -57,7 +66,7 @@ use super::inventory_events::{
     TransferProjected,
 };
 use super::inventory_gl::{AccountingPostEnvelope, GlPostLine, GlPostSink};
-use super::inventory_write_service::{money, rate6, InventoryError, InventoryWriteService};
+use super::inventory_write_service::{money, rate6, InventoryError, InventoryWriteService, SubmitOutcome};
 use super::procurement_service::{MovePipeline, MovePipelineError};
 
 // --- input vocabulary ---------------------------------------------------------
@@ -85,10 +94,17 @@ pub struct NewStockMove {
     pub move_dest_ids: Vec<Uuid>,
     pub is_inventory: bool,
     pub scrapped: bool,
+    /// Explicit total value the move carries — a document reversal valued at its original
+    /// amount. When set, the valuation core uses it on the value-bearing leg(s) instead of the
+    /// average/price-derived carry, so reversing a voucher restores the estate to exactly its
+    /// pre-movement state. `None` on ordinary moves.
+    pub forced_value: Option<Decimal>,
 }
 
 /// Backorder policy on partial validate (spec §4 step 4: `create_backorder ∈ {always, never,
-/// delayed}` — always/delayed mint the backorder, never leaves the remainder unbackordered).
+/// delayed}` — the operation type's vocabulary). `Always` mints the backorder CONFIRMED and
+/// reserves it right away (reserve on mint); `Delayed` mints it CONFIRMED but defers the
+/// reservation to the scheduler's assign sweep; `Never` leaves the remainder unbackordered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackorderPolicy {
     Always,
@@ -123,6 +139,11 @@ pub struct MoveDoneOutcome {
     pub backorder_move_id: Option<Uuid>,
     /// SLE rows minted by the valuation core (0 for value-neutral same-warehouse moves).
     pub sle_count: i32,
+    /// The value the OUT leg carried off the source bin (COGS for a delivery shape).
+    pub out_value: Decimal,
+    /// The value the IN leg blended into the destination bin (the line amount for a receipt
+    /// shape).
+    pub in_value: Decimal,
     pub gl_posted: bool,
     pub gl_amount: Decimal,
 }
@@ -156,7 +177,6 @@ impl InventoryWriteService {
         }
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, m.company_id).await?;
         let locs = self.moves.fetch_move_locations(&mut tx, m.location_id, m.location_dest_id).await?;
         let (src, dst) = match locs {
             (Some(s), Some(d)) => (s, d),
@@ -177,6 +197,8 @@ impl InventoryWriteService {
                 }
             }
         }
+        // Bind after fetch and company check — FAIL CLOSED when companies mismatch
+        company_scope::bind_company_on(&mut tx, m.company_id).await?;
         self.moves.insert_move(&mut tx, &NewMoveRow {
             id,
             name: &m.name,
@@ -196,6 +218,7 @@ impl InventoryWriteService {
             move_dest_ids: m.move_dest_ids.clone(),
             is_inventory: m.is_inventory,
             scrapped: m.scrapped,
+            forced_value: m.forced_value,
         }).await?;
         // Chain bookkeeping: a move naming its `move_orig_ids` parents gets the REVERSE link
         // written too (each parent's move_dest_ids gains this move) — the done-qty propagation
@@ -531,7 +554,24 @@ impl InventoryWriteService {
             .mint_move_valuation(&mut tx, &mv, &src, &dst, done_qty)
             .await?;
 
+        // -- GL arming (inside the movement's transaction) -----------------------------------
+        // Build the envelope BEFORE commit and arm the GL leg in the SAME transaction as the
+        // physical movement: a move either lands done with its GL leg `pending`, or not at all.
+        // A move that builds no envelope (voucher-door legs whose GL is owned by the voucher,
+        // value-neutral shapes, a directive without the accounts this leg needs) stays
+        // `not_applicable` — the engine posts nothing on its behalf.
+        let envelope = self.move_gl_envelope(&mv, &src, &dst, gl, out_value, in_value);
+        if envelope.is_some() {
+            self.moves.set_posting_pending(&mut tx, move_id).await?;
+        }
+
         // -- backorder split (partial validate) ----------------------------------------------
+        // Policy vocabulary (the operation type's `create_backorder`): the remainder becomes its
+        // own move on the SAME picking (the transfer stays open below `done` while it lives).
+        // Both minting policies CONFIRM the backorder — a confirmed move is what the
+        // scheduler's assign sweep and a re-validate can drive; a draft one is invisible to
+        // both. `Always` then reserves right away (reserve on mint); `Delayed` leaves the
+        // reservation to the scheduler's assign sweep (deferred reservation).
         let mut backorder_move_id = None;
         if done_qty < mv.demand_qty && backorder != BackorderPolicy::Never {
             let remaining = mv.demand_qty - done_qty;
@@ -556,8 +596,19 @@ impl InventoryWriteService {
                 move_dest_ids: mv.move_dest_ids.clone(),
                 is_inventory: mv.is_inventory,
                 scrapped: mv.scrapped,
+                forced_value: None, // fresh demand: ordinary valuation, never the parent's reversal carry
             }).await?;
             self.moves.link_chain(&mut tx, move_id, child).await?;
+            let child_row = self.moves.fetch_move(&mut tx, child).await?
+                .ok_or(InventoryError::NotFound(child))?;
+            self.confirm_core(&mut tx, &child_row).await?;
+            if backorder == BackorderPolicy::Always {
+                let fresh = self.moves.fetch_move(&mut tx, child).await?
+                    .ok_or(InventoryError::NotFound(child))?;
+                if matches!(fresh.state.as_str(), "confirmed" | "partially_available") {
+                    self.assign_core(&mut tx, &fresh).await?;
+                }
+            }
             backorder_move_id = Some(child);
         }
 
@@ -586,14 +637,30 @@ impl InventoryWriteService {
         tx.commit().await?;
 
         // -- GL post (eventually consistent — the physical movement already committed) ---------
+        // Failure posture: a rejection does NOT roll the physical movement back and does NOT
+        // strand the hole silently — the move is marked `failed` (the durable, sweepable record
+        // of the missing GL leg) while the error still surfaces to the caller, and
+        // `repost_move_gl` re-drives the leg. A crash between this commit and the reconcile
+        // leaves the move `pending`; the same repost heals it. Accounting dedupes on the
+        // envelope's source identity, so a re-drive can never double post.
         let mut gl_posted = false;
         let mut gl_amount = Decimal::ZERO;
-        if let Some(env) = self.move_gl_envelope(&mv, &src, &dst, gl, out_value, in_value) {
+        if let Some(env) = envelope {
             debug_assert!(env.is_balanced());
             gl_amount = env.lines.iter().map(|l| l.debit).sum();
             match sink.post(&env).await {
-                Ok(_) => gl_posted = true,
+                Ok(_) => {
+                    company_scope::with_company_scope(
+                        Some(company),
+                        self.moves.mark_posting_posted(&self.db_pool, move_id),
+                    ).await?;
+                    gl_posted = true;
+                }
                 Err(rej) => {
+                    let _ = company_scope::with_company_scope(
+                        Some(company),
+                        self.moves.mark_posting_failed(&self.db_pool, move_id),
+                    ).await;
                     return Err(InventoryError::GlRejected { code: rej.code, message: rej.message });
                 }
             }
@@ -622,7 +689,7 @@ impl InventoryWriteService {
                 }));
             }
         }
-        Ok(MoveDoneOutcome { move_id, done_qty, backorder_move_id, sle_count, gl_posted, gl_amount })
+        Ok(MoveDoneOutcome { move_id, done_qty, backorder_move_id, sle_count, out_value, in_value, gl_posted, gl_amount })
     }
 
     // ---- _action_cancel --------------------------------------------------------
@@ -660,6 +727,101 @@ impl InventoryWriteService {
             move_id, company_id: company, released_qty: released,
         }));
         Ok(released)
+    }
+
+    // ---- GL repost: re-drive a stuck move GL leg ---------------------------------
+
+    /// Re-drive the GL leg of a done move whose `posting_state` is `pending` or `failed` — a
+    /// rejected or interrupted AccountingPost from `_action_done`. The physical movement
+    /// (quants, Bin, SLE rows) already happened and is never re-touched: the envelope is rebuilt
+    /// from the move's committed ledger legs plus the caller's account directive, re-emitted
+    /// under the move's ORIGINAL source identity (`source_type='inventory'`, `source_id` = move
+    /// id, `posting_type='original'`), and accounting's dedupe on that identity makes the
+    /// re-drive idempotent — a leg that actually landed before the status write was lost returns
+    /// the original journal instead of a second one.
+    ///
+    /// Short-circuits exactly like the voucher doors' repost verbs: `posted` → nothing to drive;
+    /// `not_applicable` → this move owns no GL leg (a voucher door posted its voucher's
+    /// envelope; a value-neutral shape posts nothing), so a sweep can call this blindly. If the
+    /// rebuilt envelope is `None` (the directive no longer supplies the accounts this leg shape
+    /// needs), the unsettled leg retires to `not_applicable` — the GL is genuinely not postable
+    /// under the current configuration and the move leaves the sweep worklist.
+    ///
+    /// On a fresh rejection the move parks in `failed` again and the error surfaces, as in
+    /// `_action_done`.
+    pub async fn repost_move_gl(
+        &self,
+        move_id: Uuid,
+        gl: &MoveGlDirective,
+        sink: &dyn GlPostSink,
+    ) -> Result<SubmitOutcome, InventoryError> {
+        let mv = {
+            let mut tx = self.db_pool.begin().await?;
+            let mv = self.moves.fetch_move(&mut tx, move_id).await?
+                .ok_or(InventoryError::NotFound(move_id))?;
+            company_scope::bind_company_on(&mut tx, mv.company_id).await?;
+            tx.commit().await?;
+            mv
+        };
+        match mv.posting_state.as_str() {
+            "posted" => return Ok(SubmitOutcome {
+                voucher_id: move_id, posted: true, journal_id: None, post_id: None,
+                gl_amount: Decimal::ZERO,
+            }),
+            "not_applicable" => return Ok(SubmitOutcome {
+                voucher_id: move_id, posted: false, journal_id: None, post_id: None,
+                gl_amount: Decimal::ZERO,
+            }),
+            _ => {} // pending | failed → re-drive below
+        }
+        if mv.state != "done" {
+            // posting_state only leaves not_applicable inside a done transaction, so this is a
+            // defensive guard — but a hand-mangled row should fail loudly, not re-post.
+            return Err(InventoryError::WrongMoveState { move_id, action: "repost_gl", current: mv.state });
+        }
+        let locs = {
+            let mut tx = self.db_pool.begin().await?;
+            company_scope::bind_company_on(&mut tx, mv.company_id).await?;
+            let locs = self.moves.fetch_move_locations(&mut tx, mv.location_id, mv.location_dest_id).await?;
+            tx.commit().await?;
+            locs
+        };
+        let src = locs.0.ok_or(InventoryError::LocationNotFound(mv.location_id))?;
+        let dst = locs.1.ok_or(InventoryError::LocationNotFound(mv.location_dest_id))?;
+        let (out_value, in_value) = self.sles.move_leg_values(&self.db_pool, mv.company_id, move_id).await?;
+        let envelope = self.move_gl_envelope(&mv, &src, &dst, gl, out_value, in_value);
+        let Some(env) = envelope else {
+            company_scope::with_company_scope(
+                Some(mv.company_id),
+                self.moves.mark_posting_not_applicable(&self.db_pool, move_id),
+            ).await?;
+            return Ok(SubmitOutcome {
+                voucher_id: move_id, posted: false, journal_id: None, post_id: None,
+                gl_amount: Decimal::ZERO,
+            });
+        };
+        debug_assert!(env.is_balanced());
+        let gl_amount = env.lines.iter().map(|l| l.debit).sum();
+        match sink.post(&env).await {
+            Ok(ack) => {
+                company_scope::with_company_scope(
+                    Some(mv.company_id),
+                    self.moves.mark_posting_posted(&self.db_pool, move_id),
+                ).await?;
+                Ok(SubmitOutcome {
+                    voucher_id: move_id, posted: true,
+                    journal_id: Some(ack.journal_id), post_id: Some(ack.post_id),
+                    gl_amount,
+                })
+            }
+            Err(rej) => {
+                let _ = company_scope::with_company_scope(
+                    Some(mv.company_id),
+                    self.moves.mark_posting_failed(&self.db_pool, move_id),
+                ).await;
+                Err(InventoryError::GlRejected { code: rej.code, message: rej.message })
+            }
+        }
     }
 
     // ---- valuation core (private) -----------------------------------------------
@@ -715,10 +877,21 @@ impl InventoryWriteService {
                     available: bal.actual_qty, requested: qty,
                 });
             }
-            // Residual-flush rule: draining the bin to 0 carries its entire remaining value.
-            out_value = if out_qty.is_zero() { bal.stock_value } else { money(qty * bal.valuation_rate) };
+            // A forced value (a document reversal at its original amount) overrides the
+            // average/drain-derived carry — and reblends the remaining rate, because the
+            // remaining estate's value changed by an amount the old average does not describe.
+            // Ordinary moves: residual-flush rule (draining the bin to 0 carries its entire
+            // remaining value) or the current 2dp-rounded average.
+            let forced = mv.forced_value.is_some();
+            out_value = match mv.forced_value {
+                Some(fv) => fv,
+                None if out_qty.is_zero() => bal.stock_value,
+                None => money(qty * bal.valuation_rate),
+            };
             let out_stock_value = bal.stock_value - out_value;
-            let out_rate = if out_qty > Decimal::ZERO { bal.valuation_rate } else { Decimal::ZERO };
+            let out_rate = if out_qty > Decimal::ZERO {
+                if forced { rate6(out_stock_value / out_qty) } else { bal.valuation_rate }
+            } else { Decimal::ZERO };
             self.bins.update_balance(tx, mv.company_id, mv.item_id, wh, out_qty, out_rate, out_stock_value).await?;
             sle_no += 1;
             self.sles.insert_sle(tx, &crate::infrastructure::persistence::NewSleRow {
@@ -732,10 +905,14 @@ impl InventoryWriteService {
 
         // IN leg (V7: valued AFTER — reblends the destination with the carried value).
         if let (Some(wh), Some(bal)) = (dst_wh, dst_wh.and_then(balance_of)) {
-            // Carried value: an external source (receipt) values the inflow at the move's unit
-            // price; an internal transfer carries the OUT value. A zero price on an external
-            // receive carries the destination's current average (value-neutral receive).
-            let carried = if src.usage != "internal" {
+            // Carried value: a forced value (a document reversal at its original amount)
+            // overrides everything; an external source (receipt) values the inflow at the
+            // move's unit price; an internal transfer carries the OUT value. A zero price on
+            // an external receive carries the destination's current average (value-neutral
+            // receive).
+            let carried = if let Some(fv) = mv.forced_value {
+                fv
+            } else if src.usage != "internal" {
                 if mv.price_unit > Decimal::ZERO { money(qty * mv.price_unit) } else { money(qty * bal.valuation_rate) }
             } else {
                 out_value

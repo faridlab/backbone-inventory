@@ -11,6 +11,11 @@
 # Add your hand-authored services, handlers, tests, and docs below as you write them.
 
 user_owned:
+  # The create_backorder policy enum: the generator emits it from schema/models/operation.model.yaml,
+  # but a mid-change regen would also re-derive entity/migration files this convergence pass keeps
+  # hand-owned — so the file is frozen here and mirrors the schema's enum values exactly
+  # (ask / always / delayed / never; delayed = mint the backorder but defer its reservation).
+  - "src/domain/entity/create_backorder.rs"
   # Domain events (public extension surface) + GL-posting port + valuation engine/write path
   # + the availability read-model + the DeliveryRequested intake.
   - "src/application/service/inventory_events.rs"
@@ -65,9 +70,18 @@ user_owned:
   - "tests/integrity_probes.rs"
   - "tests/consumer_surface.rs"
   - "tests/route_surface_guard.rs"
+  # Schema-to-DDL drift check — validates that every unique/index/constraint declared in
+  # schema YAML has a corresponding DDL counterpart in the migrated database.
+  - "tests/schema_drift_check.rs"
   # Picking-as-projection (T1) + the quant-driven adjustment door probes.
   - "tests/stock_projection_adjustment.rs"
   - "tests/features/**"
+  # ENGINE BIND-ORDER rider probe test (RIDER 3).
+  - "tests/engine_bind_order.rs"
+  # Estate-divergence detector: after every voucher door fires, quant on-hand must move by
+  # the door qty, the Bin/quant/ledger estates must agree, and the legacy direct-SLE-write
+  # signature (voucher_type = the door's own voucher table) must stay gone.
+  - "tests/estate_divergence_detector.rs"
 
   # Per-entity CRUD integration harness — frozen so hand cleanups persist across regen.
   - "tests/integration_tests.rs"
@@ -124,3 +138,33 @@ user_owned:
   # is hand-owned here.
   - "migrations/20260821130024_company_fence_stock_convergence.up.sql"
   - "migrations/20260821130024_company_fence_stock_convergence.down.sql"
+  # Reference data seeds: virtual location trees (loss/scrap, inventory adjustment,
+  # production input/output, transit) and the global MTO route + rule. These are
+  # shared_blank (company_id = NULL) and visible to every company.
+  - "migrations/seeds/reference_data_seed.sql"
+  - "migrations/seeds/seed_order.yml"
+  # Reversal-amount override on stock moves (forced_value): lets reverse moves carry
+  # the exact legacy amount when a voucher cancel re-drives valuation. Hand-written
+  # because the generator does not rewrite existing table migrations.
+  - "migrations/20260826140000_stock_move_forced_value.up.sql"
+  - "migrations/20260826140000_stock_move_forced_value.down.sql"
+  # Backorder policy vocabulary (always / delayed / never) on operation types:
+  # delayed defers reservation to the scheduler's claim sweep. Hand-written because
+  # the generator does not rewrite existing table migrations.
+  - "migrations/20260826140100_create_backorder_delayed.up.sql"
+  - "migrations/20260826140100_create_backorder_delayed.down.sql"
+  # Voucher -> minted-transfer seam: the `transfer_id` column + lookup index the schema
+  # declares on the four voucher tables. Hand-written because the generator does not
+  # rewrite existing table migrations; surfaced as drift by the schema-to-DDL check.
+  - "migrations/20260826140200_voucher_transfer_id_columns.up.sql"
+  - "migrations/20260826140200_voucher_transfer_id_columns.down.sql"
+  # GL settlement state on stock moves (the move's own AccountingPost outcome): column +
+  # sweep index, reusing the gl_posting_state enum. Hand-written because the generator does
+  # not rewrite existing table migrations; the schema declares the field + index on
+  # StockMove (schema/models/move.model.yaml).
+  - "migrations/20260826150000_stock_move_posting_state.up.sql"
+  - "migrations/20260826150000_stock_move_posting_state.down.sql"
+  # Move GL-leg re-drive probes: rejected post → failed → repost heals through the real
+  # accounting ledger; crash-window dedupe; door-owned and value-neutral legs stay
+  # not_applicable.
+  - "tests/move_gl_redrive.rs"

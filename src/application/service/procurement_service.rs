@@ -239,18 +239,7 @@ impl ProcurementService {
     /// NULL company is the shared/global posture (ADR-0014), e.g. the seeded MTO route.
     pub async fn create_route(&self, r: NewRoute) -> Result<Uuid, ProcurementError> {
         let id = Uuid::new_v4();
-        sqlx::query(
-            r#"INSERT INTO inventory.routes
-                   (id, name, active, sequence, company_id)
-               VALUES ($1, $2, $3, $4, $5)"#,
-        )
-        .bind(id)
-        .bind(&r.name)
-        .bind(r.active)
-        .bind(r.sequence)
-        .bind(r.company_id)
-        .execute(&self.db_pool)
-        .await?;
+        ProcurementRepository::insert_route(&self.db_pool, id, &r.name, r.active, r.sequence, r.company_id).await?;
         Ok(id)
     }
 
@@ -270,29 +259,23 @@ impl ProcurementService {
         .await?;
 
         let id = Uuid::new_v4();
-        sqlx::query(
-            r#"INSERT INTO inventory.route_rules
-                   (id, name, active, sequence, action, auto, procure_method, delay,
-                    location_src_id, location_dest_id, picking_type_id, route_id,
-                    warehouse_id, company_id, propagate_cancel)
-               VALUES ($1, $2, TRUE, $3, $4::rule_action, $5::rule_auto,
-                       $6::procure_method, $7, $8, $9, $10, $11, $12, $13, $14)"#,
+        ProcurementRepository::insert_rule(
+            &self.db_pool,
+            id,
+            &r.name,
+            r.sequence,
+            &r.action,
+            &r.auto,
+            &r.procure_method,
+            r.delay,
+            r.location_src_id,
+            r.location_dest_id,
+            r.picking_type_id,
+            r.route_id,
+            r.warehouse_id,
+            r.company_id,
+            r.propagate_cancel,
         )
-        .bind(id)
-        .bind(&r.name)
-        .bind(r.sequence)
-        .bind(&r.action)
-        .bind(&r.auto)
-        .bind(&r.procure_method)
-        .bind(r.delay)
-        .bind(r.location_src_id)
-        .bind(r.location_dest_id)
-        .bind(r.picking_type_id)
-        .bind(r.route_id)
-        .bind(r.warehouse_id)
-        .bind(r.company_id)
-        .bind(r.propagate_cancel)
-        .execute(&self.db_pool)
         .await?;
         Ok(id)
     }
@@ -454,38 +437,25 @@ impl ProcurementService {
     /// (item, location, company) coverage is the typed `orderpoint_exists` error; the partial
     /// unique index is the DB backstop a raw writer hits instead.
     pub async fn create_orderpoint(&self, o: NewOrderpoint) -> Result<Uuid, ProcurementError> {
-        let existing = sqlx::query_scalar::<_, i64>(
-            r#"SELECT COUNT(*) FROM inventory.reordering_rules
-               WHERE item_id = $1 AND location_id = $2 AND company_id = $3
-                 AND (metadata->>'deleted_at') IS NULL"#,
-        )
-        .bind(o.item_id)
-        .bind(o.location_id)
-        .bind(o.company_id)
-        .fetch_one(&self.db_pool)
-        .await?;
+        let existing = ProcurementRepository::orderpoint_exists(&self.db_pool, o.item_id, o.location_id, o.company_id).await?;
         if existing > 0 {
             return Err(ProcurementError::OrderpointExists { item_id: o.item_id, location_id: o.location_id });
         }
 
         let id = Uuid::new_v4();
-        let inserted = sqlx::query(
-            r#"INSERT INTO inventory.reordering_rules
-                   (id, name, trigger, active, item_id, location_id, warehouse_id, company_id,
-                    item_min_qty, item_max_qty, route_id)
-               VALUES ($1, $2, $3::orderpoint_trigger, TRUE, $4, $5, $6, $7, $8, $9, $10)"#,
+        let inserted = ProcurementRepository::insert_orderpoint(
+            &self.db_pool,
+            id,
+            &o.name,
+            &o.trigger,
+            o.item_id,
+            o.location_id,
+            o.warehouse_id,
+            o.company_id,
+            o.item_min_qty,
+            o.item_max_qty,
+            o.route_id,
         )
-        .bind(id)
-        .bind(&o.name)
-        .bind(&o.trigger)
-        .bind(o.item_id)
-        .bind(o.location_id)
-        .bind(o.warehouse_id)
-        .bind(o.company_id)
-        .bind(o.item_min_qty)
-        .bind(o.item_max_qty)
-        .bind(o.route_id)
-        .execute(&self.db_pool)
         .await;
         if let Err(e) = inserted {
             if e.as_database_error().map(|d| d.is_unique_violation()).unwrap_or(false) {

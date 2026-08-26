@@ -46,6 +46,13 @@ const EXCLUDED_ENGINE_OWNED_ROUTE_MOUNTS: &[&str] = &[
     "create_stock_move_routes(self.stock_move_service",
     "create_stock_move_line_routes(self.stock_move_line_service",
     "create_quant_routes(self.quant_service",
+    // Append-only ledger and GL-posting adjustments (RIDER 2 QUANT-SURFACE HARDENING):
+    // `stock_ledger_entries` is the append-only ledger the move engine mints — generic
+    // writes would bypass the SLE/GL seam and the accounting integration. `stock_reconciliations`
+    // are the GL-posting adjustments that must post only through the engine's GL surface.
+    // Reads stay exposed via `readonly_routes()`.
+    "create_stock_ledger_entry_routes(self.stock_ledger_entry_service",
+    "create_stock_reconciliation_routes(self.stock_reconciliation_service",
 ];
 
 #[test]

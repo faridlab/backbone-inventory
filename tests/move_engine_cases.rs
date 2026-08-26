@@ -110,6 +110,7 @@ fn new_move(company: Uuid, item: Uuid, src: Uuid, dst: Uuid, qty: &str) -> NewSt
         move_dest_ids: vec![],
         is_inventory: false,
         scrapped: false,
+        forced_value: None,
     }
 }
 
@@ -246,14 +247,22 @@ async fn backorder_split_on_partial_done() {
     )
     .bind(child).fetch_one(&pool).await.unwrap();
     assert_eq!(demand, d("4"));
-    assert_eq!(state, "draft", "the backorder starts the lifecycle like any move");
+    // The backorder is minted CONFIRMED (a confirmed move is what the scheduler's assign sweep
+    // and a re-validate can drive; a draft one is invisible to both), and the `Always` policy
+    // reserves it right away — the 4 units the partial done released are exactly its demand.
+    assert_eq!(state, "assigned", "Always mints the backorder confirmed + reserved (reserve on mint)");
     assert_eq!(origs, vec![mv], "chained to its parent (done-qty propagation walks this)");
 
-    // The residual reservation (10 reserved, line shrunk to 6) must NOT survive the done.
+    // The residual reservation (10 reserved, line shrunk to 6) must NOT survive the done — the
+    // mirror self-heal releases the stranded 4, which the `Always` backorder then re-reserves
+    // (reserve on mint): the parent's leftover demand holds the units its own partial done freed.
     let (q, r) = quant_at(&pool, company, item, stock).await;
-    assert_eq!((q, r), (d("4"), d("0")), "mirror self-heal released the stranded 4");
+    assert_eq!((q, r), (d("4"), d("4")), "self-heal released the stranded 4; the backorder re-reserved it");
 
-    // Policy Never leaves the remainder unbackordered.
+    // Policy Never leaves the remainder unbackordered. (Release the backorder's hold first —
+    // under the reserve-on-mint contract it owns every free unit at the location, and the Never
+    // probe below needs reservable stock.)
+    w.unreserve_move(child).await.unwrap();
     let mv2 = w.create_move(new_move(company, item, stock, customer, "2")).await.unwrap();
     w.action_confirm(mv2).await.unwrap();
     w.action_assign(mv2).await.unwrap();

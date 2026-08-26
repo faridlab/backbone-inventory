@@ -34,7 +34,7 @@ use backbone_inventory::application::service::procurement_service::{
     MovePipeline, MovePipelineError, NewOrderpoint, NewRoute, NewRouteRule, ProcurementRequest,
     ProcurementService,
 };
-use backbone_inventory::domain::entity::{MoveState, Priority, ProcureMethod, StockMove};
+use backbone_inventory::domain::entity::{GlPostingState, MoveState, Priority, ProcureMethod, StockMove};
 use backbone_inventory::infrastructure::jobs::{run_scheduler_with, SchedulerBatching};
 use backbone_inventory::infrastructure::persistence::procurement_repository::OrderpointRow;
 
@@ -829,7 +829,7 @@ async fn run_push_mints_and_links_the_chain() {
 
     // The engine's confirm verb calls run_push with the upstream's domain view.
     let upstream = StockMove::new(
-        uq("MV"), MoveState::Confirmed, Priority::Normal,
+        uq("MV"), MoveState::Confirmed, GlPostingState::NotApplicable, Priority::Normal,
         chrono::Utc::now(), chrono::Utc::now(),
         item, d("10"), d("3"), d("0"), ProcureMethod::MakeToStock,
         sup, shelf, co, vec![], vec![], false, false, true,

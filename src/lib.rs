@@ -121,8 +121,6 @@ impl InventoryModule {
             create_reordering_rule_routes,
             create_purchase_receipt_routes,
             create_stock_entry_routes,
-            create_stock_ledger_entry_routes,
-            create_stock_reconciliation_routes,
             create_lot_routes,
             create_package_routes,
             create_warehouse_routes,
@@ -138,6 +136,9 @@ impl InventoryModule {
         // move engine's guarded transitions — never free-hand-set over HTTP. Reads for
         // all of them stay available via `readonly_routes()`. The transfer projection
         // mounts read-only even here (it has no write surface of its own).
+        // `stock_ledger_entries` and `stock_reconciliations` are also engine-owned:
+        // the SLE is the append-only ledger the move engine mints, and reconciliations
+        // are the GL-posting adjustments — both must write only through the engine.
         Router::new()
             .merge(create_delivery_note_routes(self.delivery_note_service.clone()))
             .merge(create_location_routes(self.location_service.clone()))
@@ -148,8 +149,6 @@ impl InventoryModule {
             .merge(create_reordering_rule_routes(self.reordering_rule_service.clone()))
             .merge(create_purchase_receipt_routes(self.purchase_receipt_service.clone()))
             .merge(create_stock_entry_routes(self.stock_entry_service.clone()))
-            .merge(create_stock_ledger_entry_routes(self.stock_ledger_entry_service.clone()))
-            .merge(create_stock_reconciliation_routes(self.stock_reconciliation_service.clone()))
             .merge(create_lot_routes(self.lot_service.clone()))
             .merge(create_package_routes(self.package_service.clone()))
             .merge(create_warehouse_routes(self.warehouse_service.clone()))

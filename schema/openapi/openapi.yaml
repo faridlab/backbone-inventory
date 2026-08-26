@@ -9162,6 +9162,7 @@ components:
         - id
         - name
         - state
+        - posting_state
         - priority
         - create_date
         - date
@@ -9188,6 +9189,8 @@ components:
           maxLength: 400
         state:
           type: string
+        posting_state:
+          type: string
         priority:
           type: string
         create_date:
@@ -9204,6 +9207,9 @@ components:
         quantity:
           type: string
         price_unit:
+          type: string
+        forced_value:
+          nullable: true
           type: string
         procure_method:
           type: string
@@ -9271,6 +9277,7 @@ components:
       required:
         - name
         - state
+        - posting_state
         - priority
         - create_date
         - date
@@ -9294,6 +9301,8 @@ components:
           maxLength: 400
         state:
           type: string
+        posting_state:
+          type: string
         priority:
           type: string
         create_date:
@@ -9310,6 +9319,9 @@ components:
         quantity:
           type: string
         price_unit:
+          type: string
+        forced_value:
+          nullable: true
           type: string
         procure_method:
           type: string
@@ -9364,6 +9376,7 @@ components:
       required:
         - name
         - state
+        - posting_state
         - priority
         - create_date
         - date
@@ -9387,6 +9400,8 @@ components:
           maxLength: 400
         state:
           type: string
+        posting_state:
+          type: string
         priority:
           type: string
         create_date:
@@ -9403,6 +9418,9 @@ components:
         quantity:
           type: string
         price_unit:
+          type: string
+        forced_value:
+          nullable: true
           type: string
         procure_method:
           type: string
@@ -9460,6 +9478,8 @@ components:
           maxLength: 400
         state:
           type: string
+        posting_state:
+          type: string
         priority:
           type: string
         create_date:
@@ -9476,6 +9496,9 @@ components:
         quantity:
           type: string
         price_unit:
+          type: string
+        forced_value:
+          nullable: true
           type: string
         procure_method:
           type: string

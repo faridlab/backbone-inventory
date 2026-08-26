@@ -184,6 +184,7 @@ impl InventoryWriteService {
                 move_dest_ids: vec![],
                 is_inventory: false,
                 scrapped: false,
+                forced_value: None, // ordinary demand: the valuation core derives the carry
             }).await?;
             self.action_confirm(mid).await?;
             // The operation type's reservation posture: `at_confirm` (the generated default)
@@ -228,7 +229,8 @@ impl InventoryWriteService {
     /// as the physical detail row so `done` has lines (R24); `_action_done` then flips the
     /// quants, mints the V7-ordered SLE pair, and posts the GL leg the move's shape calls
     /// for. The partial-validate backorder policy comes from the operation type (`ask` maps
-    /// to creating the backorder — the non-interactive default of Odoo's wizard).
+    /// to creating the backorder — the non-interactive default of Odoo's wizard; `delayed`
+    /// creates it too but leaves its reservation to the scheduler's assign sweep).
     ///
     /// Posting a GL leg needs the composing service's `GlPostSink`; a leg whose accounts the
     /// directive lacks is simply not posted (the physical movement is unaffected).
@@ -282,7 +284,9 @@ impl InventoryWriteService {
     }
 
     /// The partial-validate backorder policy of the transfer's operation type (`ask` maps to
-    /// `Always` — the non-interactive default; a wizard is not available on this surface).
+    /// `Always` — the non-interactive default; a wizard is not available on this surface;
+    /// `delayed` mints the backorder but defers its reservation to the scheduler's assign
+    /// sweep).
     async fn operation_backorder_policy(
         &self,
         company_id: Uuid,
@@ -307,6 +311,7 @@ impl InventoryWriteService {
         };
         Ok(match facts.create_backorder.as_str() {
             "never" => BackorderPolicy::Never,
+            "delayed" => BackorderPolicy::Delayed,
             _ => BackorderPolicy::Always,
         })
     }
@@ -459,6 +464,7 @@ impl InventoryWriteService {
                 move_dest_ids: vec![],
                 is_inventory: false,
                 scrapped: false,
+                forced_value: None, // ordinary demand: the valuation core derives the carry
             }).await?;
             self.action_confirm(mid).await?;
             // Reserve from the (healed) source quant — mints the execution line — then

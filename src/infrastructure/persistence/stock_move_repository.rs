@@ -14,8 +14,10 @@
 //! unqualified in migrations) and decode through `::text`.
 
 use rust_decimal::Decimal;
-use sqlx::{PgPool, Row};
+use sqlx::{PgConnection, PgPool, Row};
 use uuid::Uuid;
+
+use backbone_orm::company_scope;
 
 use crate::domain::entity::StockMove;
 
@@ -65,6 +67,9 @@ pub struct NewMoveRow<'a> {
     pub move_dest_ids: Vec<Uuid>,
     pub is_inventory: bool,
     pub scrapped: bool,
+    /// Explicit total value the move carries — a document reversal valued at its original
+    /// amount. `None` on ordinary moves (the valuation core derives the carry).
+    pub forced_value: Option<Decimal>,
 }
 
 /// A move row as the engine reads it. `state` / `procure_method` decode as text (the enum lives in
@@ -74,6 +79,11 @@ pub struct MoveRow {
     pub id: Uuid,
     pub name: String,
     pub state: String,
+    /// GL settlement state of the move's OWN AccountingPost leg, decoded as text
+    /// ("not_applicable" | "pending" | "posted" | "failed"). Distinct from the lifecycle
+    /// `state`: a `done` move can carry a `failed` GL leg (the physical movement stands,
+    /// the GL leg is missing and re-drivable).
+    pub posting_state: String,
     pub date: chrono::DateTime<chrono::Utc>,
     pub item_id: Uuid,
     pub demand_qty: Decimal,
@@ -93,6 +103,9 @@ pub struct MoveRow {
     pub is_inventory: bool,
     pub scrapped: bool,
     pub propagate_cancel: bool,
+    /// Explicit total value the move carries (a document reversal valued at its original
+    /// amount); `None` on ordinary moves.
+    pub forced_value: Option<Decimal>,
 }
 
 /// Hand-written stock-move SQL — the lifecycle writes. Guarded: state transitions carry the
@@ -110,16 +123,16 @@ impl StockMoveRepository {
             r#"INSERT INTO inventory.stock_moves
                  (id, name, state, item_id, demand_qty, price_unit, procure_method, picking_id,
                   origin, location_id, location_dest_id, partner_id, company_id, warehouse_id,
-                  orderpoint_id, move_orig_ids, move_dest_ids, is_inventory, scrapped)
+                  orderpoint_id, move_orig_ids, move_dest_ids, is_inventory, scrapped, forced_value)
                VALUES ($1,$2,'draft'::move_state,$3,$4,$5,$6::procure_method,$7,$8,$9,$10,$11,$12,
-                       $13,$14,$15,$16,$17,$18)"#,
+                       $13,$14,$15,$16,$17,$18,$19)"#,
         )
         .bind(m.id).bind(m.name).bind(m.item_id).bind(m.demand_qty).bind(m.price_unit)
         .bind(m.procure_method).bind(m.picking_id).bind(m.origin)
         .bind(m.location_id).bind(m.location_dest_id).bind(m.partner_id).bind(m.company_id)
         .bind(m.warehouse_id).bind(m.orderpoint_id)
         .bind(&m.move_orig_ids).bind(&m.move_dest_ids)
-        .bind(m.is_inventory).bind(m.scrapped)
+        .bind(m.is_inventory).bind(m.scrapped).bind(m.forced_value)
         .execute(conn)
         .await?;
         Ok(())
@@ -132,11 +145,11 @@ impl StockMoveRepository {
         move_id: Uuid,
     ) -> Result<Option<MoveRow>, sqlx::Error> {
         let row = sqlx::query(
-            r#"SELECT id, name, state::text AS state, date, item_id, demand_qty, quantity,
+            r#"SELECT id, name, state::text AS state, posting_state::text AS posting_state, date, item_id, demand_qty, quantity,
                       price_unit, procure_method::text AS procure_method, picking_id, origin,
                       location_id, location_dest_id, partner_id, company_id, warehouse_id,
                       orderpoint_id, move_orig_ids, move_dest_ids, is_inventory, scrapped,
-                      propagate_cancel
+                      propagate_cancel, forced_value
                FROM inventory.stock_moves
                WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
         )
@@ -153,15 +166,40 @@ impl StockMoveRepository {
         move_ids: &[Uuid],
     ) -> Result<Vec<MoveRow>, sqlx::Error> {
         let rows = sqlx::query(
-            r#"SELECT id, name, state::text AS state, date, item_id, demand_qty, quantity,
+            r#"SELECT id, name, state::text AS state, posting_state::text AS posting_state, date, item_id, demand_qty, quantity,
                       price_unit, procure_method::text AS procure_method, picking_id, origin,
                       location_id, location_dest_id, partner_id, company_id, warehouse_id,
                       orderpoint_id, move_orig_ids, move_dest_ids, is_inventory, scrapped,
-                      propagate_cancel
+                      propagate_cancel, forced_value
                FROM inventory.stock_moves
                WHERE id = ANY($1) AND (metadata->>'deleted_at') IS NULL"#,
         )
         .bind(move_ids)
+        .fetch_all(&mut *conn)
+        .await?;
+        Ok(rows.into_iter().map(move_row_of).collect())
+    }
+
+    /// Fetch a company's moves minted for one voucher (`origin` — voucher doors stamp the
+    /// voucher number there so a crashed submit can find and resume its line moves).
+    pub async fn fetch_moves_by_origin(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        company_id: Uuid,
+        origin: &str,
+    ) -> Result<Vec<MoveRow>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"SELECT id, name, state::text AS state, posting_state::text AS posting_state, date, item_id, demand_qty, quantity,
+                      price_unit, procure_method::text AS procure_method, picking_id, origin,
+                      location_id, location_dest_id, partner_id, company_id, warehouse_id,
+                      orderpoint_id, move_orig_ids, move_dest_ids, is_inventory, scrapped,
+                      propagate_cancel, forced_value
+               FROM inventory.stock_moves
+               WHERE company_id=$1 AND origin=$2 AND (metadata->>'deleted_at') IS NULL
+               ORDER BY name"#,
+        )
+        .bind(company_id)
+        .bind(origin)
         .fetch_all(&mut *conn)
         .await?;
         Ok(rows.into_iter().map(move_row_of).collect())
@@ -236,6 +274,103 @@ impl StockMoveRepository {
         )
         .bind(child_id).bind(parent_id)
         .execute(&mut *conn)
+        .await?;
+        Ok(())
+    }
+}
+
+/// The GL-leg settlement writes (the move's OWN AccountingPost outcome — the same posture the
+/// voucher doors keep on their headers). The `pending` marker is written INSIDE the done
+/// transaction, atomically with the physical movement; the `posted`/`failed` reconciles run on
+/// the pool AFTER the movement commits (the GL leg is eventually consistent — a crash between
+/// commit and the reconcile leaves `pending`, which the repost verb re-drives; accounting
+/// dedupes on `(company, source_type, source_id, posting_type)` so a re-drive can never double
+/// post).
+impl StockMoveRepository {
+    /// Arm the GL leg: `posting_state = pending`, inside the movement's own transaction. Called
+    /// by the done path only when it actually built an envelope for this move — moves that post
+    /// no GL of their own never leave `not_applicable`.
+    pub async fn set_posting_pending(
+        &self,
+        conn: &mut PgConnection,
+        move_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"UPDATE inventory.stock_moves
+               SET posting_state='pending'::gl_posting_state
+               WHERE id=$1"#,
+        )
+        .bind(move_id)
+        .execute(&mut *conn)
+        .await?;
+        Ok(())
+    }
+
+    /// The pending→posted reconcile from the accounting ack. Guarded on
+    /// `posting_state <> 'posted'` so a re-drive that accounting answered from its dedupe
+    /// (returning the ORIGINAL journal) can never flip a settled state.
+    ///
+    /// Runs `execute_scoped` on the pool; the caller wraps it in `with_company_scope` (the
+    /// company comes off the move row) so the UPDATE passes the RLS fence.
+    pub async fn mark_posting_posted(
+        &self,
+        pool: &PgPool,
+        move_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        company_scope::execute_scoped(
+            pool,
+            sqlx::query(
+                r#"UPDATE inventory.stock_moves
+                   SET posting_state='posted'::gl_posting_state
+                   WHERE id=$1 AND posting_state <> 'posted'::gl_posting_state"#,
+            )
+            .bind(move_id),
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Record a GL rejection. The physical movement is NOT rolled back — it really happened;
+    /// the move parks in `failed` and is re-drivable via `repost_move_gl`.
+    ///
+    /// Caller supplies the company scope, as [`Self::mark_posting_posted`].
+    pub async fn mark_posting_failed(
+        &self,
+        pool: &PgPool,
+        move_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        company_scope::execute_scoped(
+            pool,
+            sqlx::query(
+                r#"UPDATE inventory.stock_moves
+                   SET posting_state='failed'::gl_posting_state
+                   WHERE id=$1"#,
+            )
+            .bind(move_id),
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Retire an unsettled GL leg back to `not_applicable` — used by the repost verb when the
+    /// envelope can no longer be built (the directive no longer supplies the accounts the leg
+    /// shape needs), so a stuck `pending`/`failed` move whose GL is genuinely not postable under
+    /// the current configuration settles instead of living on the sweep worklist forever. Never
+    /// touches a `posted` move.
+    pub async fn mark_posting_not_applicable(
+        &self,
+        pool: &PgPool,
+        move_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        company_scope::execute_scoped(
+            pool,
+            sqlx::query(
+                r#"UPDATE inventory.stock_moves
+                   SET posting_state='not_applicable'::gl_posting_state
+                   WHERE id=$1 AND posting_state IN ('pending'::gl_posting_state, 'failed'::gl_posting_state)"#,
+            )
+            .bind(move_id),
+        )
         .await?;
         Ok(())
     }
@@ -341,6 +476,7 @@ fn move_row_of(r: sqlx::postgres::PgRow) -> MoveRow {
         id: r.get("id"),
         name: r.get("name"),
         state: r.get("state"),
+        posting_state: r.get("posting_state"),
         date: r.get("date"),
         item_id: r.get("item_id"),
         demand_qty: r.get("demand_qty"),
@@ -360,6 +496,7 @@ fn move_row_of(r: sqlx::postgres::PgRow) -> MoveRow {
         is_inventory: r.get("is_inventory"),
         scrapped: r.get("scrapped"),
         propagate_cancel: r.get("propagate_cancel"),
+        forced_value: r.get("forced_value"),
     }
 }
 
