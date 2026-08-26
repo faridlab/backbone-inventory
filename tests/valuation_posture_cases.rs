@@ -342,8 +342,35 @@ async fn periodic_policy_suppresses_realtime_posts() {
     // Engine legs too: a directive-carrying move under a periodic company stays not_applicable.
     let stock: Uuid = sqlx::query_scalar("SELECT id FROM inventory.locations WHERE company_id=$1 AND warehouse_id=$2 AND usage='internal'")
         .bind(company).bind(wh).fetch_one(&pool).await.unwrap();
-    let customer: Uuid = sqlx::query_scalar("SELECT id FROM inventory.locations WHERE company_id=$1 AND usage='customer'")
-        .bind(company).fetch_one(&pool).await.unwrap();
+    // Resolve the company-owned customer location the way the doors do:
+    // company-owned first, with the shared reference root (company NULL) as
+    // fallback. On the seeded chain the shared root exists, so no door ever
+    // minted a company-owned endpoint — bootstrap one here, mirroring
+    // `ensure_partner_location`, so the fixture holds on both chains.
+    let customer: Uuid = match sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM inventory.locations WHERE company_id=$1 AND usage='customer'",
+    )
+    .bind(company)
+    .fetch_optional(&pool)
+    .await
+    .unwrap()
+    {
+        Some(id) => id,
+        None => {
+            let id = Uuid::new_v4();
+            sqlx::query(
+                r#"INSERT INTO inventory.locations
+                     (id, name, complete_name, usage, active, company_id, parent_path)
+                   VALUES ($1, 'Customers', 'Customers', 'customer'::location_usage, TRUE, $2, $1::text)"#,
+            )
+            .bind(id)
+            .bind(company)
+            .execute(&pool)
+            .await
+            .unwrap();
+            id
+        }
+    };
     let gl = MoveGlDirective {
         cogs_account_id: Some(a.cogs), inventory_account_id: Some(a.inv),
         grir_account_id: None, adjustment_account_id: None, currency: "IDR".into(),
