@@ -169,6 +169,85 @@ impl StockLedgerEntryRepository {
         .await?;
         Ok((row.get("out_value"), row.get("in_value")))
     }
+
+    /// Whether a voucher already minted an SLE row under an exact `voucher_no` — the
+    /// crash-resume probe for deterministic-name inserts (a landed-cost revaluation row
+    /// `{lc_number}/{move_name}/{idx}` that already landed in a prior crashed attempt must be
+    /// skipped, never re-minted). Takes the caller's connection (rides the caller's unit of
+    /// work).
+    pub async fn has_sle_named(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        voucher_type: &str,
+        voucher_id: Uuid,
+        voucher_no: &str,
+    ) -> Result<bool, sqlx::Error> {
+        let n: i64 = sqlx::query_scalar(
+            r#"SELECT COUNT(*) FROM inventory.stock_ledger_entries
+               WHERE voucher_type=$1::voucher_type AND voucher_id=$2 AND voucher_no=$3
+                 AND (metadata->>'deleted_at') IS NULL"#,
+        )
+        .bind(voucher_type)
+        .bind(voucher_id)
+        .bind(voucher_no)
+        .fetch_one(&mut *conn)
+        .await?;
+        Ok(n > 0)
+    }
+
+    /// Read-only FIFO ATTRIBUTION of a bin's current on-hand onto its inbound moves: for each
+    /// move, how many of the units it blended in are still on hand. This answers "how much of
+    /// this receipt is left to revalue" for landed costs.
+    ///
+    /// The arithmetic (per (item, warehouse)): order the IN rows FIFO by
+    /// `(posting_date, created_at, id)`; the units still on hand are the NEWEST ones, so a
+    /// move's remaining share is `min(qty_m, max(0, on_hand − qty of IN rows strictly before
+    /// it))`. OUT rows never enter the formula — their effect is already carried by the bin's
+    /// current `actual_qty`. Value-only rows (qty 0, e.g. landed-cost adjustments) never move
+    /// the attribution.
+    ///
+    /// **This is attribution, NOT FIFO costing** — the moving-average SLE engine stays the
+    /// single valuation writer; nothing here feeds a rate or a value.
+    pub async fn remaining_qty_for_moves(
+        &self,
+        pool: &PgPool,
+        company_id: Uuid,
+        move_ids: &[Uuid],
+    ) -> Result<std::collections::HashMap<Uuid, Decimal>, sqlx::Error> {
+        if move_ids.is_empty() { return Ok(std::collections::HashMap::new()); }
+        let rows = backbone_orm::company_scope::fetch_all_rows_scoped(
+            pool,
+            sqlx::query(
+                r#"WITH ins AS (
+                       SELECT s.voucher_id AS move_id, s.item_id, s.warehouse_id,
+                              s.actual_qty AS qty,
+                              COALESCE(SUM(s.actual_qty) OVER (
+                                  PARTITION BY s.item_id, s.warehouse_id
+                                  ORDER BY s.posting_date, (s.metadata->>'created_at'), s.id
+                                  ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                              ), 0) AS prior_in
+                       FROM inventory.stock_ledger_entries s
+                       WHERE s.company_id=$1 AND s.voucher_type='stock_entry'
+                         AND s.actual_qty > 0 AND (s.metadata->>'deleted_at') IS NULL
+                   )
+                   SELECT ins.move_id,
+                          LEAST(ins.qty, GREATEST(COALESCE(b.actual_qty, 0) - ins.prior_in, 0)) AS remaining
+                   FROM ins
+                   LEFT JOIN inventory.bins b
+                          ON b.company_id=$1 AND b.item_id=ins.item_id
+                         AND b.warehouse_id=ins.warehouse_id
+                         AND (b.metadata->>'deleted_at') IS NULL
+                   WHERE ins.move_id = ANY($2)"#,
+            )
+            .bind(company_id)
+            .bind(move_ids),
+        )
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| (r.get::<Uuid, _>("move_id"), r.get::<Decimal, _>("remaining")))
+            .collect())
+    }
 }
 
 backbone_core::impl_crud_repository!(StockLedgerEntryRepository, StockLedgerEntry, soft_delete);

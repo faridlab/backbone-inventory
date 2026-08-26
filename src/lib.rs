@@ -54,6 +54,10 @@ pub use application::service::LotService;
 pub use application::service::PackageService;
 pub use application::service::WarehouseService;
 pub use application::service::StockItemService;
+pub use application::service::InventoryCompanySettingService;
+pub use application::service::LandedCostService;
+pub use application::service::LandedCostLineService;
+pub use application::service::LandedCostAdjustmentLineService;
 
 use std::sync::Arc;
 use axum::Router;
@@ -95,6 +99,10 @@ pub struct InventoryModule {
     pub(crate) package_service: Arc<PackageService>,
     pub(crate) warehouse_service: Arc<WarehouseService>,
     pub(crate) stock_item_service: Arc<StockItemService>,
+    pub(crate) inventory_company_setting_service: Arc<InventoryCompanySettingService>,
+    pub(crate) landed_cost_service: Arc<LandedCostService>,
+    pub(crate) landed_cost_line_service: Arc<LandedCostLineService>,
+    pub(crate) landed_cost_adjustment_line_service: Arc<LandedCostAdjustmentLineService>,
     // <<< CUSTOM FIELDS
     // END CUSTOM
 }
@@ -125,6 +133,8 @@ impl InventoryModule {
             create_package_routes,
             create_warehouse_routes,
             create_stock_item_routes,
+            create_inventory_company_setting_routes,
+            create_landed_cost_routes,
         };
 
         // Engine-owned tables are deliberately NOT mounted here — see
@@ -153,6 +163,8 @@ impl InventoryModule {
             .merge(create_package_routes(self.package_service.clone()))
             .merge(create_warehouse_routes(self.warehouse_service.clone()))
             .merge(create_stock_item_routes(self.stock_item_service.clone()))
+            .merge(create_inventory_company_setting_routes(self.inventory_company_setting_service.clone()))
+            .merge(create_landed_cost_routes(self.landed_cost_service.clone()))
     }
 
     /// Deprecated alias for [`Self::all_crud_routes`]. `routes()` reads like
@@ -195,6 +207,10 @@ impl InventoryModule {
             create_package_read_routes,
             create_warehouse_read_routes,
             create_stock_item_read_routes,
+            create_inventory_company_setting_read_routes,
+            create_landed_cost_read_routes,
+            create_landed_cost_line_read_routes,
+            create_landed_cost_adjustment_line_read_routes,
         };
 
         Router::new()
@@ -221,6 +237,10 @@ impl InventoryModule {
             .merge(create_package_read_routes(self.package_service.clone()))
             .merge(create_warehouse_read_routes(self.warehouse_service.clone()))
             .merge(create_stock_item_read_routes(self.stock_item_service.clone()))
+            .merge(create_inventory_company_setting_read_routes(self.inventory_company_setting_service.clone()))
+            .merge(create_landed_cost_read_routes(self.landed_cost_service.clone()))
+            .merge(create_landed_cost_line_read_routes(self.landed_cost_line_service.clone()))
+            .merge(create_landed_cost_adjustment_line_read_routes(self.landed_cost_adjustment_line_service.clone()))
     }
 
     // <<< CUSTOM METHODS
@@ -346,6 +366,21 @@ impl InventoryModuleBuilder {
         let stock_item_repository = Arc::new(StockItemRepository::new(db_pool.clone()));
         let stock_item_service = Arc::new(StockItemService::with_repository(stock_item_repository.clone()));
 
+        // InventoryCompanySetting service (the valuation-overlay settings surface)
+        let inventory_company_setting_repository = Arc::new(InventoryCompanySettingRepository::new(db_pool.clone()));
+        let inventory_company_setting_service = Arc::new(InventoryCompanySettingService::with_repository(inventory_company_setting_repository.clone()));
+
+        // LandedCost services (the document + its two child tables; children reach the HTTP
+        // surface read-only — writes ride the document's validate/cancel verbs)
+        let landed_cost_repository = Arc::new(LandedCostRepository::new(db_pool.clone()));
+        let landed_cost_service = Arc::new(LandedCostService::with_repository(landed_cost_repository.clone()));
+
+        let landed_cost_line_repository = Arc::new(LandedCostLineRepository::new(db_pool.clone()));
+        let landed_cost_line_service = Arc::new(LandedCostLineService::with_repository(landed_cost_line_repository.clone()));
+
+        let landed_cost_adjustment_line_repository = Arc::new(LandedCostAdjustmentLineRepository::new(db_pool.clone()));
+        let landed_cost_adjustment_line_service = Arc::new(LandedCostAdjustmentLineService::with_repository(landed_cost_adjustment_line_repository.clone()));
+
         // <<< CUSTOM
         // END CUSTOM
 
@@ -373,6 +408,10 @@ impl InventoryModuleBuilder {
             package_service,
             warehouse_service,
             stock_item_service,
+            inventory_company_setting_service,
+            landed_cost_service,
+            landed_cost_line_service,
+            landed_cost_adjustment_line_service,
             // <<< CUSTOM
             // END CUSTOM
         })

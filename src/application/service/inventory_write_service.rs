@@ -44,7 +44,7 @@ use crate::infrastructure::persistence::{
     QuantRepository, StockAdjustmentRepository, StockEntryItemRepository, StockEntryRepository,
     StockItemRepository, StockLedgerEntryRepository, StockMoveLineRepository, StockMoveRepository,
     StockPickingRepository, StockReconciliationItemRepository, StockReconciliationRepository,
-    WarehouseRepository,
+    ValuationOverlayRepository, WarehouseRepository,
 };
 
 use super::inventory_events::{InventoryEventSink, LoggingSink};
@@ -207,6 +207,43 @@ pub enum InventoryError {
     /// RATE is a valuation-overlay concern (the quant-driven door values the diff at the
     /// current moving average — never a silent rate revaluation).
     CountedRateUnsupported,
+    // ---- valuation overlay (per-company posting posture + landed costs) -------------------
+    /// The company's anglo-saxon delivery-debit posture is ON but no stock interim delivered
+    /// account is configured. Fail-closed: the delivery door refuses to operate (no envelope,
+    /// no partial post) until the account is set — a silent COGS fallback would post the
+    /// interim leg to the wrong account on every delivery.
+    AngloPostureUnconfigured { company_id: Uuid },
+    /// A landed-cost validation found no DONE moves under its target receipt — nothing to
+    /// revalue (the receipt was never submitted, or its lines were all zero / landed-cost
+    /// service lines that mint no stock).
+    LandedCostNoValuedTargets { receipt_id: Uuid },
+    /// A landed-cost line carries no credit account (the split's credit side is undefined).
+    LandedCostLineNeedsAccount { line_id: Uuid },
+    /// The company's cost method is `standard`: landed costs refuse to validate loudly. Under
+    /// standard costing a receipt's value comes from the item's standard price and a landed
+    /// cost would introduce a variance the standard-recompute engine (a later increment)
+    /// would have to absorb — refusing beats silently diverging.
+    LandedCostRequiresCostMethod { company_id: Uuid, cost_method: String },
+    /// The split basis sums to zero across every target line (e.g. a `weight` split where no
+    /// item carries a per-unit weight, or a `value` split over zero-valued lines). This is a
+    /// LOUD rejection by decision: the historical silent equal-split fallback masked
+    /// misconfigured weight data. No fallback, no partial worksheet rows — the transaction
+    /// rolls back.
+    LandedCostZeroSplitBasis { basis: String, target_receipt_id: Uuid },
+    /// The landed cost is not in `draft` (validate and cancel only ever start from `draft`;
+    /// a `done` landed cost can never cancel — the reversal pattern is a negative-amount
+    /// landed cost).
+    LandedCostNotDraft { lc_id: Uuid, state: String },
+    /// A draft landed cost with no cost lines has nothing to allocate.
+    LandedCostNoLines { lc_id: Uuid },
+    /// A target receipt line resolves no inventory valuation account for the landed-cost
+    /// debit leg (neither a per-location override nor the receipt's header inventory
+    /// account).
+    LandedCostNoValuationAccount { move_id: Uuid },
+    /// The worksheet's Σ allocations does not equal the Σ cost line amounts — an internal
+    /// arithmetic invariant broke (each cost line's shares, with the last target line eating
+    /// the rounding diff, must sum to exactly its amount).
+    LandedCostAllocationMismatch { lc_id: Uuid, allocated: Decimal, declared: Decimal },
     Db(sqlx::Error),
 }
 
@@ -233,6 +270,15 @@ impl InventoryError {
             InventoryError::CountReserved { .. } => "quant_reserved".into(),
             InventoryError::OutdatedCount { .. } => "outdated_count".into(),
             InventoryError::CountedRateUnsupported => "counted_rate_unsupported".into(),
+            InventoryError::AngloPostureUnconfigured { .. } => "anglo_posture_unconfigured".into(),
+            InventoryError::LandedCostNoValuedTargets { .. } => "landed_cost_no_valued_targets".into(),
+            InventoryError::LandedCostLineNeedsAccount { .. } => "landed_cost_line_needs_account".into(),
+            InventoryError::LandedCostRequiresCostMethod { .. } => "landed_cost_requires_cost_method".into(),
+            InventoryError::LandedCostZeroSplitBasis { .. } => "landed_cost_zero_split_basis".into(),
+            InventoryError::LandedCostNotDraft { .. } => "landed_cost_not_draft".into(),
+            InventoryError::LandedCostNoLines { .. } => "landed_cost_no_lines".into(),
+            InventoryError::LandedCostNoValuationAccount { .. } => "landed_cost_no_valuation_account".into(),
+            InventoryError::LandedCostAllocationMismatch { .. } => "landed_cost_allocation_mismatch".into(),
             InventoryError::Db(_) => "internal_error".into(),
         }
     }
@@ -313,6 +359,9 @@ pub struct InventoryWriteService {
     // projection probes, location resolution, quant-surface heal; count staging/consume).
     pub(super) pickings: Arc<StockPickingRepository>,
     pub(super) adjustments: Arc<StockAdjustmentRepository>,
+    // The valuation overlay (per-company posting posture + landed-cost document family).
+    // Stateless hand-owned SQL, same construction pattern as the GL voucher repository.
+    pub(super) valuation_overlay: Arc<ValuationOverlayRepository>,
 }
 
 impl InventoryWriteService {
@@ -339,6 +388,7 @@ impl InventoryWriteService {
             move_lines: Arc::new(StockMoveLineRepository::new(db_pool.clone())),
             pickings: Arc::new(StockPickingRepository::new()),
             adjustments: Arc::new(StockAdjustmentRepository::new()),
+            valuation_overlay: Arc::new(ValuationOverlayRepository::new()),
             db_pool,
             sink,
         }

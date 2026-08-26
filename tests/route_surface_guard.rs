@@ -53,6 +53,14 @@ const EXCLUDED_ENGINE_OWNED_ROUTE_MOUNTS: &[&str] = &[
     // Reads stay exposed via `readonly_routes()`.
     "create_stock_ledger_entry_routes(self.stock_ledger_entry_service",
     "create_stock_reconciliation_routes(self.stock_reconciliation_service",
+    // Landed-cost children (the valuation overlay): the cost lines are owned by their
+    // landed-cost document (writes ride its validate/cancel verbs, which alone run the
+    // allocation + revaluation through the move engine), and the adjustment lines are the
+    // TRANSIENT allocation worksheet the validate verb deletes and recreates — a generic
+    // write would forge allocations no SLE/bin write backs. Reads stay exposed via
+    // `readonly_routes()`.
+    "create_landed_cost_line_routes(self.landed_cost_line_service",
+    "create_landed_cost_adjustment_line_routes(self.landed_cost_adjustment_line_service",
 ];
 
 #[test]

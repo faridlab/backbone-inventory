@@ -168,3 +168,31 @@ user_owned:
   # accounting ledger; crash-window dedupe; door-owned and value-neutral legs stay
   # not_applicable.
   - "tests/move_gl_redrive.rs"
+  # Valuation-overlay columns the schema declares on existing tables: the per-unit shipping
+  # weight on the stock item master (the weight basis of landed-cost splits), the per-location
+  # valuation account override, and the is_landed_costs_line seam flag on receipt lines.
+  # Hand-written because the generator does not rewrite existing table migrations.
+  - "migrations/20260826150100_valuation_overlay_columns.up.sql"
+  - "migrations/20260826150100_valuation_overlay_columns.down.sql"
+  # Strict company fence (NOT NULL company_id + FORCE RLS, one tenant's rows only) for the
+  # valuation-overlay tables: inventory_company_settings + the landed-cost document family.
+  # The generated enable_company_rls migration predates these tables, so the fence DDL is
+  # hand-owned here, mirroring 20260821130024_company_fence_stock_convergence.
+  - "migrations/20260826150101_valuation_overlay_company_fence.up.sql"
+  - "migrations/20260826150101_valuation_overlay_company_fence.down.sql"
+  # Posting-posture probes: anglo-saxon delivery debit swap, periodic suppression, the
+  # valuation-account override chain, and the rollout no-op (absent settings row = today's
+  # shapes).
+  - "tests/valuation_posture_cases.rs"
+  # Landed-cost allocation probes: the three split bases, the loud zero-denominator
+  # rejection, HALF-UP + last-line-eats-the-diff rounding, the retroactive-revaluation
+  # asymmetry, the reversal pattern, and the single-writer guarantee.
+  - "tests/landed_cost_cases.rs"
+  # The valuation overlay's hand-owned SQL: the per-company posture read, the per-location
+  # valuation-account override, and the landed-cost document/worksheet writes. Not
+  # schema-derived; same reason gl_voucher_repository.rs is hand-owned.
+  - "src/infrastructure/persistence/valuation_overlay_repository.rs"
+  # The per-company posting posture the door posts and the move engine consult: the
+  # posture resolution helper, the anglo-saxon delivery-debit swap (fail-closed), the
+  # location valuation-account chain, and the explicit account-move gate.
+  - "src/application/service/inventory_posture.rs"

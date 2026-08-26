@@ -30,6 +30,10 @@ pub mod lot_service;
 pub mod package_service;
 pub mod warehouse_service;
 pub mod stock_item_service;
+pub mod inventory_company_setting_service;
+pub mod landed_cost_service;
+pub mod landed_cost_line_service;
+pub mod landed_cost_adjustment_line_service;
 
 // <<< CUSTOM
 // Hand-authored (user-owned): domain events, the GL-posting port, the valuation engine + writes,
@@ -56,6 +60,10 @@ pub mod inventory_move_engine;
 // selection, pull/push move minting, the orderpoint computes, and the MovePipeline port the
 // stock-move engine implements for the daily scheduler. Declared `user_owned`.
 pub mod procurement_service;
+// The per-company posting posture (cost-method vocabulary, the perpetual/periodic axis,
+// the anglo-saxon delivery-debit swap) the door posts and the move engine consult. The
+// `_custom` suffix keeps it outside generator territory by naming convention.
+pub mod inventory_posture;
 // END CUSTOM
 
 pub use delivery_note_service::DeliveryNoteService;
@@ -81,6 +89,10 @@ pub use lot_service::LotService;
 pub use package_service::PackageService;
 pub use warehouse_service::WarehouseService;
 pub use stock_item_service::StockItemService;
+pub use inventory_company_setting_service::InventoryCompanySettingService;
+pub use landed_cost_service::LandedCostService;
+pub use landed_cost_line_service::LandedCostLineService;
+pub use landed_cost_adjustment_line_service::LandedCostAdjustmentLineService;
 // <<< CUSTOM
 pub use inventory_events::{
     InventoryEvent, InventoryEventSink, OrderpointTriggered, StockDelivered, StockMoved,

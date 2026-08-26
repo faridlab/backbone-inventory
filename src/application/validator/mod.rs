@@ -28,6 +28,10 @@ pub mod lot_validator;
 pub mod package_validator;
 pub mod warehouse_validator;
 pub mod stock_item_validator;
+pub mod inventory_company_setting_validator;
+pub mod landed_cost_validator;
+pub mod landed_cost_line_validator;
+pub mod landed_cost_adjustment_line_validator;
 
 pub use delivery_note_validator::{DeliveryNoteValidator, delivery_note_validator};
 pub use delivery_note_item_validator::{DeliveryNoteItemValidator, delivery_note_item_validator};
@@ -52,6 +56,10 @@ pub use lot_validator::{LotValidator, lot_validator};
 pub use package_validator::{PackageValidator, package_validator};
 pub use warehouse_validator::{WarehouseValidator, warehouse_validator};
 pub use stock_item_validator::{StockItemValidator, stock_item_validator};
+pub use inventory_company_setting_validator::{InventoryCompanySettingValidator, inventory_company_setting_validator};
+pub use landed_cost_validator::{LandedCostValidator, landed_cost_validator};
+pub use landed_cost_line_validator::{LandedCostLineValidator, landed_cost_line_validator};
+pub use landed_cost_adjustment_line_validator::{LandedCostAdjustmentLineValidator, landed_cost_adjustment_line_validator};
 
 // <<< CUSTOM
 // END CUSTOM

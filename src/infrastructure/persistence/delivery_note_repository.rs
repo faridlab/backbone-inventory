@@ -86,6 +86,9 @@ pub struct DeliveryRepostHeaderRow {
     pub total_cogs: Decimal,
     pub cogs_account_id: Uuid,
     pub inventory_account_id: Uuid,
+    /// The warehouse whose stock location resolves the location valuation-account override —
+    /// the repost must rebuild the SAME envelope the submit built, override included.
+    pub warehouse_id: Uuid,
     pub gl: GlSettlementState,
 }
 
@@ -176,7 +179,8 @@ impl DeliveryNoteRepository {
             pool,
             sqlx::query(
                 r#"SELECT company_id, branch_id, delivery_number, posting_date, currency, total_cogs,
-                          cogs_account_id, inventory_account_id, posting_state::text AS ps, journal_id, accounting_post_id
+                          cogs_account_id, inventory_account_id, posting_state::text AS ps, journal_id, accounting_post_id,
+                          warehouse_id
                    FROM inventory.delivery_notes WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
             )
             .bind(id),
@@ -188,6 +192,7 @@ impl DeliveryNoteRepository {
             currency: h.get("currency"),
             total_cogs: h.get("total_cogs"), cogs_account_id: h.get("cogs_account_id"),
             inventory_account_id: h.get("inventory_account_id"),
+            warehouse_id: h.get("warehouse_id"),
             gl: GlSettlementState {
                 posting_state: h.get("ps"), journal_id: h.get("journal_id"),
                 accounting_post_id: h.get("accounting_post_id"),

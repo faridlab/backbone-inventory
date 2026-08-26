@@ -29,6 +29,10 @@ pub mod lot_specification;
 pub mod package_specification;
 pub mod warehouse_specification;
 pub mod stock_item_specification;
+pub mod inventory_company_setting_specification;
+pub mod landed_cost_specification;
+pub mod landed_cost_line_specification;
+pub mod landed_cost_adjustment_line_specification;
 
 // <<< CUSTOM
 // END CUSTOM

@@ -99,6 +99,14 @@ impl InventoryWriteService {
         let inv_acct = hdr.inventory_account_id;
         let source_so = hdr.source_so_id;
 
+        // The posting posture (per-company valuation settings; absent row = today's shapes).
+        // Resolved BEFORE anything mints so the anglo-saxon posture's fail-closed account
+        // check refuses the delivery with NOTHING moved and nothing posted: under the
+        // posture the debit leg is the interim-delivered account, and an unconfigured one
+        // must not fall back to COGS silently.
+        let posture = self.posting_posture(company).await?;
+        let debit_acct = self.delivery_debit_account(company, &posture, cogs_acct)?;
+
         let items = company_scope::with_company_scope(
             Some(company),
             self.delivery_items.fetch_items(&self.db_pool, id),
@@ -107,6 +115,9 @@ impl InventoryWriteService {
         // The door's move endpoints: the warehouse's stock location (internal source) and the
         // company's customer location (virtual destination) — resolve-or-bootstrap each.
         let (customer_loc, stock_loc) = self.door_move_endpoints(company, warehouse, "customer").await?;
+        // The inventory credit leg resolves the same location valuation-account override the
+        // receipt path uses (the chain: location override → header account).
+        let inv_acct = self.inventory_leg_account(stock_loc, inv_acct).await?;
 
         // ---- all-or-nothing availability pre-check, under the Bin locks -----------------------
         // Same posture the voucher path always had: EVERY line's demand must be coverable
@@ -203,13 +214,35 @@ impl InventoryWriteService {
             tx.commit().await?;
         }
 
+        // The explicit account-move gate: a voucher that carries neither value nor quantity
+        // posts nothing (stays `not_applicable`); a `periodic` company suppresses the
+        // real-time post the same way (the closing flow — a later increment — owns those legs).
+        let total_qty: Decimal = items.iter().map(|l| l.quantity).sum();
+        if posture.periodic
+            || !Self::should_create_account_move(total_cogs, total_qty, true)
+        {
+            company_scope::with_company_scope(
+                Some(company),
+                self.gl.mark_not_applicable(&self.db_pool, GlVoucher::DeliveryNote, id),
+            ).await?;
+            self.sink.publish(InventoryEvent::StockDelivered(StockDelivered {
+                delivery_id: id, company_id: company, warehouse_id: warehouse, source_so_id: source_so,
+                total_cogs,
+            }));
+            return Ok(SubmitOutcome {
+                voucher_id: id, posted: false, journal_id: None, post_id: None,
+                gl_amount: Decimal::ZERO,
+            });
+        }
         let env = AccountingPostEnvelope {
             idempotency_key: id.to_string(), company_id: company, branch_id: branch,
             source_type: "inventory".into(), source_id: id, source_reference: Some(voucher_no.clone()),
             posting_date, currency: hdr.currency.clone(), posting_type: "original".into(), reverses_post_id: None,
             description: Some("Delivery COGS".into()),
             lines: vec![
-                GlPostLine::debit(cogs_acct, total_cogs).with_description("COGS"),
+                // Under the anglo-saxon posture `debit_acct` is the interim-delivered leg
+                // (COGS recognition deferred to the invoice side); else today's COGS debit.
+                GlPostLine::debit(debit_acct, total_cogs).with_description("COGS"),
                 GlPostLine::credit(inv_acct, total_cogs).with_description("Inventory"),
             ],
         };
@@ -228,6 +261,25 @@ impl InventoryWriteService {
         let h = self.deliveries.fetch_repost_header(&self.db_pool, id).await?
             .ok_or(InventoryError::NotFound(id))?;
         if let Some(o) = Self::already_settled(&h.gl, id) { return Ok(o); }
+        // The SAME posture the submit ran under (absent row = defaults): the anglo-saxon
+        // debit swap applies to the rebuilt envelope identically (fail-closed on an
+        // unconfigured interim account — a repost must not silently diverge from its
+        // original), a `periodic` company retires the unsettled leg to `not_applicable`,
+        // and the inventory leg resolves the same location override the submit used.
+        let posture = self.posting_posture(h.company_id).await?;
+        if posture.periodic {
+            company_scope::with_company_scope(
+                Some(h.company_id),
+                self.gl.mark_not_applicable(&self.db_pool, GlVoucher::DeliveryNote, id),
+            ).await?;
+            return Ok(SubmitOutcome {
+                voucher_id: id, posted: false, journal_id: None, post_id: None,
+                gl_amount: Decimal::ZERO,
+            });
+        }
+        let debit_acct = self.delivery_debit_account(h.company_id, &posture, h.cogs_account_id)?;
+        let (_, stock_loc) = self.door_move_endpoints(h.company_id, h.warehouse_id, "customer").await?;
+        let inv_acct = self.inventory_leg_account(stock_loc, h.inventory_account_id).await?;
         let amt = h.total_cogs;
         let env = AccountingPostEnvelope {
             idempotency_key: id.to_string(), company_id: h.company_id, branch_id: h.branch_id,
@@ -235,8 +287,8 @@ impl InventoryWriteService {
             posting_date: h.posting_date, currency: h.currency.clone(), posting_type: "original".into(), reverses_post_id: None,
             description: Some("Delivery COGS (repost)".into()),
             lines: vec![
-                GlPostLine::debit(h.cogs_account_id, amt).with_description("COGS"),
-                GlPostLine::credit(h.inventory_account_id, amt).with_description("Inventory"),
+                GlPostLine::debit(debit_acct, amt).with_description("COGS"),
+                GlPostLine::credit(inv_acct, amt).with_description("Inventory"),
             ],
         };
         self.emit_and_reconcile(GlVoucher::DeliveryNote, id, &env, sink, amt).await

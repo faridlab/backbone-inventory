@@ -32,6 +32,10 @@ mod lot_seeder;
 mod package_seeder;
 mod warehouse_seeder;
 mod stock_item_seeder;
+mod inventory_company_setting_seeder;
+mod landed_cost_seeder;
+mod landed_cost_line_seeder;
+mod landed_cost_adjustment_line_seeder;
 
 pub use delivery_note_seeder::SeedDeliveryNoteSeeder;
 pub use delivery_note_item_seeder::SeedDeliveryNoteItemSeeder;
@@ -56,6 +60,10 @@ pub use lot_seeder::SeedLotSeeder;
 pub use package_seeder::SeedPackageSeeder;
 pub use warehouse_seeder::SeedWarehouseSeeder;
 pub use stock_item_seeder::SeedStockItemSeeder;
+pub use inventory_company_setting_seeder::SeedInventoryCompanySettingSeeder;
+pub use landed_cost_seeder::SeedLandedCostSeeder;
+pub use landed_cost_line_seeder::SeedLandedCostLineSeeder;
+pub use landed_cost_adjustment_line_seeder::SeedLandedCostAdjustmentLineSeeder;
 
 // ============================================================================
 // SEEDER TRAIT

@@ -19,12 +19,17 @@ use uuid::Uuid;
 use backbone_orm::company_scope;
 
 /// Which voucher table a GL post reconciles against. A closed enum, so the interpolated table name
-/// can only ever be one of three compile-time literals.
+/// can only ever be one of a few compile-time literals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlVoucher {
     PurchaseReceipt,
     DeliveryNote,
     StockReconciliation,
+    /// The landed-cost document's own post (Dr inventory valuation / Cr cost lines). Shares the
+    /// same posting_state reconcile columns as the three voucher doors. Never used with
+    /// [`Self::mark_reversal_posted`] — a validated landed cost cannot cancel (the reversal
+    /// pattern is a negative-amount landed cost), and its table carries no reversal columns.
+    LandedCost,
 }
 
 impl GlVoucher {
@@ -33,6 +38,7 @@ impl GlVoucher {
             GlVoucher::PurchaseReceipt => "purchase_receipts",
             GlVoucher::DeliveryNote => "delivery_notes",
             GlVoucher::StockReconciliation => "stock_reconciliations",
+            GlVoucher::LandedCost => "landed_costs",
         }
     }
 }
@@ -130,6 +136,27 @@ impl GlVoucherRepository {
             sqlx::query(&sql).bind(voucher_id).bind(journal_id).bind(post_id),
         )
         .await?;
+        Ok(())
+    }
+
+    /// Retire a voucher's GL leg to `not_applicable` — the document genuinely posts no GL under
+    /// the current configuration. Two users: a landed-cost validation whose entire allocation
+    /// fell on already-consumed stock (Σ remaining-share δ = 0: nothing to revalue, nothing to
+    /// post), and a `valuation_policy='periodic'` company whose real-time stock posts are
+    /// suppressed (the periodic closing flow — a later increment — owns those legs). Idempotent:
+    /// re-marking an already-retired voucher is a no-op. Caller supplies the company scope, as
+    /// [`Self::mark_posted`].
+    pub async fn mark_not_applicable(
+        &self,
+        pool: &PgPool,
+        voucher: GlVoucher,
+        voucher_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        let sql = format!(
+            "UPDATE inventory.{} SET posting_state='not_applicable'::gl_posting_state WHERE id=$1",
+            voucher.table(),
+        );
+        company_scope::execute_scoped(pool, sqlx::query(&sql).bind(voucher_id)).await?;
         Ok(())
     }
 }

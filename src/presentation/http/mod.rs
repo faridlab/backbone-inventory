@@ -28,6 +28,10 @@ pub mod lot_handler;
 pub mod package_handler;
 pub mod warehouse_handler;
 pub mod stock_item_handler;
+pub mod inventory_company_setting_handler;
+pub mod landed_cost_handler;
+pub mod landed_cost_line_handler;
+pub mod landed_cost_adjustment_line_handler;
 
 // <<< CUSTOM
 pub mod guarded_routes;
@@ -57,6 +61,10 @@ pub use lot_handler::{create_lot_routes, create_lot_read_routes, create_lot_writ
 pub use package_handler::{create_package_routes, create_package_read_routes, create_package_write_routes};
 pub use warehouse_handler::{create_warehouse_routes, create_warehouse_read_routes, create_warehouse_write_routes};
 pub use stock_item_handler::{create_stock_item_routes, create_stock_item_read_routes, create_stock_item_write_routes};
+pub use inventory_company_setting_handler::{create_inventory_company_setting_routes, create_inventory_company_setting_read_routes, create_inventory_company_setting_write_routes};
+pub use landed_cost_handler::{create_landed_cost_routes, create_landed_cost_read_routes, create_landed_cost_write_routes};
+pub use landed_cost_line_handler::{create_landed_cost_line_routes, create_landed_cost_line_read_routes, create_landed_cost_line_write_routes};
+pub use landed_cost_adjustment_line_handler::{create_landed_cost_adjustment_line_routes, create_landed_cost_adjustment_line_read_routes, create_landed_cost_adjustment_line_write_routes};
 // <<< CUSTOM
 pub use guarded_routes::create_guarded_inventory_routes;
 // END CUSTOM

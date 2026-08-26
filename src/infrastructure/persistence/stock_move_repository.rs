@@ -385,6 +385,10 @@ pub struct LocationFacts {
     pub usage: String,
     pub company_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
+    /// Per-location valuation-account override: when set, an inventory GL leg that touches this
+    /// location resolves to it ahead of the caller-supplied (door-header / directive) account —
+    /// the smallest-first override of the account-resolution chain. `None` = no override.
+    pub valuation_account_id: Option<Uuid>,
 }
 
 /// Location reads the move pipeline owns (guards R9/R13/R26 + the bin-warehouse resolution in
@@ -399,7 +403,7 @@ impl StockMoveRepository {
         location_dest_id: Uuid,
     ) -> Result<(Option<LocationFacts>, Option<LocationFacts>), sqlx::Error> {
         let rows = sqlx::query(
-            r#"SELECT id, usage::text AS usage, company_id, warehouse_id
+            r#"SELECT id, usage::text AS usage, company_id, warehouse_id, valuation_account_id
                FROM inventory.locations
                WHERE id IN ($1, $2) AND (metadata->>'deleted_at') IS NULL"#,
         )
@@ -413,6 +417,7 @@ impl StockMoveRepository {
                 usage: r.get("usage"),
                 company_id: r.get("company_id"),
                 warehouse_id: r.get("warehouse_id"),
+                valuation_account_id: r.get("valuation_account_id"),
             })
         };
         Ok((find(location_id), find(location_dest_id)))

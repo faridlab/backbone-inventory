@@ -27,12 +27,17 @@ mod lot_repository;
 mod package_repository;
 mod warehouse_repository;
 mod stock_item_repository;
+mod inventory_company_setting_repository;
+mod landed_cost_repository;
+mod landed_cost_line_repository;
+mod landed_cost_adjustment_line_repository;
 
 // Custom persistence modules
 // <<< CUSTOM
 // The GL reconcile's SQL — uniform across all three posting voucher tables, so it belongs to no
 // single entity repository. Declared `user_owned` in metaphor.codegen.yaml.
 mod gl_voucher_repository;
+mod valuation_overlay_repository;
 // Picking-as-projection SQL (transfer header mint, projection probes, location resolution,
 // the quant-surface backfill, adjustment-move detection). Declared `user_owned`.
 mod stock_picking_repository;
@@ -71,6 +76,10 @@ pub use lot_repository::LotRepository;
 pub use package_repository::PackageRepository;
 pub use warehouse_repository::WarehouseRepository;
 pub use stock_item_repository::StockItemRepository;
+pub use inventory_company_setting_repository::InventoryCompanySettingRepository;
+pub use landed_cost_repository::LandedCostRepository;
+pub use landed_cost_line_repository::LandedCostLineRepository;
+pub use landed_cost_adjustment_line_repository::LandedCostAdjustmentLineRepository;
 
 // Re-export backbone-orm types
 pub use backbone_orm::repository::{
@@ -84,6 +93,10 @@ pub use backbone_orm::repository::{
 // The hand-written inventory SQL's parameter/projection types. Their repositories are all declared
 // `user_owned` in metaphor.codegen.yaml.
 pub use gl_voucher_repository::{GlSettlementState, GlVoucher, GlVoucherRepository};
+pub use valuation_overlay_repository::{
+    ValuationOverlayRepository, PostureRow, LcHeaderRow, LcLineRow, WorksheetRow,
+    NewLandedCostRow, NewLcLineRow, NewWorksheetRow,
+};
 pub use bin_repository::{BinAvailabilityRow, BinBalanceRow, BinWarehouseAvailabilityRow};
 pub use stock_ledger_entry_repository::NewSleRow;
 // The stock-convergence engine's parameter/projection types (repositories declared `user_owned`

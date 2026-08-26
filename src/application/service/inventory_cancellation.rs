@@ -180,6 +180,9 @@ impl InventoryWriteService {
 
         // GL reversal: swap the original Dr Inventory · Cr GR/IR. The amount is the voucher's own
         // arithmetic (Σ money(qty·rate)) — identical to the Σ of the reverse moves' forced values.
+        // The inventory leg resolves the SAME location valuation-account override the submit
+        // used, so the compensation mirrors the original post exactly (posture symmetry).
+        let inv_acct = self.inventory_leg_account(stock_loc, h.inventory_account_id).await?;
         let total: Decimal = items.iter().map(|l| money(l.quantity * l.rate)).sum();
         let env = AccountingPostEnvelope {
             idempotency_key: format!("{id}-reversal"), company_id: h.company_id, branch_id: h.branch_id,
@@ -189,7 +192,7 @@ impl InventoryWriteService {
             description: Some("Goods receipt cancellation".into()),
             lines: vec![
                 GlPostLine::debit(h.grir_account_id, total).with_description("GR/IR clearing"),
-                GlPostLine::credit(h.inventory_account_id, total).with_description("Inventory"),
+                GlPostLine::credit(inv_acct, total).with_description("Inventory"),
             ],
         };
         self.emit_reversal_and_reconcile(GlVoucher::PurchaseReceipt, id, &env, sink, total).await
@@ -275,7 +278,13 @@ impl InventoryWriteService {
         }
 
         // GL reversal: swap the original Dr COGS · Cr Inventory. The amount is the voucher's own
-        // stored Σ COGS — identical to the Σ of the reverse moves' forced values.
+        // stored Σ COGS — identical to the Σ of the reverse moves' forced values. The credit leg
+        // resolves the SAME posture the original debit used (the anglo-saxon interim-delivered
+        // account when the posture is ON — a compensation must mirror what was actually posted)
+        // and the inventory leg resolves the same location valuation-account override.
+        let posture = self.posting_posture(h.company_id).await?;
+        let credit_acct = self.delivery_debit_account(h.company_id, &posture, h.cogs_account_id)?;
+        let inv_acct = self.inventory_leg_account(stock_loc, h.inventory_account_id).await?;
         let total: Decimal = items.iter().map(|l| l.cogs_amount).sum();
         let env = AccountingPostEnvelope {
             idempotency_key: format!("{id}-reversal"), company_id: h.company_id, branch_id: h.branch_id,
@@ -284,8 +293,8 @@ impl InventoryWriteService {
             reverses_post_id: Some(orig_post_id),
             description: Some("Delivery cancellation".into()),
             lines: vec![
-                GlPostLine::debit(h.inventory_account_id, total).with_description("Inventory"),
-                GlPostLine::credit(h.cogs_account_id, total).with_description("COGS"),
+                GlPostLine::debit(inv_acct, total).with_description("Inventory"),
+                GlPostLine::credit(credit_acct, total).with_description("COGS"),
             ],
         };
         self.emit_reversal_and_reconcile(GlVoucher::DeliveryNote, id, &env, sink, total).await
@@ -324,6 +333,10 @@ impl InventoryWriteService {
             });
         }
         let orig_post_id = h.gl.accounting_post_id.ok_or(InventoryError::GlNotPosted(id))?;
+        // Same posture + location-override resolution as the forward cancellation, so the
+        // recovered reversal mirrors the original post exactly.
+        let (_, stock_loc) = self.door_move_endpoints(h.company_id, h.warehouse_id, "supplier").await?;
+        let inv_acct = self.inventory_leg_account(stock_loc, h.inventory_account_id).await?;
         let amt = h.total_value;
         let env = AccountingPostEnvelope {
             idempotency_key: format!("{id}-reversal"), company_id: h.company_id, branch_id: h.branch_id,
@@ -333,7 +346,7 @@ impl InventoryWriteService {
             description: Some("Goods receipt cancellation (repost)".into()),
             lines: vec![
                 GlPostLine::debit(h.grir_account_id, amt).with_description("GR/IR clearing"),
-                GlPostLine::credit(h.inventory_account_id, amt).with_description("Inventory"),
+                GlPostLine::credit(inv_acct, amt).with_description("Inventory"),
             ],
         };
         self.emit_reversal_and_reconcile(GlVoucher::PurchaseReceipt, id, &env, sink, amt).await
@@ -348,6 +361,13 @@ impl InventoryWriteService {
             });
         }
         let orig_post_id = h.gl.accounting_post_id.ok_or(InventoryError::GlNotPosted(id))?;
+        // Same posture + location-override resolution as the forward cancellation (the credit
+        // leg mirrors the original debit — the anglo-saxon interim account when the posture
+        // is ON — so the recovered reversal mirrors the original post exactly).
+        let posture = self.posting_posture(h.company_id).await?;
+        let credit_acct = self.delivery_debit_account(h.company_id, &posture, h.cogs_account_id)?;
+        let (_, stock_loc) = self.door_move_endpoints(h.company_id, h.warehouse_id, "customer").await?;
+        let inv_acct = self.inventory_leg_account(stock_loc, h.inventory_account_id).await?;
         let amt = h.total_cogs;
         let env = AccountingPostEnvelope {
             idempotency_key: format!("{id}-reversal"), company_id: h.company_id, branch_id: h.branch_id,
@@ -356,8 +376,8 @@ impl InventoryWriteService {
             reverses_post_id: Some(orig_post_id),
             description: Some("Delivery cancellation (repost)".into()),
             lines: vec![
-                GlPostLine::debit(h.inventory_account_id, amt).with_description("Inventory"),
-                GlPostLine::credit(h.cogs_account_id, amt).with_description("COGS"),
+                GlPostLine::debit(inv_acct, amt).with_description("Inventory"),
+                GlPostLine::credit(credit_acct, amt).with_description("COGS"),
             ],
         };
         self.emit_reversal_and_reconcile(GlVoucher::DeliveryNote, id, &env, sink, amt).await

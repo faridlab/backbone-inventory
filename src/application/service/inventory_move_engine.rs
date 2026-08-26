@@ -66,6 +66,7 @@ use super::inventory_events::{
     TransferProjected,
 };
 use super::inventory_gl::{AccountingPostEnvelope, GlPostLine, GlPostSink};
+use super::inventory_posture::Posture;
 use super::inventory_write_service::{money, rate6, InventoryError, InventoryWriteService, SubmitOutcome};
 use super::procurement_service::{MovePipeline, MovePipelineError};
 
@@ -558,9 +559,11 @@ impl InventoryWriteService {
         // Build the envelope BEFORE commit and arm the GL leg in the SAME transaction as the
         // physical movement: a move either lands done with its GL leg `pending`, or not at all.
         // A move that builds no envelope (voucher-door legs whose GL is owned by the voucher,
-        // value-neutral shapes, a directive without the accounts this leg needs) stays
-        // `not_applicable` — the engine posts nothing on its behalf.
-        let envelope = self.move_gl_envelope(&mv, &src, &dst, gl, out_value, in_value);
+        // value-neutral shapes, a directive without the accounts this leg needs, a `periodic`
+        // company whose real-time posts are suppressed) stays `not_applicable` — the engine
+        // posts nothing on its behalf.
+        let posture = self.posting_posture_on(&mut tx, mv.company_id).await?;
+        let envelope = self.move_gl_envelope(&mv, &src, &dst, gl, out_value, in_value, &posture);
         if envelope.is_some() {
             self.moves.set_posting_pending(&mut tx, move_id).await?;
         }
@@ -788,8 +791,23 @@ impl InventoryWriteService {
         };
         let src = locs.0.ok_or(InventoryError::LocationNotFound(mv.location_id))?;
         let dst = locs.1.ok_or(InventoryError::LocationNotFound(mv.location_dest_id))?;
+        // The SAME posture the original done-transaction consulted: a `periodic` company's
+        // move legs retire to `not_applicable` (the real-time post is genuinely not wanted
+        // under the current configuration), exactly like a directive that no longer supplies
+        // the accounts.
+        let posture = self.posting_posture(mv.company_id).await?;
+        if posture.periodic {
+            company_scope::with_company_scope(
+                Some(mv.company_id),
+                self.moves.mark_posting_not_applicable(&self.db_pool, move_id),
+            ).await?;
+            return Ok(SubmitOutcome {
+                voucher_id: move_id, posted: false, journal_id: None, post_id: None,
+                gl_amount: Decimal::ZERO,
+            });
+        }
         let (out_value, in_value) = self.sles.move_leg_values(&self.db_pool, mv.company_id, move_id).await?;
-        let envelope = self.move_gl_envelope(&mv, &src, &dst, gl, out_value, in_value);
+        let envelope = self.move_gl_envelope(&mv, &src, &dst, gl, out_value, in_value, &posture);
         let Some(env) = envelope else {
             company_scope::with_company_scope(
                 Some(mv.company_id),
@@ -936,7 +954,9 @@ impl InventoryWriteService {
     }
 
     /// Build the GL envelope for the done move's leg shape, or `None` when the shape posts no GL
-    /// (cross-warehouse internal transfer: value-neutral) or the directive lacks the accounts.
+    /// (cross-warehouse internal transfer: value-neutral), the directive lacks the accounts, the
+    /// company's `periodic` policy suppresses real-time stock posts, or the move carries neither
+    /// value nor quantity (the explicit account-move gate).
     fn move_gl_envelope(
         &self,
         mv: &crate::infrastructure::persistence::MoveRow,
@@ -945,11 +965,37 @@ impl InventoryWriteService {
         gl: &MoveGlDirective,
         out_value: Decimal,
         in_value: Decimal,
+        posture: &Posture,
     ) -> Option<AccountingPostEnvelope> {
+        // A `periodic` company posts no real-time stock GL — the closing flow (a later
+        // increment) owns those legs; the move stays `not_applicable`.
+        if posture.periodic {
+            return None;
+        }
+        // The explicit account-move gate (`_should_create_account_move` port): no envelope
+        // when the move carries zero value AND zero qty, or the accounts its leg shape
+        // requires are unset — both stay `not_applicable`.
+        let shape_accounts_set = if mv.is_inventory {
+            gl.inventory_account_id.is_some() && gl.adjustment_account_id.is_some()
+        } else if src.usage == "internal" && dst.usage != "internal" {
+            gl.cogs_account_id.is_some() && gl.inventory_account_id.is_some()
+        } else if src.usage != "internal" && dst.usage == "internal" {
+            gl.inventory_account_id.is_some() && gl.grir_account_id.is_some()
+        } else {
+            false // internal cross-warehouse: value-neutral, never posts
+        };
+        if !Self::should_create_account_move(out_value + in_value, mv.quantity, shape_accounts_set) {
+            return None;
+        }
+        // The account-resolution chain for the inventory legs: the location's
+        // valuation-account override when set, else the directive's account (the
+        // door-header equivalent). Smallest-first override: a location beats the directive.
         let (description, lines) = if mv.is_inventory {
             // Adjustment shape (reconciliation vocabulary): the signed value diff between the
-            // inventory account and the adjustment counterleg.
-            let inv = gl.inventory_account_id?;
+            // inventory account and the adjustment counterleg. The inventory leg resolves
+            // the override of whichever side is the internal (counted) location.
+            let inv = if dst.usage == "internal" { dst.valuation_account_id } else { src.valuation_account_id }
+                .or(gl.inventory_account_id)?;
             let adj = gl.adjustment_account_id?;
             if in_value > out_value {
                 ("Inventory adjustment".to_string(), vec![
@@ -965,15 +1011,17 @@ impl InventoryWriteService {
                 return None;
             }
         } else if src.usage == "internal" && dst.usage != "internal" {
-            // OUT (delivery shape): Dr COGS / Cr Inventory — the W1-proven leg.
+            // OUT (delivery shape): Dr COGS / Cr Inventory — the W1-proven leg. The inventory
+            // leg prefers the SOURCE location's valuation-account override.
             ("Stock issue".to_string(), vec![
                 GlPostLine::debit(gl.cogs_account_id?, out_value).with_description("COGS"),
-                GlPostLine::credit(gl.inventory_account_id?, out_value).with_description("Inventory"),
+                GlPostLine::credit(src.valuation_account_id.or(gl.inventory_account_id)?, out_value).with_description("Inventory"),
             ])
         } else if src.usage != "internal" && dst.usage == "internal" {
-            // IN (receipt shape): Dr Inventory / Cr GR/IR.
+            // IN (receipt shape): Dr Inventory / Cr GR/IR. The inventory leg prefers the
+            // DESTINATION location's valuation-account override.
             ("Goods receipt".to_string(), vec![
-                GlPostLine::debit(gl.inventory_account_id?, in_value).with_description("Inventory"),
+                GlPostLine::debit(dst.valuation_account_id.or(gl.inventory_account_id)?, in_value).with_description("Inventory"),
                 GlPostLine::credit(gl.grir_account_id?, in_value).with_description("GR/IR clearing"),
             ])
         } else {

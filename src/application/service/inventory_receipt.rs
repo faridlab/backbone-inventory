@@ -108,6 +108,14 @@ impl InventoryWriteService {
         // warehouse's stock location (internal destination) — resolve-or-bootstrap each.
         let (supplier_loc, stock_loc) = self.door_move_endpoints(company, warehouse, "supplier").await?;
 
+        // The posting posture (per-company valuation settings; absent row = today's shapes).
+        // The receipt side is unchanged in BOTH postures — the header `grir_account_id` IS the
+        // interim-received leg (Assumption A1 of the valuation overlay); only the inventory leg
+        // consults the location valuation-account override. `periodic` suppresses the
+        // real-time post below (the voucher retires to `not_applicable`).
+        let posture = self.posting_posture(company).await?;
+        let inv_acct = self.inventory_leg_account(stock_loc, inv_acct).await?;
+
         // ---- physical movement: one minted move per line, engine-driven ----
         for (idx, it) in items.iter().enumerate() {
             if it.quantity.is_zero() { continue; } // a zero line moves nothing and mints nothing
@@ -149,6 +157,26 @@ impl InventoryWriteService {
         }
 
         // ---- GL post (eventually consistent) ----
+        // The explicit account-move gate: a voucher that carries neither value nor quantity
+        // posts nothing (stays `not_applicable`); a `periodic` company suppresses the
+        // real-time post the same way (the closing flow — a later increment — owns those legs).
+        let total_qty: Decimal = items.iter().map(|l| l.quantity).sum();
+        if posture.periodic
+            || !Self::should_create_account_move(total_debit, total_qty, true)
+        {
+            company_scope::with_company_scope(
+                Some(company),
+                self.gl.mark_not_applicable(&self.db_pool, GlVoucher::PurchaseReceipt, id),
+            ).await?;
+            self.sink.publish(InventoryEvent::StockReceived(StockReceived {
+                receipt_id: id, company_id: company, warehouse_id: warehouse, source_po_id: source_po,
+                total_value: total_debit,
+            }));
+            return Ok(SubmitOutcome {
+                voucher_id: id, posted: false, journal_id: None, post_id: None,
+                gl_amount: Decimal::ZERO,
+            });
+        }
         let env = AccountingPostEnvelope {
             idempotency_key: id.to_string(), company_id: company, branch_id: branch,
             source_type: "inventory".into(), source_id: id, source_reference: Some(voucher_no.clone()),
@@ -185,6 +213,23 @@ impl InventoryWriteService {
         let h = self.receipts.fetch_repost_header(&self.db_pool, id).await?
             .ok_or(InventoryError::NotFound(id))?;
         if let Some(o) = Self::already_settled(&h.gl, id) { return Ok(o); }
+        // The SAME posture the submit ran under (absent row = defaults): a `periodic`
+        // company suppresses the real-time post — the unsettled leg retires to
+        // `not_applicable` — and the inventory leg resolves the same location
+        // valuation-account override the submit used, so the rebuilt envelope is identical.
+        let posture = self.posting_posture(h.company_id).await?;
+        if posture.periodic {
+            company_scope::with_company_scope(
+                Some(h.company_id),
+                self.gl.mark_not_applicable(&self.db_pool, GlVoucher::PurchaseReceipt, id),
+            ).await?;
+            return Ok(SubmitOutcome {
+                voucher_id: id, posted: false, journal_id: None, post_id: None,
+                gl_amount: Decimal::ZERO,
+            });
+        }
+        let (_, stock_loc) = self.door_move_endpoints(h.company_id, h.warehouse_id, "supplier").await?;
+        let inv_acct = self.inventory_leg_account(stock_loc, h.inventory_account_id).await?;
         let amt = h.total_value;
         let env = AccountingPostEnvelope {
             idempotency_key: id.to_string(), company_id: h.company_id, branch_id: h.branch_id,
@@ -192,7 +237,7 @@ impl InventoryWriteService {
             posting_date: h.posting_date, currency: h.currency.clone(), posting_type: "original".into(), reverses_post_id: None,
             description: Some("Goods receipt (repost)".into()),
             lines: vec![
-                GlPostLine::debit(h.inventory_account_id, amt).with_description("Inventory"),
+                GlPostLine::debit(inv_acct, amt).with_description("Inventory"),
                 GlPostLine::credit(h.grir_account_id, amt).with_description("GR/IR clearing"),
             ],
         };

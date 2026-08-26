@@ -25,6 +25,10 @@ pub mod lot_domain_policy;
 pub mod package_domain_policy;
 pub mod warehouse_domain_policy;
 pub mod stock_item_domain_policy;
+pub mod inventory_company_setting_domain_policy;
+pub mod landed_cost_domain_policy;
+pub mod landed_cost_line_domain_policy;
+pub mod landed_cost_adjustment_line_domain_policy;
 
 pub use delivery_note_domain_policy::DeliveryNoteDomainPolicy;
 pub use delivery_note_item_domain_policy::DeliveryNoteItemDomainPolicy;
@@ -49,6 +53,10 @@ pub use lot_domain_policy::LotDomainPolicy;
 pub use package_domain_policy::PackageDomainPolicy;
 pub use warehouse_domain_policy::WarehouseDomainPolicy;
 pub use stock_item_domain_policy::StockItemDomainPolicy;
+pub use inventory_company_setting_domain_policy::InventoryCompanySettingDomainPolicy;
+pub use landed_cost_domain_policy::LandedCostDomainPolicy;
+pub use landed_cost_line_domain_policy::LandedCostLineDomainPolicy;
+pub use landed_cost_adjustment_line_domain_policy::LandedCostAdjustmentLineDomainPolicy;
 
 // <<< CUSTOM
 // END CUSTOM
