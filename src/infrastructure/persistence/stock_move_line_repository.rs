@@ -113,6 +113,26 @@ impl StockMoveLineRepository {
         Ok(rows.into_iter().map(line_row_of).collect())
     }
 
+    /// One move line by id, as a landed-cost repost reads it (the target-line facts: its frozen
+    /// done quantity, its move, and the destination location the debit leg's account chain
+    /// resolves from). `None` when the line does not exist or is soft-deleted.
+    pub async fn fetch_line(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        move_line_id: Uuid,
+    ) -> Result<Option<MoveLineRow>, sqlx::Error> {
+        let row = sqlx::query(
+            r#"SELECT id, quantity, lot_id, package_id, result_package_id, owner_id,
+                      state::text AS state, move_id, location_id, location_dest_id, item_id
+               FROM inventory.stock_move_lines
+               WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
+        )
+        .bind(move_line_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+        Ok(row.map(line_row_of))
+    }
+
     /// Sum of the mirror quantities of one move — the aggregate the move state derives from
     /// (`assigned` when it meets demand, `partially_available` when positive but short).
     pub async fn sum_mirror_qty(

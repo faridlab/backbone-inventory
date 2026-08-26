@@ -117,7 +117,9 @@ impl DeliveryIntake {
             currency: req.currency,
             inventory_account_id: req.inventory_account_id,
             grir_account_id: req.grir_account_id,
-            lines: req.lines.into_iter().map(|l| ReceiptLine { item_id: l.item_id, quantity: l.quantity, rate: l.rate }).collect(),
+            // A delivery request never carries a landed-cost service line, so the seam flag
+            // is statically false here (the seam is owned by inventory's receipt surface).
+            lines: req.lines.into_iter().map(|l| ReceiptLine { item_id: l.item_id, quantity: l.quantity, rate: l.rate, is_landed_costs_line: false }).collect(),
         }).await
     }
 }

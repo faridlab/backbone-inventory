@@ -144,7 +144,7 @@ async fn receipt_posts_asset_to_real_gl() {
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
-        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") }],
+        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") , is_landed_costs_line: false }],
     }).await.unwrap();
     let out = w.submit_purchase_receipt(rid, &adapter).await.unwrap();
     assert!(out.posted);
@@ -171,7 +171,7 @@ async fn delivery_posts_cogs_to_real_gl() {
             source_po_id: None, warehouse_id: wh, posting_date: day(),
             currency: "IDR".into(),
             inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
-            lines: vec![ReceiptLine { item_id: item, quantity: d(q), rate: d(r) }],
+            lines: vec![ReceiptLine { item_id: item, quantity: d(q), rate: d(r) , is_landed_costs_line: false }],
         }).await.unwrap();
         w.submit_purchase_receipt(rid, &adapter).await.unwrap();
     }
@@ -203,7 +203,7 @@ async fn reconciliation_posts_adjustment_to_real_gl() {
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
-        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") }],
+        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") , is_landed_costs_line: false }],
     }).await.unwrap();
     w.submit_purchase_receipt(rid, &adapter).await.unwrap();
     let sr = w.submit_reconciliation(NewReconciliation {
@@ -233,7 +233,7 @@ async fn gl_rejection_leaves_movement_but_marks_failed() {
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: coa["1000"], grir_account_id: coa["2150"], // 1000 is a header → rejected
-        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") }],
+        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") , is_landed_costs_line: false }],
     }).await.unwrap();
     let err = w.submit_purchase_receipt(rid, &adapter).await.unwrap_err();
     assert_eq!(err.code(), "non_postable_account");
@@ -257,7 +257,7 @@ async fn resubmit_is_refused() {
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
-        lines: vec![ReceiptLine { item_id: Uuid::new_v4(), quantity: d("1"), rate: d("100") }],
+        lines: vec![ReceiptLine { item_id: Uuid::new_v4(), quantity: d("1"), rate: d("100") , is_landed_costs_line: false }],
     }).await.unwrap();
     w.submit_purchase_receipt(rid, &adapter).await.unwrap();
     let err = w.submit_purchase_receipt(rid, &adapter).await.unwrap_err();
@@ -279,7 +279,7 @@ async fn repost_recovers_a_failed_post() {
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
-        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") }],
+        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") , is_landed_costs_line: false }],
     }).await.unwrap();
     // Transient failure → movement committed, post failed.
     let err = w.submit_purchase_receipt(rid, &FailingGl).await.unwrap_err();
@@ -311,7 +311,7 @@ async fn repost_does_not_double_post() {
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
-        lines: vec![ReceiptLine { item_id: Uuid::new_v4(), quantity: d("2"), rate: d("100") }],
+        lines: vec![ReceiptLine { item_id: Uuid::new_v4(), quantity: d("2"), rate: d("100") , is_landed_costs_line: false }],
     }).await.unwrap();
     let first = w.submit_purchase_receipt(rid, &adapter).await.unwrap();
     // Simulate the crash window: accounting posted, but selling-side status update was lost.
@@ -342,7 +342,7 @@ async fn cancel_emits_balanced_reversal_envelope() {
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
-        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") }],
+        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") , is_landed_costs_line: false }],
     }).await.unwrap();
     let orig = w.submit_purchase_receipt(rid, &adapter).await.unwrap();
     let orig_post = orig.post_id.unwrap();
@@ -379,7 +379,7 @@ async fn cancel_posts_a_real_reversal_journal() {
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
-        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") }],
+        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") , is_landed_costs_line: false }],
     }).await.unwrap();
     let orig = w.submit_purchase_receipt(rid, &adapter).await.unwrap();
     let orig_jid = orig.journal_id.unwrap();

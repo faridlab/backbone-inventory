@@ -144,7 +144,7 @@ async fn receive(w: &InventoryWriteService, company: Uuid, wh: Uuid, a: &Accts, 
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: a.inv, grir_account_id: a.grir,
-        lines: vec![ReceiptLine { item_id: item, quantity: d(qty), rate: d(rate) }],
+        lines: vec![ReceiptLine { item_id: item, quantity: d(qty), rate: d(rate), is_landed_costs_line: false }],
     }).await.unwrap();
     w.submit_purchase_receipt(rid, sink).await.unwrap();
     rid
@@ -411,7 +411,7 @@ async fn zero_value_zero_qty_voucher_posts_nothing() {
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: a.inv, grir_account_id: a.grir,
-        lines: vec![ReceiptLine { item_id: item, quantity: Decimal::ZERO, rate: d("100") }],
+        lines: vec![ReceiptLine { item_id: item, quantity: Decimal::ZERO, rate: d("100"), is_landed_costs_line: false }],
     }).await.unwrap();
     let out = w.submit_purchase_receipt(rid, &rec).await.unwrap();
     assert!(!out.posted, "P8: an all-zero receipt carries nothing to post");

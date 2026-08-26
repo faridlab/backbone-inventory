@@ -48,7 +48,7 @@ async fn receipt(w: &InventoryWriteService, company: Uuid, wh: Uuid, item: Uuid,
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: Uuid::new_v4(), grir_account_id: Uuid::new_v4(),
-        lines: vec![ReceiptLine { item_id: item, quantity: d(qty), rate: d(rate) }],
+        lines: vec![ReceiptLine { item_id: item, quantity: d(qty), rate: d(rate) , is_landed_costs_line: false }],
     }).await.unwrap();
     w.submit_purchase_receipt(id, &StubGl).await.unwrap();
     id

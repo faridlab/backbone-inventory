@@ -109,6 +109,9 @@ impl InventoryWriteService {
             company_scope::bind_company_on(&mut tx, h.company_id).await?;
             for (idx, it) in items.iter().enumerate() {
                 if it.quantity.is_zero() { continue; }
+                // A landed-cost service line minted no stock — there is nothing of it on the
+                // bin to check and nothing to reverse.
+                if it.is_landed_costs_line { continue; }
                 let already_reversed = prior.iter()
                     .any(|m| m.name == rev_name(idx) && m.state == "done");
                 if already_reversed { continue; }
@@ -130,6 +133,9 @@ impl InventoryWriteService {
         // ---- physical reversal: one reverse move per line, engine-driven -----------------------
         for (idx, it) in items.iter().enumerate() {
             if it.quantity.is_zero() { continue; } // a zero line moved nothing and reverses nothing
+            // The landed-cost seam: a flagged line minted no move, so it has no reverse leg
+            // either (its cost is recovered by a negative landed cost, not by un-receiving).
+            if it.is_landed_costs_line { continue; }
             // The exact value the original inflow added — negating it restores the bin precisely.
             let reverse_value = money(it.quantity * it.rate);
             let mid = match self.mint_line_move(NewStockMove {
@@ -179,11 +185,16 @@ impl InventoryWriteService {
         }
 
         // GL reversal: swap the original Dr Inventory · Cr GR/IR. The amount is the voucher's own
-        // arithmetic (Σ money(qty·rate)) — identical to the Σ of the reverse moves' forced values.
+        // arithmetic (Σ money(qty·rate) over the STOCK lines) — identical to the Σ of the reverse
+        // moves' forced values; a landed-cost service line contributed nothing on the way in and
+        // reverses nothing on the way out.
         // The inventory leg resolves the SAME location valuation-account override the submit
         // used, so the compensation mirrors the original post exactly (posture symmetry).
         let inv_acct = self.inventory_leg_account(stock_loc, h.inventory_account_id).await?;
-        let total: Decimal = items.iter().map(|l| money(l.quantity * l.rate)).sum();
+        let total: Decimal = items.iter()
+            .filter(|l| !l.is_landed_costs_line)
+            .map(|l| money(l.quantity * l.rate))
+            .sum();
         let env = AccountingPostEnvelope {
             idempotency_key: format!("{id}-reversal"), company_id: h.company_id, branch_id: h.branch_id,
             source_type: "inventory".into(), source_id: id, source_reference: Some(h.receipt_number.clone()),

@@ -115,6 +115,22 @@ pub struct OrderpointTriggered {
     pub forecast_qty: Decimal,
 }
 
+/// A landed-cost document was validated: its cost lines were allocated over the target
+/// receipt's DONE move lines and the remaining-share portion revalued the bins through the
+/// move engine's adjustment verb.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LandedCostValidated {
+    pub lc_id: Uuid,
+    pub company_id: Uuid,
+    pub target_receipt_id: Uuid,
+    /// Σ cost line amounts (negative on a reversal document).
+    pub amount_total: Decimal,
+    /// The remaining-share value actually revalued onto the bins (the effective Σ of the
+    /// minted landed-cost SLE rows — smaller than `amount_total` when part of the target stock
+    /// was already consumed: the retroactive-revaluation asymmetry).
+    pub revalued_value: Decimal,
+}
+
 /// The inventory domain-event union (discriminated) published on the module event bus.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type")]
@@ -130,6 +146,7 @@ pub enum InventoryEvent {
     TransferProjected(TransferProjected),
     BackorderCreated(BackorderCreated),
     OrderpointTriggered(OrderpointTriggered),
+    LandedCostValidated(LandedCostValidated),
 }
 
 /// Sink for inventory domain events. Fire-and-forget; a real adapter wires a bus, tests record.

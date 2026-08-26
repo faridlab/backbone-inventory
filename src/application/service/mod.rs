@@ -64,6 +64,10 @@ pub mod procurement_service;
 // the anglo-saxon delivery-debit swap) the door posts and the move engine consult. The
 // `_custom` suffix keeps it outside generator territory by naming convention.
 pub mod inventory_posture;
+// Landed-cost documents: draft → validate (split by quantity/value/weight over the target
+// receipt's DONE moves, remaining-share revaluation through the engine's adjustment verb,
+// one door-owned GL envelope) → done; cancel from draft only. Also `_custom`-named.
+pub mod landed_cost_service_custom;
 // END CUSTOM
 
 pub use delivery_note_service::DeliveryNoteService;

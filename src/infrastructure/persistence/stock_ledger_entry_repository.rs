@@ -170,6 +170,55 @@ impl StockLedgerEntryRepository {
         Ok((row.get("out_value"), row.get("in_value")))
     }
 
+    /// The value ONE move blended into its destination bin: the sum of the move's positive
+    /// signed SLE value deltas, on the caller's connection (a landed-cost validation reads
+    /// every target move's carried value inside its read phase). This is the `value` basis of
+    /// a landed-cost split. 0 when the move minted no rows.
+    pub async fn sum_move_in_value(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        company_id: Uuid,
+        move_id: Uuid,
+    ) -> Result<Decimal, sqlx::Error> {
+        let row: Option<Decimal> = sqlx::query_scalar(
+            r#"SELECT COALESCE(SUM(stock_value_difference), 0)
+               FROM inventory.stock_ledger_entries
+               WHERE company_id=$1 AND voucher_type='stock_entry' AND voucher_id=$2
+                 AND stock_value_difference > 0 AND (metadata->>'deleted_at') IS NULL"#,
+        )
+        .bind(company_id)
+        .bind(move_id)
+        .fetch_one(&mut *conn)
+        .await?;
+        Ok(row.unwrap_or(Decimal::ZERO))
+    }
+
+    /// The landed-cost revaluation rows one landed cost minted (`voucher_type='landed_cost'`,
+    /// one value-only row per target move line): the voucher name and the signed value delta
+    /// each row carries. A landed-cost GL repost rebuilds its debit legs from exactly these
+    /// rows — the minted ledger, never a re-computation. Takes the caller's connection.
+    pub async fn fetch_lc_revaluations(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        company_id: Uuid,
+        lc_id: Uuid,
+    ) -> Result<Vec<(String, Decimal)>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"SELECT voucher_no, stock_value_difference FROM inventory.stock_ledger_entries
+               WHERE company_id=$1 AND voucher_type='landed_cost' AND voucher_id=$2
+                 AND (metadata->>'deleted_at') IS NULL
+               ORDER BY sle_no"#,
+        )
+        .bind(company_id)
+        .bind(lc_id)
+        .fetch_all(&mut *conn)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| (r.get::<String, _>("voucher_no"), r.get::<Decimal, _>("stock_value_difference")))
+            .collect())
+    }
+
     /// Whether a voucher already minted an SLE row under an exact `voucher_no` — the
     /// crash-resume probe for deterministic-name inserts (a landed-cost revaluation row
     /// `{lc_number}/{move_name}/{idx}` that already landed in a prior crashed attempt must be

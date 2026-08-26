@@ -41,6 +41,9 @@ pub struct LcHeaderRow {
     pub state: String,
     /// `not_applicable` | `pending` | `posted` | `failed`.
     pub posting_state: String,
+    /// The recorded GL settlement ids (a `posted` document's repost short-circuit).
+    pub journal_id: Option<Uuid>,
+    pub accounting_post_id: Option<Uuid>,
 }
 
 /// One landed-cost charge line.
@@ -52,6 +55,18 @@ pub struct LcLineRow {
     /// `quantity` | `value` | `weight`.
     pub split_method: String,
     pub amount: Decimal,
+}
+
+/// The target receipt of a landed cost, as its validation reads it.
+#[derive(Debug, Clone)]
+pub struct LcTargetReceiptRow {
+    pub receipt_number: String,
+    pub warehouse_id: Uuid,
+    /// `draft` | `submitted` | `cancelled`.
+    pub status: String,
+    /// The receipt header's inventory account — the fallback of the landed-cost debit leg's
+    /// account-resolution chain (location override first, this second).
+    pub inventory_account_id: Uuid,
 }
 
 /// One transient allocation-worksheet row, as the recompute writes it and tests read it back.
@@ -214,7 +229,8 @@ impl ValuationOverlayRepository {
     ) -> Result<Option<LcHeaderRow>, sqlx::Error> {
         let row = sqlx::query(
             r#"SELECT id, lc_number, company_id, branch_id, target_receipt_id, currency,
-                      posting_date, state::text AS state, posting_state::text AS posting_state
+                      posting_date, state::text AS state, posting_state::text AS posting_state,
+                      journal_id, accounting_post_id
                FROM inventory.landed_costs
                WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
         )
@@ -231,6 +247,8 @@ impl ValuationOverlayRepository {
             posting_date: r.get("posting_date"),
             state: r.get("state"),
             posting_state: r.get("posting_state"),
+            journal_id: r.get("journal_id"),
+            accounting_post_id: r.get("accounting_post_id"),
         }))
     }
 
@@ -310,6 +328,32 @@ impl ValuationOverlayRepository {
         .execute(&mut *conn)
         .await?;
         Ok(())
+    }
+
+    /// The target receipt of a landed cost, as its validation reads it: the receipt number the
+    /// door stamped as `origin` on every line move, the header inventory account (the fallback
+    /// of the debit leg's account-resolution chain), and the status (a landed cost only ever
+    /// targets a receipt whose moves are DONE; the service derives that from the moves
+    /// themselves). Takes the caller's connection; the caller binds the company first.
+    pub async fn fetch_lc_target_receipt(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        receipt_id: Uuid,
+    ) -> Result<Option<LcTargetReceiptRow>, sqlx::Error> {
+        let row = sqlx::query(
+            r#"SELECT receipt_number, warehouse_id, status::text AS st, inventory_account_id
+               FROM inventory.purchase_receipts
+               WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
+        )
+        .bind(receipt_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+        Ok(row.map(|r| LcTargetReceiptRow {
+            receipt_number: r.get("receipt_number"),
+            warehouse_id: r.get("warehouse_id"),
+            status: r.get("st"),
+            inventory_account_id: r.get("inventory_account_id"),
+        }))
     }
 
     /// Flip a draft landed cost to `done` and arm its GL leg `pending` — one transaction

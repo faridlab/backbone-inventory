@@ -65,7 +65,7 @@ async fn availability_reflects_received_stock() {
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: Uuid::new_v4(), grir_account_id: Uuid::new_v4(),
-        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") }],
+        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") , is_landed_costs_line: false }],
     }).await.unwrap();
     w.submit_purchase_receipt(rid, &StubGl).await.unwrap();
 

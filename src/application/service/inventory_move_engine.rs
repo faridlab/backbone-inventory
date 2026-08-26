@@ -953,6 +953,87 @@ impl InventoryWriteService {
         Ok((sle_no, out_value, in_value))
     }
 
+    // ---- landed-cost revaluation (the one non-move valuation write) --------------------------
+
+    /// Revalue a DONE receipt move's bin by `delta`: ONE value-only SLE row
+    /// (`voucher_type='landed_cost'`, `voucher_id` = the landed cost, qty 0, value `delta`)
+    /// plus the Bin value reblend (`value += delta; qty unchanged; rate = value/qty`).
+    ///
+    /// **RETROACTIVE-REVALUATION ASYMMETRY — deliberate, preserved.** `delta` is the
+    /// REMAINING-share portion of the move's landed-cost allocation
+    /// (`delta = allocation x remaining_qty / done_qty`, computed by the landed-cost door from a
+    /// read-only FIFO attribution over the SLE history). The already-CONSUMED portion of the
+    /// allocation produces NO correcting entry on this path — no COGS true-up, no journal leg,
+    /// no negative-SLE compensation — even though the consumed units also "cost more" now. This
+    /// one-sided revalue of already-done moves is the reference ERP's behavior and the
+    /// valuation-overlay plan row records it as an explicit keep: the consumed share's cost is
+    /// accepted as recognized-at-the-old-average at consumption time, and only the stock still
+    /// on hand revalues. Both GL sides of the landed-cost post carry only the remaining-portion
+    /// value so the post balances without inventing the missing COGS leg. Reversal is the
+    /// negative-amount landed-cost pattern (swapped legs verbatim), never a cancel.
+    ///
+    /// The one-writer invariant holds: this verb is the ONLY non-engine-internal caller path
+    /// that reaches `insert_sle`/`update_balance`, and it lives HERE, inside the engine, beside
+    /// [`Self::mint_move_valuation`] — the landed-cost door calls the verb, never the writers.
+    /// The engine posts NO GL for this leg (the landed-cost document owns its own envelope).
+    ///
+    /// Crash-resume: the SLE row's name is deterministic
+    /// (`{lc_number}/{move_name}/{move_line_id}` — the move line id is the stable target grain;
+    /// worksheet row ids are transient and must not appear in ledger names), so a re-drive of a
+    /// crashed validation finds the row via [`Self::has_sle_named`] semantics and skips it,
+    /// exactly like a door resuming a half-landed submit. Takes the CALLER'S connection: the
+    /// revaluation SLE, the bin reblend and the landed-cost document's state flip commit as one
+    /// unit. Returns `Ok(())` without minting when `delta` is zero (nothing to revalue) or the
+    /// row already landed.
+    pub(super) async fn adjust_move_value(
+        &self,
+        tx: &mut sqlx::PgConnection,
+        mv: &crate::infrastructure::persistence::MoveRow,
+        move_line_id: Uuid,
+        delta: Decimal,
+        lc_id: Uuid,
+        lc_number: &str,
+    ) -> Result<(), InventoryError> {
+        if delta.is_zero() {
+            return Ok(()); // an all-consumed target line revalues nothing
+        }
+        // The bin grain is (item, warehouse): resolve the warehouse the move's IN leg blended
+        // into — the destination location's warehouse, the same resolution mint_move_valuation
+        // used, so the reblend lands on the bin the original inflow created.
+        let locs = self.moves.fetch_move_locations(tx, mv.location_id, mv.location_dest_id).await?;
+        let dst = locs.1.ok_or(InventoryError::LocationNotFound(mv.location_dest_id))?;
+        if dst.usage != "internal" {
+            // The target set is the receipt's DONE moves that blended value into a bin; a move
+            // whose destination is not an internal warehouse minted no valuation to revalue.
+            return Err(InventoryError::LandedCostNoValuationAccount { move_id: mv.id });
+        }
+        let wh = dst.warehouse_id
+            .ok_or(InventoryError::LandedCostNoValuationAccount { move_id: mv.id })?;
+        let name = format!("{}/{}/{}", lc_number, mv.name, move_line_id);
+        if self.sles.has_sle_named(tx, "landed_cost", lc_id, &name).await? {
+            return Ok(()); // this leg already landed in a prior (crashed) attempt — resume, never double-mint
+        }
+        let bal = self.bins.lock_or_init(tx, mv.company_id, mv.item_id, wh).await?;
+        let new_value = bal.stock_value + delta;
+        let new_qty = bal.actual_qty; // a landed cost moves no quantity, only value
+        let new_rate = if new_qty > Decimal::ZERO {
+            rate6(new_value / new_qty)
+        } else {
+            Decimal::ZERO
+        };
+        self.bins.update_balance(tx, mv.company_id, mv.item_id, wh, new_qty, new_rate, new_value).await?;
+        let sle_no = self.sles.fetch_max_sle_no(tx, "landed_cost", lc_id).await? + 1;
+        self.sles.insert_sle(tx, &crate::infrastructure::persistence::NewSleRow {
+            company_id: mv.company_id, item_id: mv.item_id, warehouse_id: wh,
+            posting_date: chrono::Utc::now().date_naive(),
+            actual_qty: Decimal::ZERO, qty_after_txn: new_qty,
+            incoming_rate: Decimal::ZERO, valuation_rate: new_rate,
+            stock_value: new_value, stock_value_difference: delta,
+            voucher_type: "landed_cost", voucher_id: lc_id, voucher_no: &name, sle_no,
+        }).await?;
+        Ok(())
+    }
+
     /// Build the GL envelope for the done move's leg shape, or `None` when the shape posts no GL
     /// (cross-warehouse internal transfer: value-neutral), the directive lacks the accounts, the
     /// company's `periodic` policy suppresses real-time stock posts, or the move carries neither

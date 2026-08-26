@@ -238,7 +238,7 @@ async fn bin_ties_to_sle_after_mixed_workload() {
         receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh1, posting_date: day(), currency: "IDR".into(),
         inventory_account_id: Uuid::new_v4(), grir_account_id: Uuid::new_v4(),
-        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") }],
+        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") , is_landed_costs_line: false }],
     }).await.unwrap();
     w.submit_purchase_receipt(r1, &StubGl).await.unwrap();
     let did = w.create_delivery_note(NewDelivery {

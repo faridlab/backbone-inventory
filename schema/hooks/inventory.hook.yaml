@@ -86,3 +86,6 @@ events:
   StockReconciled:
     when: "a stock reconciliation is submitted"
     payload: [reconciliation_id, company_id, warehouse_id, net_difference]
+  LandedCostValidated:
+    when: "a landed cost is validated (cost lines allocated, remaining-share revaluation minted)"
+    payload: [lc_id, company_id, target_receipt_id, amount_total, revalued_value]

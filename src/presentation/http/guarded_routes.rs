@@ -77,7 +77,16 @@ async fn create_warehouse(State(svc): State<Arc<InventoryWriteService>>, tenant:
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ReceiptLineBody { item_id: Uuid, quantity: Decimal, rate: Decimal }
+struct ReceiptLineBody {
+    item_id: Uuid,
+    quantity: Decimal,
+    rate: Decimal,
+    /// Landed-cost service line (the seam owned by inventory): a flagged line carries cost
+    /// into a LandedCost document, NOT stock — the receipt door mints no move for it. The
+    /// flag defaults to `false`, so an unannotated body behaves exactly as before.
+    #[serde(default)]
+    is_landed_costs_line: bool,
+}
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CreateReceiptBody {
@@ -97,7 +106,10 @@ async fn create_receipt(State(svc): State<Arc<InventoryWriteService>>, tenant: C
         receipt_number: b.receipt_number, company_id: tenant.company_id, branch_id: tenant.branch_id,
         supplier_id: b.supplier_id, source_po_id: b.source_po_id, warehouse_id: b.warehouse_id,
         posting_date: b.posting_date, currency: b.currency, inventory_account_id: b.inventory_account_id, grir_account_id: b.grir_account_id,
-        lines: b.lines.into_iter().map(|l| ReceiptLine { item_id: l.item_id, quantity: l.quantity, rate: l.rate }).collect(),
+        lines: b.lines.into_iter().map(|l| ReceiptLine {
+            item_id: l.item_id, quantity: l.quantity, rate: l.rate,
+            is_landed_costs_line: l.is_landed_costs_line,
+        }).collect(),
     };
     match svc.create_purchase_receipt(r).await {
         Ok(id) => (StatusCode::CREATED, Json(IdResponse { id })).into_response(),
@@ -135,11 +147,96 @@ async fn create_delivery(State(svc): State<Arc<InventoryWriteService>>, tenant: 
     }
 }
 
+// ── landed-cost documents (draft → validate → done; cancel from draft only) ──
+//
+// The validated surface over the landed-cost family: a draft is opened with its cost lines,
+// validation allocates each line over the target receipt's DONE moves and revalues the
+// remaining stock through the move engine's adjustment verb, and a draft may cancel (a
+// validated document corrects via a NEGATIVE landed cost — swapped legs — never a cancel).
+//
+// Validate here is the DEFERRED shape: the GL post needs the composing service's `GlPostSink`,
+// so the HTTP verb performs the full physical revaluation and leaves the GL leg armed
+// `pending` for a service/job-driven repost — the module's standing posture for GL-posting
+// verbs (voucher submit works the same way).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LcLineBody {
+    name: String,
+    account_id: Uuid,
+    // quantity | value | weight — an invalid value fails the DB's enum cast loudly.
+    split_method: String,
+    amount: Decimal,
+}
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateLandedCostBody {
+    lc_number: String,
+    // Tenant (company/branch) comes from the signed token (`CompanyContext`), not the body.
+    target_receipt_id: Uuid,
+    posting_date: chrono::NaiveDate,
+    #[serde(default = "default_currency")] currency: String,
+    #[serde(default)] notes: Option<String>,
+    lines: Vec<LcLineBody>,
+}
+async fn create_landed_cost(
+    State(svc): State<Arc<InventoryWriteService>>,
+    tenant: CompanyContext,
+    Json(b): Json<CreateLandedCostBody>,
+) -> axum::response::Response {
+    let lc = crate::application::service::inventory_write_service::NewLandedCost {
+        lc_number: b.lc_number,
+        company_id: tenant.company_id,
+        branch_id: tenant.branch_id,
+        target_receipt_id: b.target_receipt_id,
+        posting_date: b.posting_date,
+        currency: b.currency,
+        notes: b.notes,
+        lines: b.lines.into_iter().map(|l| crate::application::service::inventory_write_service::LcCostLine {
+            name: l.name, account_id: l.account_id, split_method: l.split_method, amount: l.amount,
+        }).collect(),
+    };
+    match svc.create_landed_cost(lc).await {
+        Ok(id) => (StatusCode::CREATED, Json(IdResponse { id })).into_response(),
+        Err(e) => err(e),
+    }
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LcOutcomeBody { id: Uuid, posted: bool, gl_amount: Decimal }
+async fn validate_landed_cost(
+    State(svc): State<Arc<InventoryWriteService>>,
+    _tenant: CompanyContext,
+    axum::extract::Path(lc_id): axum::extract::Path<Uuid>,
+) -> axum::response::Response {
+    match svc.validate_landed_cost_deferred(lc_id).await {
+        Ok(out) => (StatusCode::OK, Json(LcOutcomeBody { id: out.voucher_id, posted: out.posted, gl_amount: out.gl_amount })).into_response(),
+        Err(e) => err(e),
+    }
+}
+async fn cancel_landed_cost(
+    State(svc): State<Arc<InventoryWriteService>>,
+    _tenant: CompanyContext,
+    axum::extract::Path(lc_id): axum::extract::Path<Uuid>,
+) -> axum::response::Response {
+    // `tenant` proves the caller's company; the service re-reads the document and binds ITS
+    // company before any write (a document of another company is simply NotFound to the fence).
+    match svc.cancel_landed_cost(lc_id).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => err(e),
+    }
+}
+
 fn write_routes(svc: Arc<InventoryWriteService>, verifier: CompanyVerifier) -> Router {
     Router::new()
         .route("/warehouses", post(create_warehouse))
         .route("/purchase-receipts", post(create_receipt))
         .route("/delivery-notes", post(create_delivery))
+        // Landed-cost lifecycle verbs. Validate is the deferred shape (the physical
+        // revaluation + GL leg armed `pending`); the GL post itself needs the composing
+        // service's `GlPostSink` and stays service/job-driven like voucher submit.
+        .route("/landed-costs", post(create_landed_cost))
+        .route("/landed-costs/{id}/validate", post(validate_landed_cost))
+        .route("/landed-costs/{id}/cancel", post(cancel_landed_cost))
         // Picking mint + count staging (the projection/adjustment write surfaces that post no
         // GL). `validate_picking` / `apply_inventory` need the composing service's `GlPostSink`
         // (the GL-posting contract), so they stay service/job-driven like voucher submit —

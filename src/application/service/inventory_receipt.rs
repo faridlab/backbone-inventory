@@ -32,7 +32,14 @@ impl InventoryWriteService {
         for l in &r.lines {
             if l.quantity < Decimal::ZERO || l.rate < Decimal::ZERO { return Err(InventoryError::NegativeQuantity); }
         }
-        let total: Decimal = r.lines.iter().map(|l| money(l.quantity * l.rate)).sum();
+        // The document total values STOCK: a landed-cost service line (`is_landed_costs_line`)
+        // carries cost into a LandedCost document, not inventory — it mints no move and adds
+        // nothing to the door's Dr Inventory envelope (the landed cost posts its own GL with
+        // its own accounts; counting it here would debit inventory for stock never minted).
+        let total: Decimal = r.lines.iter()
+            .filter(|l| !l.is_landed_costs_line)
+            .map(|l| money(l.quantity * l.rate))
+            .sum();
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
         company_scope::bind_company_on(&mut tx, r.company_id).await?;
@@ -62,6 +69,7 @@ impl InventoryWriteService {
                 quantity: l.quantity,
                 rate: l.rate,
                 amount: money(l.quantity * l.rate),
+                is_landed_costs_line: l.is_landed_costs_line,
             }).await?;
         }
         tx.commit().await?;
@@ -117,8 +125,15 @@ impl InventoryWriteService {
         let inv_acct = self.inventory_leg_account(stock_loc, inv_acct).await?;
 
         // ---- physical movement: one minted move per line, engine-driven ----
+        // The enumerate index is the deterministic name grain (`{voucher}/{idx+1}`): a skipped
+        // line (zero qty, or a landed-cost service line that mints no stock) still CONSUMES its
+        // index, so the names stay aligned with the line rows across submit, cancel and resume.
         for (idx, it) in items.iter().enumerate() {
             if it.quantity.is_zero() { continue; } // a zero line moves nothing and mints nothing
+            // The landed-cost seam: a flagged line carries cost into a LandedCost document, not
+            // stock — no move, no quant, no bin, no SLE (the landed cost revalues the receipt's
+            // DONE moves; a service line has none).
+            if it.is_landed_costs_line { continue; }
             let name = format!("{}/{}", voucher_no, idx + 1);
             let mid = match self.mint_line_move(NewStockMove {
                 name: name.clone(),
@@ -146,9 +161,14 @@ impl InventoryWriteService {
             self.advance_move_to_assigned(mid).await?;
             self.action_done(mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
         }
-        // The GL amount is the voucher's own arithmetic (Σ money(qty·rate)) — identical to the
-        // Σ of the moves' IN-leg carries by construction.
-        let total_debit: Decimal = items.iter().map(|l| money(l.quantity * l.rate)).sum();
+        // The GL amount is the voucher's own arithmetic (Σ money(qty·rate) over the STOCK
+        // lines) — identical to the Σ of the moves' IN-leg carries by construction. A landed
+        // cost service line is excluded on both sides: it minted nothing for the envelope to
+        // mirror.
+        let total_debit: Decimal = items.iter()
+            .filter(|l| !l.is_landed_costs_line)
+            .map(|l| money(l.quantity * l.rate))
+            .sum();
         {
             let mut tx = self.db_pool.begin().await?;
             company_scope::bind_company_on(&mut tx, company).await?;
@@ -160,7 +180,10 @@ impl InventoryWriteService {
         // The explicit account-move gate: a voucher that carries neither value nor quantity
         // posts nothing (stays `not_applicable`); a `periodic` company suppresses the
         // real-time post the same way (the closing flow — a later increment — owns those legs).
-        let total_qty: Decimal = items.iter().map(|l| l.quantity).sum();
+        let total_qty: Decimal = items.iter()
+            .filter(|l| !l.is_landed_costs_line)
+            .map(|l| l.quantity)
+            .sum();
         if posture.periodic
             || !Self::should_create_account_move(total_debit, total_qty, true)
         {

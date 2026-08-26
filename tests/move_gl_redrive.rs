@@ -335,7 +335,7 @@ async fn voucher_door_moves_stay_not_applicable() {
         supplier_id: Uuid::new_v4(), source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
-        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") }],
+        lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") , is_landed_costs_line: false }],
     }).await.unwrap();
     let out = w.submit_purchase_receipt(rid, &adapter).await.unwrap();
     assert!(out.posted, "the voucher owns the GL envelope");

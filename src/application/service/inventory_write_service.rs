@@ -83,6 +83,10 @@ pub struct ReceiptLine {
     pub item_id: Uuid,
     pub quantity: Decimal,
     pub rate: Decimal,
+    /// Landed-cost service line (the seam is owned by inventory): a flagged line carries cost
+    /// into a LandedCost document, NOT stock — the receipt door skips move-minting, the
+    /// document totals and the cancellation for it. Default `false` everywhere.
+    pub is_landed_costs_line: bool,
 }
 #[derive(Debug, Clone)]
 pub struct NewReceipt {
@@ -155,6 +159,33 @@ pub struct SubmitOutcome {
     pub journal_id: Option<Uuid>,
     pub post_id: Option<Uuid>,
     pub gl_amount: Decimal,
+}
+
+/// One landed-cost charge line of a draft landed cost. `account_id` is the credit side
+/// (required — a line without it is rejected); `split_method` is `quantity` | `value` |
+/// `weight`; `amount` may be negative — a negative landed cost is the REVERSAL pattern
+/// (a validated landed cost can never cancel, so corrections re-book with swapped legs).
+#[derive(Debug, Clone)]
+pub struct LcCostLine {
+    pub name: String,
+    pub account_id: Uuid,
+    pub split_method: String,
+    pub amount: Decimal,
+}
+
+/// A draft landed-cost document: one target purchase receipt + its cost lines. The document
+/// revalues the target receipt's DONE moves at validation — see
+/// [`super::landed_cost_service_custom`].
+#[derive(Debug, Clone)]
+pub struct NewLandedCost {
+    pub lc_number: String,
+    pub company_id: Uuid,
+    pub branch_id: Option<Uuid>,
+    pub target_receipt_id: Uuid,
+    pub posting_date: chrono::NaiveDate,
+    pub currency: String,
+    pub notes: Option<String>,
+    pub lines: Vec<LcCostLine>,
 }
 
 // --- errors ------------------------------------------------------------------

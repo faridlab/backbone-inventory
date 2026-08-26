@@ -182,7 +182,7 @@ async fn create_and_submit_receipt(
         supplier_id: Uuid::new_v4(), source_po_id: None, warehouse_id: wh,
         posting_date: day(), currency: "IDR".into(),
         inventory_account_id: Uuid::new_v4(), grir_account_id: Uuid::new_v4(),
-        lines: vec![ReceiptLine { item_id: item, quantity: d(qty), rate: d(rate) }],
+        lines: vec![ReceiptLine { item_id: item, quantity: d(qty), rate: d(rate) , is_landed_costs_line: false }],
     }).await.unwrap();
     w.submit_purchase_receipt(id, sink).await.unwrap();
     id
@@ -226,7 +226,7 @@ async fn submit_receipt_moves_quants_and_ledger_together() {
             supplier_id: Uuid::new_v4(), source_po_id: None, warehouse_id: wh,
             posting_date: day(), currency: "IDR".into(),
             inventory_account_id: Uuid::new_v4(), grir_account_id: Uuid::new_v4(),
-            lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") }],
+            lines: vec![ReceiptLine { item_id: item, quantity: d("10"), rate: d("100") , is_landed_costs_line: false }],
         }).await.unwrap();
         w.submit_purchase_receipt(id, &sink).await.unwrap();
         sqlx::query_scalar::<_, String>(

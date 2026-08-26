@@ -49,6 +49,9 @@ pub struct NewReceiptItemRow {
     pub quantity: Decimal,
     pub rate: Decimal,
     pub amount: Decimal,
+    /// Landed-cost service line (the seam owned by inventory): the door skips move-minting
+    /// for flagged lines — they carry cost into a LandedCost document, not stock.
+    pub is_landed_costs_line: bool,
 }
 
 /// A receipt line as the submit path reads it: what arrived, and at what cost.
@@ -56,6 +59,8 @@ pub struct ReceiptItemRow {
     pub item_id: Uuid,
     pub quantity: Decimal,
     pub rate: Decimal,
+    /// Landed-cost service line — the submit/cancel doors skip it (no stock behind it).
+    pub is_landed_costs_line: bool,
 }
 
 /// Hand-written PurchaseReceiptItem SQL. Lives here per the module's 4-layer rule.
@@ -68,10 +73,12 @@ impl PurchaseReceiptItemRepository {
         l: &NewReceiptItemRow,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
-            r#"INSERT INTO inventory.purchase_receipt_items (id, receipt_id, company_id, item_id, quantity, rate, amount)
-               VALUES ($1,$2,$3,$4,$5,$6,$7)"#,
+            r#"INSERT INTO inventory.purchase_receipt_items
+                   (id, receipt_id, company_id, item_id, quantity, rate, amount, is_landed_costs_line)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)"#,
         )
         .bind(l.id).bind(l.receipt_id).bind(l.company_id).bind(l.item_id).bind(l.quantity).bind(l.rate).bind(l.amount)
+        .bind(l.is_landed_costs_line)
         .execute(conn)
         .await?;
         Ok(())
@@ -89,7 +96,7 @@ impl PurchaseReceiptItemRepository {
         let rows = company_scope::fetch_all_rows_scoped(
             pool,
             sqlx::query(
-                r#"SELECT item_id, quantity, rate FROM inventory.purchase_receipt_items
+                r#"SELECT item_id, quantity, rate, is_landed_costs_line FROM inventory.purchase_receipt_items
                    WHERE receipt_id=$1 AND (metadata->>'deleted_at') IS NULL ORDER BY id"#,
             )
             .bind(receipt_id),
@@ -97,6 +104,7 @@ impl PurchaseReceiptItemRepository {
         .await?;
         Ok(rows.iter().map(|it| ReceiptItemRow {
             item_id: it.get("item_id"), quantity: it.get("quantity"), rate: it.get("rate"),
+            is_landed_costs_line: it.get("is_landed_costs_line"),
         }).collect())
     }
 }

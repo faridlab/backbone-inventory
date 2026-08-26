@@ -196,3 +196,15 @@ user_owned:
   # posture resolution helper, the anglo-saxon delivery-debit swap (fail-closed), the
   # location valuation-account chain, and the explicit account-move gate.
   - "src/application/service/inventory_posture.rs"
+  # Landed-cost document lifecycle: draft open, the three split bases with the loud
+  # zero-denominator rejection, the remaining-share revaluation via the engine's
+  # adjustment verb, the door-owned GL envelope, and the repost/cancel surfaces. The
+  # `_custom` suffix keeps it outside generator territory by naming convention; declared
+  # anyway so the hand-authored surface is explicit.
+  - "src/application/service/landed_cost_service_custom.rs"
+  # Extends the stock ledger's voucher_type vocabulary with 'landed_cost' — the producer
+  # label of the engine's landed-cost revaluation rows. Hand-written because the generator
+  # does not emit ALTER TYPE migrations; the down is a documented no-op (PostgreSQL cannot
+  # remove an enum member).
+  - "migrations/20260826150200_landed_cost_sle_voucher_type.up.sql"
+  - "migrations/20260826150200_landed_cost_sle_voucher_type.down.sql"
