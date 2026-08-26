@@ -52,6 +52,7 @@ pub struct DeliveryNoteFilter {
     pub warehouse_id: Option<Uuid>,
     pub cogs_account_id: Option<Uuid>,
     pub inventory_account_id: Option<Uuid>,
+    pub transfer_id: Option<Uuid>,
     pub status: Option<DocStatus>,
     pub posting_state: Option<GlPostingState>,
     pub journal_id: Option<Uuid>,
@@ -62,7 +63,7 @@ pub struct DeliveryNoteFilter {
 impl DeliveryNoteFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.delivery_number.is_some() || self.company_id.is_some() || self.branch_id.is_some() || self.customer_id.is_some() || self.source_so_id.is_some() || self.warehouse_id.is_some() || self.cogs_account_id.is_some() || self.inventory_account_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some() || self.notes.is_some()
+        self.delivery_number.is_some() || self.company_id.is_some() || self.branch_id.is_some() || self.customer_id.is_some() || self.source_so_id.is_some() || self.warehouse_id.is_some() || self.cogs_account_id.is_some() || self.inventory_account_id.is_some() || self.transfer_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some() || self.notes.is_some()
     }
 }
 

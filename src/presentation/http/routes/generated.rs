@@ -11,14 +11,25 @@ use std::sync::Arc;
 use super::{
     delivery_note_handler::create_delivery_note_routes,
     delivery_note_item_handler::create_delivery_note_item_routes,
+    location_handler::create_location_routes,
+    stock_move_handler::create_stock_move_routes,
+    stock_move_line_handler::create_stock_move_line_routes,
+    operation_type_handler::create_operation_type_routes,
+    transfer_handler::create_transfer_read_routes,
+    route_handler::create_route_routes,
+    route_rule_handler::create_route_rule_routes,
+    reordering_rule_handler::create_reordering_rule_routes,
     purchase_receipt_handler::create_purchase_receipt_routes,
     purchase_receipt_item_handler::create_purchase_receipt_item_routes,
+    quant_handler::create_quant_routes,
     stock_entry_handler::create_stock_entry_routes,
     stock_entry_item_handler::create_stock_entry_item_routes,
     stock_ledger_entry_handler::create_stock_ledger_entry_routes,
     bin_handler::create_bin_routes,
     stock_reconciliation_handler::create_stock_reconciliation_routes,
     stock_reconciliation_item_handler::create_stock_reconciliation_item_routes,
+    lot_handler::create_lot_routes,
+    package_handler::create_package_routes,
     warehouse_handler::create_warehouse_routes,
     stock_item_handler::create_stock_item_routes,
 };
@@ -26,14 +37,25 @@ use super::{
 use crate::application::service::{
     DeliveryNoteService,
     DeliveryNoteItemService,
+    LocationService,
+    StockMoveService,
+    StockMoveLineService,
+    OperationTypeService,
+    TransferService,
+    RouteService,
+    RouteRuleService,
+    ReorderingRuleService,
     PurchaseReceiptService,
     PurchaseReceiptItemService,
+    QuantService,
     StockEntryService,
     StockEntryItemService,
     StockLedgerEntryService,
     BinService,
     StockReconciliationService,
     StockReconciliationItemService,
+    LotService,
+    PackageService,
     WarehouseService,
     StockItemService,
 };
@@ -42,14 +64,25 @@ use crate::application::service::{
 pub struct HttpServices {
     pub delivery_note: Arc<DeliveryNoteService>,
     pub delivery_note_item: Arc<DeliveryNoteItemService>,
+    pub location: Arc<LocationService>,
+    pub stock_move: Arc<StockMoveService>,
+    pub stock_move_line: Arc<StockMoveLineService>,
+    pub operation_type: Arc<OperationTypeService>,
+    pub transfer: Arc<TransferService>,
+    pub route: Arc<RouteService>,
+    pub route_rule: Arc<RouteRuleService>,
+    pub reordering_rule: Arc<ReorderingRuleService>,
     pub purchase_receipt: Arc<PurchaseReceiptService>,
     pub purchase_receipt_item: Arc<PurchaseReceiptItemService>,
+    pub quant: Arc<QuantService>,
     pub stock_entry: Arc<StockEntryService>,
     pub stock_entry_item: Arc<StockEntryItemService>,
     pub stock_ledger_entry: Arc<StockLedgerEntryService>,
     pub bin: Arc<BinService>,
     pub stock_reconciliation: Arc<StockReconciliationService>,
     pub stock_reconciliation_item: Arc<StockReconciliationItemService>,
+    pub lot: Arc<LotService>,
+    pub package: Arc<PackageService>,
     pub warehouse: Arc<WarehouseService>,
     pub stock_item: Arc<StockItemService>,
 }
@@ -75,10 +108,28 @@ pub fn configure_routes(services: HttpServices) -> Router {
         .merge(create_delivery_note_routes(services.delivery_note))
         // DeliveryNoteItem routes (12 Backbone endpoints)
         .merge(create_delivery_note_item_routes(services.delivery_note_item))
+        // Location routes (12 Backbone endpoints)
+        .merge(create_location_routes(services.location))
+        // StockMove routes (12 Backbone endpoints)
+        .merge(create_stock_move_routes(services.stock_move))
+        // StockMoveLine routes (12 Backbone endpoints)
+        .merge(create_stock_move_line_routes(services.stock_move_line))
+        // OperationType routes (12 Backbone endpoints)
+        .merge(create_operation_type_routes(services.operation_type))
+        // Transfer routes (READ-ONLY — append-only/event-sourced entity; writes arrive via the event handlers)
+        .merge(create_transfer_read_routes(services.transfer))
+        // Route routes (12 Backbone endpoints)
+        .merge(create_route_routes(services.route))
+        // RouteRule routes (12 Backbone endpoints)
+        .merge(create_route_rule_routes(services.route_rule))
+        // ReorderingRule routes (12 Backbone endpoints)
+        .merge(create_reordering_rule_routes(services.reordering_rule))
         // PurchaseReceipt routes (12 Backbone endpoints)
         .merge(create_purchase_receipt_routes(services.purchase_receipt))
         // PurchaseReceiptItem routes (12 Backbone endpoints)
         .merge(create_purchase_receipt_item_routes(services.purchase_receipt_item))
+        // Quant routes (12 Backbone endpoints)
+        .merge(create_quant_routes(services.quant))
         // StockEntry routes (12 Backbone endpoints)
         .merge(create_stock_entry_routes(services.stock_entry))
         // StockEntryItem routes (12 Backbone endpoints)
@@ -91,6 +142,10 @@ pub fn configure_routes(services: HttpServices) -> Router {
         .merge(create_stock_reconciliation_routes(services.stock_reconciliation))
         // StockReconciliationItem routes (12 Backbone endpoints)
         .merge(create_stock_reconciliation_item_routes(services.stock_reconciliation_item))
+        // Lot routes (12 Backbone endpoints)
+        .merge(create_lot_routes(services.lot))
+        // Package routes (12 Backbone endpoints)
+        .merge(create_package_routes(services.package))
         // Warehouse routes (12 Backbone endpoints)
         .merge(create_warehouse_routes(services.warehouse))
         // StockItem routes (12 Backbone endpoints)
@@ -109,12 +164,48 @@ pub mod individual {
         create_delivery_note_item_routes(service)
     }
 
+    pub fn location_routes(service: Arc<LocationService>) -> Router {
+        create_location_routes(service)
+    }
+
+    pub fn stock_move_routes(service: Arc<StockMoveService>) -> Router {
+        create_stock_move_routes(service)
+    }
+
+    pub fn stock_move_line_routes(service: Arc<StockMoveLineService>) -> Router {
+        create_stock_move_line_routes(service)
+    }
+
+    pub fn operation_type_routes(service: Arc<OperationTypeService>) -> Router {
+        create_operation_type_routes(service)
+    }
+
+    pub fn transfer_routes(service: Arc<TransferService>) -> Router {
+        create_transfer_routes(service)
+    }
+
+    pub fn route_routes(service: Arc<RouteService>) -> Router {
+        create_route_routes(service)
+    }
+
+    pub fn route_rule_routes(service: Arc<RouteRuleService>) -> Router {
+        create_route_rule_routes(service)
+    }
+
+    pub fn reordering_rule_routes(service: Arc<ReorderingRuleService>) -> Router {
+        create_reordering_rule_routes(service)
+    }
+
     pub fn purchase_receipt_routes(service: Arc<PurchaseReceiptService>) -> Router {
         create_purchase_receipt_routes(service)
     }
 
     pub fn purchase_receipt_item_routes(service: Arc<PurchaseReceiptItemService>) -> Router {
         create_purchase_receipt_item_routes(service)
+    }
+
+    pub fn quant_routes(service: Arc<QuantService>) -> Router {
+        create_quant_routes(service)
     }
 
     pub fn stock_entry_routes(service: Arc<StockEntryService>) -> Router {
@@ -139,6 +230,14 @@ pub mod individual {
 
     pub fn stock_reconciliation_item_routes(service: Arc<StockReconciliationItemService>) -> Router {
         create_stock_reconciliation_item_routes(service)
+    }
+
+    pub fn lot_routes(service: Arc<LotService>) -> Router {
+        create_lot_routes(service)
+    }
+
+    pub fn package_routes(service: Arc<PackageService>) -> Router {
+        create_package_routes(service)
     }
 
     pub fn warehouse_routes(service: Arc<WarehouseService>) -> Router {

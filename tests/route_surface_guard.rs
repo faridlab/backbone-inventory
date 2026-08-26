@@ -1,10 +1,14 @@
 //! Regression guard (ADR-0010 Decision A + council 2026-07-29): the unguarded
 //! `all_crud_routes()` composer must NOT mount generic CRUD on engine-owned tables — the child
 //! line tables (`delivery_note_items`, `purchase_receipt_items`, `stock_entry_items`,
-//! `stock_reconciliation_items`) AND the running-balance `bins` table. Line items are owned by
+//! `stock_reconciliation_items`), the running-balance `bins` table, and the stock-convergence
+//! engine state (`stock_moves`, `stock_move_lines`, `stock_quants`). Line items are owned by
 //! their parent document, and `bins` is the moving-average balance that must stay in lockstep with
-//! the append-only SLE and the GL. Both must be written only through `InventoryWriteService` (the
-//! surface exposed by `create_guarded_inventory_routes`); generic CRUD on them is never a
+//! the append-only SLE and the GL. The move/line/quant tables carry the 7-state lifecycle and the
+//! reservation triangle; driving them through generic CRUD would bypass the guarded transitions,
+//! the picking projection re-derivation, and the SLE/GL minting. All must be written only through
+//! `InventoryWriteService` / the move engine (the surface exposed by
+//! `create_guarded_inventory_routes`); generic CRUD on them is never a
 //! legitimate HTTP path. A `PATCH /bins/{id}` would rewrite the balance with no row lock, no SLE,
 //! and no GL post — silent subledger drift `repost_*` cannot repair.
 //!
@@ -32,6 +36,16 @@ const EXCLUDED_ENGINE_OWNED_ROUTE_MOUNTS: &[&str] = &[
     "create_stock_reconciliation_item_routes(self.stock_reconciliation_item_service",
     // Running balance (council 2026-07-29): must tie to the SLE and GL via the engine only.
     "create_bin_routes(self.bin_service",
+    // Stock-convergence engine state (spec: stock move lifecycle / reservation triangle):
+    // `stock_moves` carries the 7-state lifecycle driven only by the engine's guarded
+    // transitions (schema/models/move.model.yaml: "never free-hand-set over HTTP");
+    // `stock_move_lines` is the reservation mirror; `stock_quants.reserved_quantity` is the
+    // authoritative reservation counter (ONE writer: the move engine). Generic CRUD on any
+    // of them would bypass the picking projection re-derivation, the SLE minting, and the
+    // GL post. Reads stay exposed via `readonly_routes()`.
+    "create_stock_move_routes(self.stock_move_service",
+    "create_stock_move_line_routes(self.stock_move_line_service",
+    "create_quant_routes(self.quant_service",
 ];
 
 #[test]

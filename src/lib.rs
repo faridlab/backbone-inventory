@@ -12,7 +12,6 @@
 //! - RBAC middleware
 //! - Trigger execution system
 //! - Computed fields
-//! - Workflow orchestrator
 
 #![recursion_limit = "1024"]
 #![allow(unused_imports)]
@@ -34,19 +33,27 @@ pub use infrastructure::persistence::*;
 // Re-exports - Application services
 pub use application::service::DeliveryNoteService;
 pub use application::service::DeliveryNoteItemService;
+pub use application::service::LocationService;
+pub use application::service::StockMoveService;
+pub use application::service::StockMoveLineService;
+pub use application::service::OperationTypeService;
+pub use application::service::TransferService;
+pub use application::service::RouteService;
+pub use application::service::RouteRuleService;
+pub use application::service::ReorderingRuleService;
 pub use application::service::PurchaseReceiptService;
 pub use application::service::PurchaseReceiptItemService;
+pub use application::service::QuantService;
 pub use application::service::StockEntryService;
 pub use application::service::StockEntryItemService;
 pub use application::service::StockLedgerEntryService;
 pub use application::service::BinService;
 pub use application::service::StockReconciliationService;
 pub use application::service::StockReconciliationItemService;
+pub use application::service::LotService;
+pub use application::service::PackageService;
 pub use application::service::WarehouseService;
 pub use application::service::StockItemService;
-
-// Re-exports - Workflows
-pub use application::workflows::*;
 
 use std::sync::Arc;
 use axum::Router;
@@ -67,14 +74,25 @@ use sqlx::PgPool;
 pub struct InventoryModule {
     pub(crate) delivery_note_service: Arc<DeliveryNoteService>,
     pub(crate) delivery_note_item_service: Arc<DeliveryNoteItemService>,
+    pub(crate) location_service: Arc<LocationService>,
+    pub(crate) stock_move_service: Arc<StockMoveService>,
+    pub(crate) stock_move_line_service: Arc<StockMoveLineService>,
+    pub(crate) operation_type_service: Arc<OperationTypeService>,
+    pub(crate) transfer_service: Arc<TransferService>,
+    pub(crate) route_service: Arc<RouteService>,
+    pub(crate) route_rule_service: Arc<RouteRuleService>,
+    pub(crate) reordering_rule_service: Arc<ReorderingRuleService>,
     pub(crate) purchase_receipt_service: Arc<PurchaseReceiptService>,
     pub(crate) purchase_receipt_item_service: Arc<PurchaseReceiptItemService>,
+    pub(crate) quant_service: Arc<QuantService>,
     pub(crate) stock_entry_service: Arc<StockEntryService>,
     pub(crate) stock_entry_item_service: Arc<StockEntryItemService>,
     pub(crate) stock_ledger_entry_service: Arc<StockLedgerEntryService>,
     pub(crate) bin_service: Arc<BinService>,
     pub(crate) stock_reconciliation_service: Arc<StockReconciliationService>,
     pub(crate) stock_reconciliation_item_service: Arc<StockReconciliationItemService>,
+    pub(crate) lot_service: Arc<LotService>,
+    pub(crate) package_service: Arc<PackageService>,
     pub(crate) warehouse_service: Arc<WarehouseService>,
     pub(crate) stock_item_service: Arc<StockItemService>,
     // <<< CUSTOM FIELDS
@@ -95,22 +113,45 @@ impl InventoryModule {
     pub fn all_crud_routes(&self) -> Router {
         use presentation::http::{
             create_delivery_note_routes,
+            create_location_routes,
+            create_operation_type_routes,
+            create_transfer_read_routes,
+            create_route_routes,
+            create_route_rule_routes,
+            create_reordering_rule_routes,
             create_purchase_receipt_routes,
             create_stock_entry_routes,
             create_stock_ledger_entry_routes,
             create_stock_reconciliation_routes,
+            create_lot_routes,
+            create_package_routes,
             create_warehouse_routes,
             create_stock_item_routes,
         };
 
-        // Engine-owned tables (child line items + `bins`) are deliberately NOT mounted here — see
-        // tests/route_surface_guard.rs. They are written via InventoryWriteService only.
+        // Engine-owned tables are deliberately NOT mounted here — see
+        // tests/route_surface_guard.rs. Child line items are owned by their parent
+        // document; `bins` is the moving-average balance tied to the append-only SLE
+        // and the GL; `stock_moves` / `stock_move_lines` / `stock_quants` are the
+        // stock-convergence engine's own state (the 7-state lifecycle, the reservation
+        // mirror, and the authoritative reserved_quantity) and are driven only by the
+        // move engine's guarded transitions — never free-hand-set over HTTP. Reads for
+        // all of them stay available via `readonly_routes()`. The transfer projection
+        // mounts read-only even here (it has no write surface of its own).
         Router::new()
             .merge(create_delivery_note_routes(self.delivery_note_service.clone()))
+            .merge(create_location_routes(self.location_service.clone()))
+            .merge(create_operation_type_routes(self.operation_type_service.clone()))
+            .merge(create_transfer_read_routes(self.transfer_service.clone()))
+            .merge(create_route_routes(self.route_service.clone()))
+            .merge(create_route_rule_routes(self.route_rule_service.clone()))
+            .merge(create_reordering_rule_routes(self.reordering_rule_service.clone()))
             .merge(create_purchase_receipt_routes(self.purchase_receipt_service.clone()))
             .merge(create_stock_entry_routes(self.stock_entry_service.clone()))
             .merge(create_stock_ledger_entry_routes(self.stock_ledger_entry_service.clone()))
             .merge(create_stock_reconciliation_routes(self.stock_reconciliation_service.clone()))
+            .merge(create_lot_routes(self.lot_service.clone()))
+            .merge(create_package_routes(self.package_service.clone()))
             .merge(create_warehouse_routes(self.warehouse_service.clone()))
             .merge(create_stock_item_routes(self.stock_item_service.clone()))
     }
@@ -134,14 +175,25 @@ impl InventoryModule {
         use presentation::http::{
             create_delivery_note_read_routes,
             create_delivery_note_item_read_routes,
+            create_location_read_routes,
+            create_stock_move_read_routes,
+            create_stock_move_line_read_routes,
+            create_operation_type_read_routes,
+            create_transfer_read_routes,
+            create_route_read_routes,
+            create_route_rule_read_routes,
+            create_reordering_rule_read_routes,
             create_purchase_receipt_read_routes,
             create_purchase_receipt_item_read_routes,
+            create_quant_read_routes,
             create_stock_entry_read_routes,
             create_stock_entry_item_read_routes,
             create_stock_ledger_entry_read_routes,
             create_bin_read_routes,
             create_stock_reconciliation_read_routes,
             create_stock_reconciliation_item_read_routes,
+            create_lot_read_routes,
+            create_package_read_routes,
             create_warehouse_read_routes,
             create_stock_item_read_routes,
         };
@@ -149,14 +201,25 @@ impl InventoryModule {
         Router::new()
             .merge(create_delivery_note_read_routes(self.delivery_note_service.clone()))
             .merge(create_delivery_note_item_read_routes(self.delivery_note_item_service.clone()))
+            .merge(create_location_read_routes(self.location_service.clone()))
+            .merge(create_stock_move_read_routes(self.stock_move_service.clone()))
+            .merge(create_stock_move_line_read_routes(self.stock_move_line_service.clone()))
+            .merge(create_operation_type_read_routes(self.operation_type_service.clone()))
+            .merge(create_transfer_read_routes(self.transfer_service.clone()))
+            .merge(create_route_read_routes(self.route_service.clone()))
+            .merge(create_route_rule_read_routes(self.route_rule_service.clone()))
+            .merge(create_reordering_rule_read_routes(self.reordering_rule_service.clone()))
             .merge(create_purchase_receipt_read_routes(self.purchase_receipt_service.clone()))
             .merge(create_purchase_receipt_item_read_routes(self.purchase_receipt_item_service.clone()))
+            .merge(create_quant_read_routes(self.quant_service.clone()))
             .merge(create_stock_entry_read_routes(self.stock_entry_service.clone()))
             .merge(create_stock_entry_item_read_routes(self.stock_entry_item_service.clone()))
             .merge(create_stock_ledger_entry_read_routes(self.stock_ledger_entry_service.clone()))
             .merge(create_bin_read_routes(self.bin_service.clone()))
             .merge(create_stock_reconciliation_read_routes(self.stock_reconciliation_service.clone()))
             .merge(create_stock_reconciliation_item_read_routes(self.stock_reconciliation_item_service.clone()))
+            .merge(create_lot_read_routes(self.lot_service.clone()))
+            .merge(create_package_read_routes(self.package_service.clone()))
             .merge(create_warehouse_read_routes(self.warehouse_service.clone()))
             .merge(create_stock_item_read_routes(self.stock_item_service.clone()))
     }
@@ -200,6 +263,38 @@ impl InventoryModuleBuilder {
         let delivery_note_item_repository = Arc::new(DeliveryNoteItemRepository::new(db_pool.clone()));
         let delivery_note_item_service = Arc::new(DeliveryNoteItemService::with_repository(delivery_note_item_repository.clone()));
 
+        // Location service
+        let location_repository = Arc::new(LocationRepository::new(db_pool.clone()));
+        let location_service = Arc::new(LocationService::with_repository(location_repository.clone()));
+
+        // StockMove service
+        let stock_move_repository = Arc::new(StockMoveRepository::new(db_pool.clone()));
+        let stock_move_service = Arc::new(StockMoveService::with_repository(stock_move_repository.clone()));
+
+        // StockMoveLine service
+        let stock_move_line_repository = Arc::new(StockMoveLineRepository::new(db_pool.clone()));
+        let stock_move_line_service = Arc::new(StockMoveLineService::with_repository(stock_move_line_repository.clone()));
+
+        // OperationType service
+        let operation_type_repository = Arc::new(OperationTypeRepository::new(db_pool.clone()));
+        let operation_type_service = Arc::new(OperationTypeService::with_repository(operation_type_repository.clone()));
+
+        // Transfer service
+        let transfer_repository = Arc::new(TransferRepository::new(db_pool.clone()));
+        let transfer_service = Arc::new(TransferService::with_repository(transfer_repository.clone()));
+
+        // Route service
+        let route_repository = Arc::new(RouteRepository::new(db_pool.clone()));
+        let route_service = Arc::new(RouteService::with_repository(route_repository.clone()));
+
+        // RouteRule service
+        let route_rule_repository = Arc::new(RouteRuleRepository::new(db_pool.clone()));
+        let route_rule_service = Arc::new(RouteRuleService::with_repository(route_rule_repository.clone()));
+
+        // ReorderingRule service
+        let reordering_rule_repository = Arc::new(ReorderingRuleRepository::new(db_pool.clone()));
+        let reordering_rule_service = Arc::new(ReorderingRuleService::with_repository(reordering_rule_repository.clone()));
+
         // PurchaseReceipt service
         let purchase_receipt_repository = Arc::new(PurchaseReceiptRepository::new(db_pool.clone()));
         let purchase_receipt_service = Arc::new(PurchaseReceiptService::with_repository(purchase_receipt_repository.clone()));
@@ -207,6 +302,10 @@ impl InventoryModuleBuilder {
         // PurchaseReceiptItem service
         let purchase_receipt_item_repository = Arc::new(PurchaseReceiptItemRepository::new(db_pool.clone()));
         let purchase_receipt_item_service = Arc::new(PurchaseReceiptItemService::with_repository(purchase_receipt_item_repository.clone()));
+
+        // Quant service
+        let quant_repository = Arc::new(QuantRepository::new(db_pool.clone()));
+        let quant_service = Arc::new(QuantService::with_repository(quant_repository.clone()));
 
         // StockEntry service
         let stock_entry_repository = Arc::new(StockEntryRepository::new(db_pool.clone()));
@@ -232,6 +331,14 @@ impl InventoryModuleBuilder {
         let stock_reconciliation_item_repository = Arc::new(StockReconciliationItemRepository::new(db_pool.clone()));
         let stock_reconciliation_item_service = Arc::new(StockReconciliationItemService::with_repository(stock_reconciliation_item_repository.clone()));
 
+        // Lot service
+        let lot_repository = Arc::new(LotRepository::new(db_pool.clone()));
+        let lot_service = Arc::new(LotService::with_repository(lot_repository.clone()));
+
+        // Package service
+        let package_repository = Arc::new(PackageRepository::new(db_pool.clone()));
+        let package_service = Arc::new(PackageService::with_repository(package_repository.clone()));
+
         // Warehouse service
         let warehouse_repository = Arc::new(WarehouseRepository::new(db_pool.clone()));
         let warehouse_service = Arc::new(WarehouseService::with_repository(warehouse_repository.clone()));
@@ -246,14 +353,25 @@ impl InventoryModuleBuilder {
         Ok(InventoryModule {
             delivery_note_service,
             delivery_note_item_service,
+            location_service,
+            stock_move_service,
+            stock_move_line_service,
+            operation_type_service,
+            transfer_service,
+            route_service,
+            route_rule_service,
+            reordering_rule_service,
             purchase_receipt_service,
             purchase_receipt_item_service,
+            quant_service,
             stock_entry_service,
             stock_entry_item_service,
             stock_ledger_entry_service,
             bin_service,
             stock_reconciliation_service,
             stock_reconciliation_item_service,
+            lot_service,
+            package_service,
             warehouse_service,
             stock_item_service,
             // <<< CUSTOM

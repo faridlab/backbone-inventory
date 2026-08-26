@@ -47,6 +47,74 @@ pub struct StockReconciled {
     pub net_difference: Decimal,
 }
 
+// ---- stock-move pipeline events (schema/hooks/stock.hook.yaml `events:` block) -------------
+
+/// A stock move hit `confirmed` (spec §1 `_action_confirm`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MoveConfirmed {
+    pub move_id: Uuid,
+    pub company_id: Uuid,
+    pub item_id: Uuid,
+    pub demand_qty: Decimal,
+    pub picking_id: Option<Uuid>,
+}
+
+/// A stock move hit `assigned` — fully reserved against quants (spec §1 `_action_assign`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MoveAssigned {
+    pub move_id: Uuid,
+    pub company_id: Uuid,
+    pub picking_id: Option<Uuid>,
+}
+
+/// A stock move hit `done` — quants flipped, SLE minted (spec §4 `_action_done`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MoveDone {
+    pub move_id: Uuid,
+    pub company_id: Uuid,
+    pub item_id: Uuid,
+    pub quantity: Decimal,
+    pub price_unit: Decimal,
+    pub is_inventory: bool,
+}
+
+/// A stock move hit `cancel` — its reservation was released (spec §1 `_action_cancel`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MoveCancelled {
+    pub move_id: Uuid,
+    pub company_id: Uuid,
+    pub released_qty: Decimal,
+}
+
+/// A transfer's projected state changed (the T1 picking projection recompute — the picking has no
+/// state machine of its own; its state is re-derived from its moves on every move change).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TransferProjected {
+    pub transfer_id: Uuid,
+    pub company_id: Uuid,
+    pub state: String,
+    pub previous_state: String,
+}
+
+/// A partial validate minted the backorder move (spec §4 step 4).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BackorderCreated {
+    pub backorder_id: Uuid,
+    pub company_id: Uuid,
+    pub origin_id: Uuid,
+}
+
+/// The daily scheduler ordered replenishment on a reordering rule (spec §7 task 1; the T11
+/// orderpoint computes decided the quantity).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OrderpointTriggered {
+    pub orderpoint_id: Uuid,
+    pub company_id: Uuid,
+    pub item_id: Uuid,
+    pub qty_to_order: Decimal,
+    pub forecast_qty: Decimal,
+}
+
 /// The inventory domain-event union (discriminated) published on the module event bus.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type")]
@@ -55,6 +123,13 @@ pub enum InventoryEvent {
     StockDelivered(StockDelivered),
     StockMoved(StockMoved),
     StockReconciled(StockReconciled),
+    MoveConfirmed(MoveConfirmed),
+    MoveAssigned(MoveAssigned),
+    MoveDone(MoveDone),
+    MoveCancelled(MoveCancelled),
+    TransferProjected(TransferProjected),
+    BackorderCreated(BackorderCreated),
+    OrderpointTriggered(OrderpointTriggered),
 }
 
 /// Sink for inventory domain events. Fire-and-forget; a real adapter wires a bus, tests record.

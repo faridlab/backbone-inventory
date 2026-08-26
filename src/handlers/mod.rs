@@ -11,14 +11,25 @@ use std::sync::Arc;
 // Import all services
 use crate::application::service::DeliveryNoteService;
 use crate::application::service::DeliveryNoteItemService;
+use crate::application::service::LocationService;
+use crate::application::service::StockMoveService;
+use crate::application::service::StockMoveLineService;
+use crate::application::service::OperationTypeService;
+use crate::application::service::TransferService;
+use crate::application::service::RouteService;
+use crate::application::service::RouteRuleService;
+use crate::application::service::ReorderingRuleService;
 use crate::application::service::PurchaseReceiptService;
 use crate::application::service::PurchaseReceiptItemService;
+use crate::application::service::QuantService;
 use crate::application::service::StockEntryService;
 use crate::application::service::StockEntryItemService;
 use crate::application::service::StockLedgerEntryService;
 use crate::application::service::BinService;
 use crate::application::service::StockReconciliationService;
 use crate::application::service::StockReconciliationItemService;
+use crate::application::service::LotService;
+use crate::application::service::PackageService;
 use crate::application::service::WarehouseService;
 use crate::application::service::StockItemService;
 
@@ -44,10 +55,28 @@ pub struct AppState {
     pub delivery_note_service: Arc<DeliveryNoteService>,
     /// DeliveryNoteItem service
     pub delivery_note_item_service: Arc<DeliveryNoteItemService>,
+    /// Location service
+    pub location_service: Arc<LocationService>,
+    /// StockMove service
+    pub stock_move_service: Arc<StockMoveService>,
+    /// StockMoveLine service
+    pub stock_move_line_service: Arc<StockMoveLineService>,
+    /// OperationType service
+    pub operation_type_service: Arc<OperationTypeService>,
+    /// Transfer service
+    pub transfer_service: Arc<TransferService>,
+    /// Route service
+    pub route_service: Arc<RouteService>,
+    /// RouteRule service
+    pub route_rule_service: Arc<RouteRuleService>,
+    /// ReorderingRule service
+    pub reordering_rule_service: Arc<ReorderingRuleService>,
     /// PurchaseReceipt service
     pub purchase_receipt_service: Arc<PurchaseReceiptService>,
     /// PurchaseReceiptItem service
     pub purchase_receipt_item_service: Arc<PurchaseReceiptItemService>,
+    /// Quant service
+    pub quant_service: Arc<QuantService>,
     /// StockEntry service
     pub stock_entry_service: Arc<StockEntryService>,
     /// StockEntryItem service
@@ -60,6 +89,10 @@ pub struct AppState {
     pub stock_reconciliation_service: Arc<StockReconciliationService>,
     /// StockReconciliationItem service
     pub stock_reconciliation_item_service: Arc<StockReconciliationItemService>,
+    /// Lot service
+    pub lot_service: Arc<LotService>,
+    /// Package service
+    pub package_service: Arc<PackageService>,
     /// Warehouse service
     pub warehouse_service: Arc<WarehouseService>,
     /// StockItem service
@@ -71,28 +104,50 @@ impl AppState {
     pub fn new(
         delivery_note_service: Arc<DeliveryNoteService>,
         delivery_note_item_service: Arc<DeliveryNoteItemService>,
+        location_service: Arc<LocationService>,
+        stock_move_service: Arc<StockMoveService>,
+        stock_move_line_service: Arc<StockMoveLineService>,
+        operation_type_service: Arc<OperationTypeService>,
+        transfer_service: Arc<TransferService>,
+        route_service: Arc<RouteService>,
+        route_rule_service: Arc<RouteRuleService>,
+        reordering_rule_service: Arc<ReorderingRuleService>,
         purchase_receipt_service: Arc<PurchaseReceiptService>,
         purchase_receipt_item_service: Arc<PurchaseReceiptItemService>,
+        quant_service: Arc<QuantService>,
         stock_entry_service: Arc<StockEntryService>,
         stock_entry_item_service: Arc<StockEntryItemService>,
         stock_ledger_entry_service: Arc<StockLedgerEntryService>,
         bin_service: Arc<BinService>,
         stock_reconciliation_service: Arc<StockReconciliationService>,
         stock_reconciliation_item_service: Arc<StockReconciliationItemService>,
+        lot_service: Arc<LotService>,
+        package_service: Arc<PackageService>,
         warehouse_service: Arc<WarehouseService>,
         stock_item_service: Arc<StockItemService>
     ) -> Self {
         Self {
             delivery_note_service,
             delivery_note_item_service,
+            location_service,
+            stock_move_service,
+            stock_move_line_service,
+            operation_type_service,
+            transfer_service,
+            route_service,
+            route_rule_service,
+            reordering_rule_service,
             purchase_receipt_service,
             purchase_receipt_item_service,
+            quant_service,
             stock_entry_service,
             stock_entry_item_service,
             stock_ledger_entry_service,
             bin_service,
             stock_reconciliation_service,
             stock_reconciliation_item_service,
+            lot_service,
+            package_service,
             warehouse_service,
             stock_item_service,
         }
@@ -103,14 +158,25 @@ impl AppState {
         Self {
             delivery_note_service: module.delivery_note_service.clone(),
             delivery_note_item_service: module.delivery_note_item_service.clone(),
+            location_service: module.location_service.clone(),
+            stock_move_service: module.stock_move_service.clone(),
+            stock_move_line_service: module.stock_move_line_service.clone(),
+            operation_type_service: module.operation_type_service.clone(),
+            transfer_service: module.transfer_service.clone(),
+            route_service: module.route_service.clone(),
+            route_rule_service: module.route_rule_service.clone(),
+            reordering_rule_service: module.reordering_rule_service.clone(),
             purchase_receipt_service: module.purchase_receipt_service.clone(),
             purchase_receipt_item_service: module.purchase_receipt_item_service.clone(),
+            quant_service: module.quant_service.clone(),
             stock_entry_service: module.stock_entry_service.clone(),
             stock_entry_item_service: module.stock_entry_item_service.clone(),
             stock_ledger_entry_service: module.stock_ledger_entry_service.clone(),
             bin_service: module.bin_service.clone(),
             stock_reconciliation_service: module.stock_reconciliation_service.clone(),
             stock_reconciliation_item_service: module.stock_reconciliation_item_service.clone(),
+            lot_service: module.lot_service.clone(),
+            package_service: module.package_service.clone(),
             warehouse_service: module.warehouse_service.clone(),
             stock_item_service: module.stock_item_service.clone(),
         }
@@ -124,14 +190,25 @@ impl AppState {
 pub struct AppStateBuilder {
     delivery_note_service: Option<Arc<DeliveryNoteService>>,
     delivery_note_item_service: Option<Arc<DeliveryNoteItemService>>,
+    location_service: Option<Arc<LocationService>>,
+    stock_move_service: Option<Arc<StockMoveService>>,
+    stock_move_line_service: Option<Arc<StockMoveLineService>>,
+    operation_type_service: Option<Arc<OperationTypeService>>,
+    transfer_service: Option<Arc<TransferService>>,
+    route_service: Option<Arc<RouteService>>,
+    route_rule_service: Option<Arc<RouteRuleService>>,
+    reordering_rule_service: Option<Arc<ReorderingRuleService>>,
     purchase_receipt_service: Option<Arc<PurchaseReceiptService>>,
     purchase_receipt_item_service: Option<Arc<PurchaseReceiptItemService>>,
+    quant_service: Option<Arc<QuantService>>,
     stock_entry_service: Option<Arc<StockEntryService>>,
     stock_entry_item_service: Option<Arc<StockEntryItemService>>,
     stock_ledger_entry_service: Option<Arc<StockLedgerEntryService>>,
     bin_service: Option<Arc<BinService>>,
     stock_reconciliation_service: Option<Arc<StockReconciliationService>>,
     stock_reconciliation_item_service: Option<Arc<StockReconciliationItemService>>,
+    lot_service: Option<Arc<LotService>>,
+    package_service: Option<Arc<PackageService>>,
     warehouse_service: Option<Arc<WarehouseService>>,
     stock_item_service: Option<Arc<StockItemService>>,
 }
@@ -154,6 +231,54 @@ impl AppStateBuilder {
         self
     }
 
+    /// Set the Location service.
+    pub fn with_location_service(mut self, service: Arc<LocationService>) -> Self {
+        self.location_service = Some(service);
+        self
+    }
+
+    /// Set the StockMove service.
+    pub fn with_stock_move_service(mut self, service: Arc<StockMoveService>) -> Self {
+        self.stock_move_service = Some(service);
+        self
+    }
+
+    /// Set the StockMoveLine service.
+    pub fn with_stock_move_line_service(mut self, service: Arc<StockMoveLineService>) -> Self {
+        self.stock_move_line_service = Some(service);
+        self
+    }
+
+    /// Set the OperationType service.
+    pub fn with_operation_type_service(mut self, service: Arc<OperationTypeService>) -> Self {
+        self.operation_type_service = Some(service);
+        self
+    }
+
+    /// Set the Transfer service.
+    pub fn with_transfer_service(mut self, service: Arc<TransferService>) -> Self {
+        self.transfer_service = Some(service);
+        self
+    }
+
+    /// Set the Route service.
+    pub fn with_route_service(mut self, service: Arc<RouteService>) -> Self {
+        self.route_service = Some(service);
+        self
+    }
+
+    /// Set the RouteRule service.
+    pub fn with_route_rule_service(mut self, service: Arc<RouteRuleService>) -> Self {
+        self.route_rule_service = Some(service);
+        self
+    }
+
+    /// Set the ReorderingRule service.
+    pub fn with_reordering_rule_service(mut self, service: Arc<ReorderingRuleService>) -> Self {
+        self.reordering_rule_service = Some(service);
+        self
+    }
+
     /// Set the PurchaseReceipt service.
     pub fn with_purchase_receipt_service(mut self, service: Arc<PurchaseReceiptService>) -> Self {
         self.purchase_receipt_service = Some(service);
@@ -163,6 +288,12 @@ impl AppStateBuilder {
     /// Set the PurchaseReceiptItem service.
     pub fn with_purchase_receipt_item_service(mut self, service: Arc<PurchaseReceiptItemService>) -> Self {
         self.purchase_receipt_item_service = Some(service);
+        self
+    }
+
+    /// Set the Quant service.
+    pub fn with_quant_service(mut self, service: Arc<QuantService>) -> Self {
+        self.quant_service = Some(service);
         self
     }
 
@@ -202,6 +333,18 @@ impl AppStateBuilder {
         self
     }
 
+    /// Set the Lot service.
+    pub fn with_lot_service(mut self, service: Arc<LotService>) -> Self {
+        self.lot_service = Some(service);
+        self
+    }
+
+    /// Set the Package service.
+    pub fn with_package_service(mut self, service: Arc<PackageService>) -> Self {
+        self.package_service = Some(service);
+        self
+    }
+
     /// Set the Warehouse service.
     pub fn with_warehouse_service(mut self, service: Arc<WarehouseService>) -> Self {
         self.warehouse_service = Some(service);
@@ -223,14 +366,25 @@ impl AppStateBuilder {
         AppState {
             delivery_note_service: self.delivery_note_service.expect("delivery_note_service is required"),
             delivery_note_item_service: self.delivery_note_item_service.expect("delivery_note_item_service is required"),
+            location_service: self.location_service.expect("location_service is required"),
+            stock_move_service: self.stock_move_service.expect("stock_move_service is required"),
+            stock_move_line_service: self.stock_move_line_service.expect("stock_move_line_service is required"),
+            operation_type_service: self.operation_type_service.expect("operation_type_service is required"),
+            transfer_service: self.transfer_service.expect("transfer_service is required"),
+            route_service: self.route_service.expect("route_service is required"),
+            route_rule_service: self.route_rule_service.expect("route_rule_service is required"),
+            reordering_rule_service: self.reordering_rule_service.expect("reordering_rule_service is required"),
             purchase_receipt_service: self.purchase_receipt_service.expect("purchase_receipt_service is required"),
             purchase_receipt_item_service: self.purchase_receipt_item_service.expect("purchase_receipt_item_service is required"),
+            quant_service: self.quant_service.expect("quant_service is required"),
             stock_entry_service: self.stock_entry_service.expect("stock_entry_service is required"),
             stock_entry_item_service: self.stock_entry_item_service.expect("stock_entry_item_service is required"),
             stock_ledger_entry_service: self.stock_ledger_entry_service.expect("stock_ledger_entry_service is required"),
             bin_service: self.bin_service.expect("bin_service is required"),
             stock_reconciliation_service: self.stock_reconciliation_service.expect("stock_reconciliation_service is required"),
             stock_reconciliation_item_service: self.stock_reconciliation_item_service.expect("stock_reconciliation_item_service is required"),
+            lot_service: self.lot_service.expect("lot_service is required"),
+            package_service: self.package_service.expect("package_service is required"),
             warehouse_service: self.warehouse_service.expect("warehouse_service is required"),
             stock_item_service: self.stock_item_service.expect("stock_item_service is required"),
         }

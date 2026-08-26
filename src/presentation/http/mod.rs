@@ -7,14 +7,25 @@
 
 pub mod delivery_note_handler;
 pub mod delivery_note_item_handler;
+pub mod location_handler;
+pub mod stock_move_handler;
+pub mod stock_move_line_handler;
+pub mod operation_type_handler;
+pub mod transfer_handler;
+pub mod route_handler;
+pub mod route_rule_handler;
+pub mod reordering_rule_handler;
 pub mod purchase_receipt_handler;
 pub mod purchase_receipt_item_handler;
+pub mod quant_handler;
 pub mod stock_entry_handler;
 pub mod stock_entry_item_handler;
 pub mod stock_ledger_entry_handler;
 pub mod bin_handler;
 pub mod stock_reconciliation_handler;
 pub mod stock_reconciliation_item_handler;
+pub mod lot_handler;
+pub mod package_handler;
 pub mod warehouse_handler;
 pub mod stock_item_handler;
 
@@ -25,14 +36,25 @@ pub mod guarded_routes;
 // Re-exports
 pub use delivery_note_handler::{create_delivery_note_routes, create_delivery_note_read_routes, create_delivery_note_write_routes};
 pub use delivery_note_item_handler::{create_delivery_note_item_routes, create_delivery_note_item_read_routes, create_delivery_note_item_write_routes};
+pub use location_handler::{create_location_routes, create_location_read_routes, create_location_write_routes};
+pub use stock_move_handler::{create_stock_move_routes, create_stock_move_read_routes, create_stock_move_write_routes};
+pub use stock_move_line_handler::{create_stock_move_line_routes, create_stock_move_line_read_routes, create_stock_move_line_write_routes};
+pub use operation_type_handler::{create_operation_type_routes, create_operation_type_read_routes, create_operation_type_write_routes};
+pub use transfer_handler::{create_transfer_routes, create_transfer_read_routes, create_transfer_write_routes};
+pub use route_handler::{create_route_routes, create_route_read_routes, create_route_write_routes};
+pub use route_rule_handler::{create_route_rule_routes, create_route_rule_read_routes, create_route_rule_write_routes};
+pub use reordering_rule_handler::{create_reordering_rule_routes, create_reordering_rule_read_routes, create_reordering_rule_write_routes};
 pub use purchase_receipt_handler::{create_purchase_receipt_routes, create_purchase_receipt_read_routes, create_purchase_receipt_write_routes};
 pub use purchase_receipt_item_handler::{create_purchase_receipt_item_routes, create_purchase_receipt_item_read_routes, create_purchase_receipt_item_write_routes};
+pub use quant_handler::{create_quant_routes, create_quant_read_routes, create_quant_write_routes};
 pub use stock_entry_handler::{create_stock_entry_routes, create_stock_entry_read_routes, create_stock_entry_write_routes};
 pub use stock_entry_item_handler::{create_stock_entry_item_routes, create_stock_entry_item_read_routes, create_stock_entry_item_write_routes};
 pub use stock_ledger_entry_handler::{create_stock_ledger_entry_routes, create_stock_ledger_entry_read_routes, create_stock_ledger_entry_write_routes};
 pub use bin_handler::{create_bin_routes, create_bin_read_routes, create_bin_write_routes};
 pub use stock_reconciliation_handler::{create_stock_reconciliation_routes, create_stock_reconciliation_read_routes, create_stock_reconciliation_write_routes};
 pub use stock_reconciliation_item_handler::{create_stock_reconciliation_item_routes, create_stock_reconciliation_item_read_routes, create_stock_reconciliation_item_write_routes};
+pub use lot_handler::{create_lot_routes, create_lot_read_routes, create_lot_write_routes};
+pub use package_handler::{create_package_routes, create_package_read_routes, create_package_write_routes};
 pub use warehouse_handler::{create_warehouse_routes, create_warehouse_read_routes, create_warehouse_write_routes};
 pub use stock_item_handler::{create_stock_item_routes, create_stock_item_read_routes, create_stock_item_write_routes};
 // <<< CUSTOM

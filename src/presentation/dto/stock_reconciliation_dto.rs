@@ -56,6 +56,8 @@ pub struct CreateStockReconciliationDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "adjustment_account_id")]
     pub adjustment_account_id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "transfer_id")]
+    pub transfer_id: Option<Uuid>,
     pub status: DocStatus,
     #[serde(alias = "posting_state")]
     pub posting_state: GlPostingState,
@@ -101,6 +103,8 @@ pub struct UpdateStockReconciliationDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "adjustment_account_id")]
     pub adjustment_account_id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "transfer_id")]
+    pub transfer_id: Option<Uuid>,
     pub status: DocStatus,
     #[serde(alias = "posting_state")]
     pub posting_state: GlPostingState,
@@ -146,6 +150,8 @@ pub struct PatchStockReconciliationDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "adjustment_account_id")]
     pub adjustment_account_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "transfer_id")]
+    pub transfer_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<DocStatus>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "posting_state")]
@@ -161,7 +167,7 @@ pub struct PatchStockReconciliationDto {
 impl PatchStockReconciliationDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.recon_number.is_some() || self.company_id.is_some() || self.warehouse_id.is_some() || self.posting_date.is_some() || self.net_difference.is_some() || self.inventory_account_id.is_some() || self.adjustment_account_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some() || self.posted_at.is_some()
+        self.recon_number.is_some() || self.company_id.is_some() || self.warehouse_id.is_some() || self.posting_date.is_some() || self.net_difference.is_some() || self.inventory_account_id.is_some() || self.adjustment_account_id.is_some() || self.transfer_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some() || self.posted_at.is_some()
     }
 }
 
@@ -192,6 +198,7 @@ pub struct StockReconciliationResponseDto {
     pub inventory_account_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub adjustment_account_id: Uuid,
+    pub transfer_id: Option<Uuid>,
     pub status: DocStatus,
     pub posting_state: GlPostingState,
     pub journal_id: Option<Uuid>,
@@ -275,6 +282,7 @@ impl From<StockReconciliation> for StockReconciliationResponseDto {
             net_difference: entity.net_difference,
             inventory_account_id: entity.inventory_account_id,
             adjustment_account_id: entity.adjustment_account_id,
+            transfer_id: entity.transfer_id,
             status: entity.status,
             posting_state: entity.posting_state,
             journal_id: entity.journal_id,
@@ -309,6 +317,7 @@ impl From<CreateStockReconciliationDto> for StockReconciliation {
             net_difference: dto.net_difference,
             inventory_account_id: dto.inventory_account_id,
             adjustment_account_id: dto.adjustment_account_id,
+            transfer_id: dto.transfer_id,
             status: dto.status,
             posting_state: dto.posting_state,
             journal_id: dto.journal_id,
@@ -330,6 +339,7 @@ impl From<&StockReconciliation> for StockReconciliationResponseDto {
             net_difference: entity.net_difference.clone(),
             inventory_account_id: entity.inventory_account_id.clone(),
             adjustment_account_id: entity.adjustment_account_id.clone(),
+            transfer_id: entity.transfer_id.clone(),
             status: entity.status.clone(),
             posting_state: entity.posting_state.clone(),
             journal_id: entity.journal_id.clone(),
@@ -355,6 +365,7 @@ impl backbone_core::ApplyUpdateDto<UpdateStockReconciliationDto> for StockReconc
         self.net_difference = dto.net_difference;
         self.inventory_account_id = dto.inventory_account_id;
         self.adjustment_account_id = dto.adjustment_account_id;
+        self.transfer_id = dto.transfer_id;
         self.status = dto.status;
         self.posting_state = dto.posting_state;
         self.journal_id = dto.journal_id;

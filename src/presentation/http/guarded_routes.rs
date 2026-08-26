@@ -35,6 +35,11 @@ use axum::extract::Query;
 use super::{
     create_bin_read_routes, create_delivery_note_read_routes, create_purchase_receipt_read_routes,
     create_stock_ledger_entry_read_routes, create_warehouse_read_routes,
+    // Procurement configuration reads: routes, rules, and orderpoints. Orderpoints mount
+    // READ-ONLY here by design — a `manual` trigger orderpoint surfaces in the replenishment
+    // view for a human to order against; the computes recommend, writes go through the
+    // service surface (later passes expose the ordering verbs).
+    create_route_read_routes, create_route_rule_read_routes, create_reordering_rule_read_routes,
 };
 
 #[derive(Debug, Serialize)]
@@ -135,6 +140,12 @@ fn write_routes(svc: Arc<InventoryWriteService>, verifier: CompanyVerifier) -> R
         .route("/warehouses", post(create_warehouse))
         .route("/purchase-receipts", post(create_receipt))
         .route("/delivery-notes", post(create_delivery))
+        // Picking mint + count staging (the projection/adjustment write surfaces that post no
+        // GL). `validate_picking` / `apply_inventory` need the composing service's `GlPostSink`
+        // (the GL-posting contract), so they stay service/job-driven like voucher submit —
+        // proven by the seam tests, never exposed as bare HTTP.
+        .route("/pickings", post(create_picking))
+        .route("/counts", post(stage_count))
         // Every write above is tenant-scoped: `company_auth` rejects a request whose token is absent,
         // invalid, or carries no `company_id`, so a handler only ever runs with a proven tenant.
         //
@@ -144,6 +155,149 @@ fn write_routes(svc: Arc<InventoryWriteService>, verifier: CompanyVerifier) -> R
         // exist, and masking the CRUD-bypass probes.
         .route_layer(from_fn_with_state(verifier, company_auth))
         .with_state(svc)
+}
+
+// ── picking-as-projection surface (spec stock §2 T1 — the transfer is a PROJECTION) ──
+//
+// The picking document has NO hand-set state anywhere on this surface: `create` mints the
+// header + member moves through the move engine (which reprojects the transfer on every
+// move change), and the probe READS the projected state. Validation (`button_validate`) is
+// service-driven (GL sink), so the only transfer-state writer in the module stays the
+// engine's recompute.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PickingLineBody { item_id: Uuid, demand_qty: Decimal, #[serde(default)] price_unit: Decimal }
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreatePickingBody {
+    name: String,
+    // Tenant comes from the signed token (`CompanyContext`), not the body.
+    picking_type_id: Uuid,
+    location_id: Uuid,
+    location_dest_id: Uuid,
+    #[serde(default)] partner_id: Option<Uuid>,
+    #[serde(default = "default_move_type")] move_type: String,
+    #[serde(default)] origin: Option<String>,
+    lines: Vec<PickingLineBody>,
+}
+/// Serde default for the optional `moveType` field: `direct` (ship as available) — the
+/// generated operation-type default.
+fn default_move_type() -> String { "direct".into() }
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PickingCreatedBody { transfer_id: Uuid, move_ids: Vec<Uuid>, projected_state: String }
+async fn create_picking(
+    State(svc): State<Arc<InventoryWriteService>>,
+    tenant: CompanyContext,
+    Json(b): Json<CreatePickingBody>,
+) -> axum::response::Response {
+    let p = crate::application::service::inventory_transfer::NewPicking {
+        name: b.name,
+        company_id: tenant.company_id,
+        picking_type_id: b.picking_type_id,
+        location_id: b.location_id,
+        location_dest_id: b.location_dest_id,
+        partner_id: b.partner_id,
+        move_type: b.move_type,
+        origin: b.origin,
+        lines: b.lines.into_iter().map(|l| crate::application::service::inventory_transfer::PickingLine {
+            item_id: l.item_id, demand_qty: l.demand_qty, price_unit: l.price_unit,
+        }).collect(),
+    };
+    match svc.create_picking(p).await {
+        Ok(created) => (StatusCode::CREATED, Json(PickingCreatedBody {
+            transfer_id: created.transfer_id, move_ids: created.move_ids,
+            projected_state: created.projected_state,
+        })).into_response(),
+        Err(e) => err(e),
+    }
+}
+
+/// The projection probe: the transfer header (with its PROJECTED state — a stored compute
+/// the move engine re-derived, never an assertion) plus the member move states that
+/// aggregate into it.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MoveStateBody { id: Uuid, item_id: Uuid, state: String, demand_qty: Decimal, quantity: Decimal, is_inventory: bool }
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PickingProbeBody {
+    id: Uuid, name: String, origin: Option<String>, picking_type_id: Uuid,
+    location_id: Uuid, location_dest_id: Uuid, state: String,
+    date_done: Option<chrono::DateTime<chrono::Utc>>,
+    moves: Vec<MoveStateBody>,
+}
+async fn get_picking(
+    State(svc): State<Arc<InventoryWriteService>>,
+    tenant: CompanyContext,
+    axum::extract::Path(transfer_id): axum::extract::Path<Uuid>,
+) -> axum::response::Response {
+    match svc.fetch_picking(tenant.company_id, transfer_id).await {
+        Ok((h, moves)) => (StatusCode::OK, Json(PickingProbeBody {
+            id: h.id, name: h.name, origin: h.origin, picking_type_id: h.picking_type_id,
+            location_id: h.location_id, location_dest_id: h.location_dest_id,
+            state: h.state, date_done: h.date_done,
+            moves: moves.into_iter().map(|m| MoveStateBody {
+                id: m.id, item_id: m.item_id, state: m.state, demand_qty: m.demand_qty,
+                quantity: m.quantity, is_inventory: m.is_inventory,
+            }).collect(),
+        })).into_response(),
+        Err(e) => err(e),
+    }
+}
+
+// ── quant-driven adjustment door (spec stock §5.2 — no stock.inventory model) ──
+//
+// Staging a count is a pure quant-surface write (no GL, no move): the counted LEVEL lands
+// on the quant with its stored diff compute, gated for Apply. Applying mints the
+// `is_inventory` move and may post the adjustment GL leg — a service/job surface (GL sink),
+// not a bare route.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StageCountBody { item_id: Uuid, location_id: Uuid, counted_qty: Decimal }
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StagedCountBody {
+    quant_id: Uuid, location_id: Uuid,
+    on_hand_qty: Decimal, counted_qty: Decimal, diff_qty: Decimal,
+}
+async fn stage_count(
+    State(svc): State<Arc<InventoryWriteService>>,
+    tenant: CompanyContext,
+    Json(b): Json<StageCountBody>,
+) -> axum::response::Response {
+    match svc.stage_quant_count(tenant.company_id, b.item_id, b.location_id, b.counted_qty).await {
+        Ok(s) => (StatusCode::CREATED, Json(StagedCountBody {
+            quant_id: s.quant_id, location_id: s.location_id,
+            on_hand_qty: s.on_hand_qty, counted_qty: s.counted_qty, diff_qty: s.diff_qty,
+        })).into_response(),
+        Err(e) => err(e),
+    }
+}
+
+/// The pending-count worklist at a location (the staged-but-unapplied counts — the partial
+/// index `WHERE inventory_quantity_set = true` serves this read).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StagedCountsQuery { location_id: Uuid }
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StagedCountRowBody {
+    quant_id: Uuid, item_id: Uuid,
+    on_hand_qty: Decimal, counted_qty: Option<Decimal>, diff_qty: Option<Decimal>,
+}
+async fn get_staged_counts(
+    State(svc): State<Arc<InventoryWriteService>>,
+    tenant: CompanyContext,
+    Query(q): Query<StagedCountsQuery>,
+) -> axum::response::Response {
+    match svc.staged_counts(tenant.company_id, q.location_id).await {
+        Ok(rows) => (StatusCode::OK, Json(rows.into_iter().map(|r| StagedCountRowBody {
+            quant_id: r.quant_id, item_id: r.item_id,
+            on_hand_qty: r.on_hand_qty, counted_qty: r.counted_qty, diff_qty: r.diff_qty,
+        }).collect::<Vec<_>>())).into_response(),
+        Err(e) => err(e),
+    }
 }
 
 // ── availability read-model (the surface selling consumes to check stock) ────
@@ -163,6 +317,18 @@ async fn get_availability(State(svc): State<Arc<InventoryReadService>>, Query(q)
 }
 fn read_routes(svc: Arc<InventoryReadService>) -> Router {
     Router::new().route("/availability", axum::routing::get(get_availability)).with_state(svc)
+}
+
+/// The projection/adjustment PROBES (tenant-fenced reads): the picking's projected state
+/// and the pending-count worklist. Same `company_auth` + `route_layer` posture as the
+/// writes — these reads take the tenant from the token, so a caller cannot probe another
+/// company's transfers or staged counts.
+fn probe_routes(svc: Arc<InventoryWriteService>, verifier: CompanyVerifier) -> Router {
+    Router::new()
+        .route("/pickings/{id}", axum::routing::get(get_picking))
+        .route("/counts", axum::routing::get(get_staged_counts))
+        .route_layer(from_fn_with_state(verifier, company_auth))
+        .with_state(svc)
 }
 
 // ── DeliveryRequested intake (the trigger of the selling↔inventory delivery seam) ──
@@ -229,10 +395,18 @@ pub fn create_guarded_inventory_routes(
         .merge(create_stock_ledger_entry_read_routes(m.stock_ledger_entry_service.clone()))
         .merge(create_purchase_receipt_read_routes(m.purchase_receipt_service.clone()))
         .merge(create_delivery_note_read_routes(m.delivery_note_service.clone()))
+        // Procurement configuration reads (routes, rules, orderpoints) ride the same tenant
+        // fence. Orderpoints are read-only here by design: the `manual` trigger surfaces in the
+        // replenishment view for a human to order against; the computes recommend, and the
+        // ordering verbs stay on the service/job surface (`ProcurementService`).
+        .merge(create_route_read_routes(m.route_service.clone()))
+        .merge(create_route_rule_read_routes(m.route_rule_service.clone()))
+        .merge(create_reordering_rule_read_routes(m.reordering_rule_service.clone()))
         .route_layer(from_fn_with_state(verifier.clone(), company_auth));
     Router::new()
         .merge(entity_reads)
-        .merge(write_routes(write, verifier.clone()))
+        .merge(write_routes(write.clone(), verifier.clone()))
         .merge(read_routes(read))
-        .merge(intake_routes(intake, verifier))
+        .merge(intake_routes(intake, verifier.clone()))
+        .merge(probe_routes(write, verifier))
 }

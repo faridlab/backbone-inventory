@@ -1,0 +1,136 @@
+# =============================================================================
+# Domain: Inventory
+# Entity: Quant (Odoo `stock.quant`)
+# =============================================================================
+# THE RESERVATION TRIANGLE APEX (spec flag T2, ADR-0016): ONE row per
+# product x location x lot x package x owner. `reserved_quantity` on this
+# row is the AUTHORITATIVE reservation counter; the move-line qty is a
+# mirror and move.state an aggregate. `available_quantity` is a stored
+# compute = quantity - reserved_quantity (a READ, never a free column).
+#
+# Quant-driven adjustment (T4): there is no stock.inventory model — counted
+# quantities stage on the quant (inventory_quantity / inventory_diff_quantity)
+# and `_apply_inventory` mints an `is_inventory` move through the normal
+# move pipeline (guard R24 blocks the stage while reservations exist).
+#
+# Serial uniqueness (T5): sn_duplicated flags a serial appearing in more
+# than one quant so the constraint can raise at write time.
+#
+# Company fence (ADR-0014): DERIVED-STRICT. company_id is a required
+# (NOT NULL) column but is derived from the location chain at write time
+# (guard R26 / trigger T3 — the quant's company follows its location;
+# shared locations cannot hold quants, so the column never needs NULL).
+# =============================================================================
+
+models:
+  - name: Quant
+    collection: stock_quants
+    description: "A quant — ONE row per item x location x lot x package x owner; owns the authoritative reserved_quantity (T2). available_quantity is a stored compute; counted quantities stage on the row for the inventory adjustment flow (T4)"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique quant identifier"
+
+      item_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "The item # logical FK to catalog.Item.id"
+
+      location_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Location.id)"]
+        description: "The location (guard R13: usage must be internal — view locations hold no quants)"
+
+      lot_id:
+        type: uuid?
+        attributes: ["@foreign_key(Lot.id)"]
+        description: "The tracked lot / serial (NULL for untracked stock)"
+
+      package_id:
+        type: uuid?
+        attributes: ["@foreign_key(Package.id)"]
+        description: "The containing package"
+
+      owner_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Consignment owner # logical FK to party.Party.id"
+
+      quantity:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,4)"]
+        description: "On-hand quantity (negative allowed for virtual locations during transit states)"
+
+      reserved_quantity:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,4)", "@non_negative"]
+        description: "AUTHORITATIVE reserved quantity (T2) — the apex of the reservation triangle; move lines mirror THIS value, never the reverse"
+
+      available_quantity:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,4)"]
+        description: "STORED compute (T2) = quantity - reserved_quantity; a READ made cheap, never an independent counter"
+
+      in_date:
+        type: datetime?
+        description: "First arrival timestamp at this location (FIFO ordering within the lot)"
+
+      inventory_quantity:
+        type: decimal?
+        attributes: ["@precision(18,4)"]
+        description: "STAGED counted quantity (T4); NULL = no count in flight — writing it is the only inventory-taking gesture (no stock.inventory document exists)"
+
+      inventory_diff_quantity:
+        type: decimal?
+        attributes: ["@precision(18,4)"]
+        description: "STORED compute (T4) = inventory_quantity - quantity; what `_apply_inventory` will mint as an is_inventory move"
+
+      inventory_quantity_set:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Count applied flag (T4) — guards double-application of the same count"
+
+      inventory_date:
+        type: date?
+        description: "Scheduled count date (T4)"
+
+      sn_duplicated:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "True when the serial already exists on another quant (T5) — the write-time serial-uniqueness signal"
+
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "DERIVED from the location chain at write time (guard R26 / T3) — strict NOT NULL, never a free write column # logical FK to organization.Company.id"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    indexes:
+      - type: unique
+        fields: [item_id, location_id, lot_id, package_id, owner_id]
+        where: "deleted_at IS NULL"
+        description: "ONE quant row per item x location x lot x package x owner (T2). NULL-dimension dedup is the reservation engine's gather responsibility (as in Odoo, which has no DB unique on quants)"
+      - type: index
+        fields: [item_id, location_id]
+        description: "Availability gather for the reservation engine"
+      - type: index
+        fields: [location_id]
+      - type: index
+        fields: [lot_id]
+        description: "Lot traceability (T9)"
+      - type: index
+        fields: [package_id]
+      - type: index
+        fields: [owner_id]
+      - type: index
+        fields: [company_id]
+      - type: index
+        fields: [inventory_quantity_set]
+        where: "inventory_quantity_set = true"
+        description: "Pending-count worklist (T4) — the adjustment scheduler's scan"

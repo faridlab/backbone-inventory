@@ -1,0 +1,350 @@
+# =============================================================================
+# Domain: Inventory
+# Entities: Route (Odoo `stock.route`), RouteRule (Odoo `stock.rule`),
+#           ReorderingRule (Odoo `stock.warehouse.orderpoint`)
+# =============================================================================
+# The procurement-configuration aggregates:
+#   Route          — an ordered collection of rules, applicable per product /
+#                    category / warehouse;
+#   RouteRule      — pull (bring stock TO dest) / push (propagate FROM src) /
+#                    pull_push, tied to an operation type (guard R11: rule ==
+#                    picking type == warehouse company);
+#   ReorderingRule — min/max replenishment per item x location, unique per
+#                    (item, location, company) — guard R6; its qty_* computes
+#                    (on hand / forecast / to order / lead days) drive the
+#                    daily scheduler (trigger T11).
+#
+# `_run_pull` / `_run_push` / `_search_rule` and the daily scheduler
+# (run_scheduler) are SERVICE METHODS, not CRUD — implemented in the custom
+# service layer; this file declares only their data shapes.
+#
+# Company fence (ADR-0014): Route and RouteRule are configuration master
+# data — shared_blank (nullable company; the seeded MTO route is a shared
+# row). ReorderingRule is a strict transaction-surface row (company required,
+# part of its unique key).
+# =============================================================================
+
+models:
+  # ===========================================================================
+  # Entity: Route — ordered rule collection
+  # ===========================================================================
+  - name: Route
+    collection: routes
+    description: "A route — an ordered collection of procurement rules, applicable on items / categories / warehouses"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique route identifier"
+
+      name:
+        type: string
+        attributes: ["@required", "@max(150)"]
+        description: "Route label"
+
+      active:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Archive support (the seeded MTO route ships inactive — activated by the replenish-on-order setting)"
+
+      sequence:
+        type: int
+        attributes: ["@default(0)"]
+        description: "Sort order"
+
+      product_selectable:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Available on the item form"
+
+      product_categ_selectable:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Available on the item category"
+
+      warehouse_selectable:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Available per warehouse"
+
+      company_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Owning company; NULL = shared route visible to every company (shared_blank, ADR-0014 — the global MTO route's posture) # logical FK to organization.Company.id"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    relations:
+      rules:
+        type: RouteRule[]
+        attributes: ["@one_to_many"]
+        description: "Rules on this route (ordered by sequence)"
+        inverse: route
+
+    indexes:
+      - type: index
+        fields: [company_id]
+
+  # ===========================================================================
+  # Entity: RouteRule — one pull/push step
+  # ===========================================================================
+  - name: RouteRule
+    collection: route_rules
+    description: "A procurement rule — pull / push / pull_push tying a (src -> dest) location pair to an operation type; company must match the type's and warehouse's (guard R11)"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique rule identifier"
+
+      name:
+        type: string
+        attributes: ["@required", "@max(150)"]
+        description: "Rule label"
+
+      active:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Archive support"
+
+      sequence:
+        type: int
+        attributes: ["@default(20)"]
+        description: "Sort order — rule selection picks the highest-sequence match"
+
+      action:
+        type: RuleAction
+        attributes: ["@required", "@default(pull)"]
+        description: "Rule direction: pull (Pull From) / push (Push To) / pull_push (Pull & Push)"
+
+      auto:
+        type: RuleAuto
+        attributes: ["@required", "@default(manual)"]
+        description: "Auto-trigger for push rules: manual / transparent"
+
+      procure_method:
+        type: ProcureMethod
+        attributes: ["@required", "@default(make_to_stock)"]
+        description: "Supply method for pull rules"
+
+      delay:
+        type: int
+        attributes: ["@default(0)"]
+        description: "Lead time in days"
+
+      location_src_id:
+        type: uuid?
+        attributes: ["@foreign_key(Location.id)"]
+        description: "Source location (push rules move stock FROM here)"
+
+      location_dest_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Location.id)"]
+        description: "Destination location (pull rules bring stock TO here)"
+
+      picking_type_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(OperationType.id)"]
+        description: "The operation type this rule produces (guard R11: same company as the rule and the warehouse)"
+
+      route_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Route.id)"]
+        description: "Parent route"
+
+      warehouse_id:
+        type: uuid?
+        attributes: ["@foreign_key(Warehouse.id)"]
+        description: "Owning warehouse (guard R11: same company as the rule and the picking type)"
+
+      company_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Owning company; NULL = shared rule (shared_blank, ADR-0014). Must equal picking_type.company and warehouse.company when set — guard R11 # logical FK to organization.Company.id"
+
+      propagate_cancel:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Cancel propagation through this rule"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    relations:
+      route:
+        type: Route
+        attributes: ["@one", "@foreign_key(route_id)"]
+        description: "Parent route"
+        inverse: rules
+
+    indexes:
+      - type: index
+        fields: [route_id]
+      - type: index
+        fields: [action]
+      - type: index
+        fields: [location_src_id]
+      - type: index
+        fields: [location_dest_id]
+      - type: index
+        fields: [picking_type_id]
+      - type: index
+        fields: [warehouse_id]
+      - type: index
+        fields: [company_id]
+
+  # ===========================================================================
+  # Entity: ReorderingRule — min/max replenishment (the orderpoint)
+  # ===========================================================================
+  - name: ReorderingRule
+    collection: reordering_rules
+    description: "A reordering rule (min/max) per item x location; unique per (item, location, company) — guard R6. The daily scheduler orders when qty_forecast < item_min_qty (trigger T11)"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique orderpoint identifier"
+
+      name:
+        type: string
+        attributes: ["@required", "@max(40)"]
+        description: "Reference"
+
+      trigger:
+        type: OrderpointTrigger
+        attributes: ["@required", "@default(auto)"]
+        description: "auto (scheduler-driven) / manual (surfaced for a human to order)"
+
+      active:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Archive support"
+
+      snoozed_until:
+        type: date?
+        description: "Snooze the rule until this date (manual trigger only)"
+
+      item_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "The monitored item # logical FK to catalog.Item.id — part of the R6 unique key"
+
+      location_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Location.id)"]
+        description: "The monitored location — part of the R6 unique key"
+
+      warehouse_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Warehouse.id)"]
+        description: "The warehouse the replenishment lands in"
+
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "STRICT transaction fence — part of the R6 unique key # logical FK to organization.Company.id"
+
+      item_min_qty:
+        type: decimal
+        attributes: ["@required", "@default(0)", "@precision(18,4)", "@non_negative"]
+        description: "Minimum quantity — the trigger (order when forecast < this)"
+
+      item_max_qty:
+        type: decimal
+        attributes: ["@required", "@default(0)", "@precision(18,4)", "@non_negative"]
+        description: "Maximum / target quantity"
+
+      route_id:
+        type: uuid?
+        attributes: ["@foreign_key(Route.id)"]
+        description: "Override route (falls back to the item/warehouse-resolved route)"
+
+      qty_on_hand:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,4)"]
+        description: "STORED compute (T11) — on-hand at location_id, refreshed by the scheduler"
+
+      qty_forecast:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,4)"]
+        description: "STORED compute (T11) — forecasted quantity (on hand +/- incoming/outgoing moves); the reorder trigger reads this"
+
+      qty_to_order:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,4)"]
+        description: "STORED compute (T11) — recommended replenishment qty (max(forecast, max) - forecast, floored at 0)"
+
+      qty_to_order_manual:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,4)"]
+        description: "User-set override of the computed qty_to_order"
+
+      lead_days:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,4)"]
+        description: "STORED compute (T11) — effective lead time in days (rule delay + supplier lead)"
+
+      deadline_date:
+        type: date?
+        description: "STORED compute (T11) — when the order should arrive to hit the lead time"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    indexes:
+      - type: unique
+        fields: [item_id, location_id, company_id]
+        where: "deleted_at IS NULL"
+        description: "R6 — one reordering rule per item x location x company (_product_location_check)"
+      - type: index
+        fields: [item_id]
+      - type: index
+        fields: [location_id]
+      - type: index
+        fields: [warehouse_id]
+      - type: index
+        fields: [company_id]
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: RuleAction
+    description: "stock.rule.action — the rule direction"
+    variants:
+      - name: pull
+        description: "Pull From (bring stock TO the destination)"
+        default: true
+      - name: push
+        description: "Push To (propagate stock FROM the source)"
+      - name: pull_push
+        description: "Pull & Push"
+
+  - name: RuleAuto
+    description: "stock.rule.auto — push-rule auto-trigger"
+    variants:
+      - name: manual
+        description: "Manual"
+        default: true
+      - name: transparent
+        description: "Automatic (transparent)"
+
+  - name: OrderpointTrigger
+    description: "stock.warehouse.orderpoint.trigger"
+    variants:
+      - name: auto
+        description: "Automatic (the daily scheduler orders)"
+        default: true
+      - name: manual
+        description: "Manual (surfaced in the replenishment view)"

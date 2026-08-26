@@ -1,0 +1,141 @@
+# =============================================================================
+# Domain: Inventory
+# Entity: Location (Odoo `stock.location`)
+# =============================================================================
+# Hierarchical stock location (supplier / view / internal / customer /
+# inventory / production / transit). The spatial atom every quant, move and
+# move line keys off. `usage` drives stock semantics: only `internal` holds
+# on-hand stock; `view` is a grouping node that can never hold stock
+# (guard R13); `inventory` is the scrap/adjustment sink; `transit` is the
+# inter-company holding pen.
+#
+# Tree shape: self-referential `location_id` parent + materialized
+# `parent_path` (`_parent_store` in Odoo). The `_parent_path_id_idx
+# (parent_path, id)` index is load-bearing for subtree walks and is
+# preserved verbatim (spec flag: verbatim partial indexes).
+#
+# Company fence (ADR-0014): MASTER DATA, `shared_blank`. `company_id` is a
+# genuine nullable column (NOT derived): shared root locations (the virtual
+# supplier/customer trees) seed with company NULL and are visible to every
+# company — the port of Odoo's `[False]` escape. Company-owned locations
+# carry the company and stay fenced.
+# =============================================================================
+
+models:
+  - name: Location
+    collection: locations
+    description: "A hierarchical stock location; usage drives stock semantics (only internal holds on-hand stock; view cannot hold stock)"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique location identifier"
+
+      name:
+        type: string
+        attributes: ["@required", "@max(150)"]
+        description: "Location label"
+
+      complete_name:
+        type: string
+        attributes: ["@max(500)"]
+        description: "Full path including parents (recursive stored compute; recomputed on any parent/name change — trigger T8)"
+
+      active:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Archive support"
+
+      usage:
+        type: LocationUsage
+        attributes: ["@required", "@default(internal)"]
+        description: "Location kind; only internal holds on-hand stock, view is a grouping node (guard R13 rejects quants on view locations)"
+
+      location_id:
+        type: uuid?
+        attributes: ["@foreign_key(Location.id)"]
+        description: "Parent location (self-referential tree); null = root"
+
+      parent_path:
+        type: string
+        attributes: ["@max(1000)"]
+        description: "Materialized path of the location tree — load-bearing for subtree walks (index _parent_path_id_idx preserved verbatim)"
+
+      barcode:
+        type: string?
+        attributes: ["@max(64)"]
+        description: "Scannable barcode (unique per company — guard R4)"
+
+      company_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Owning company; NULL = shared location visible to every company (shared_blank, ADR-0014) # logical FK to organization.Company.id"
+
+      warehouse_id:
+        type: uuid?
+        attributes: ["@foreign_key(Warehouse.id)"]
+        description: "The warehouse this location belongs to (derived from the tree; kept as a stored column)"
+
+      cyclic_inventory_frequency:
+        type: int
+        attributes: ["@default(0)"]
+        description: "Frequency in days for cyclic inventory checks (0 = off)"
+
+      last_inventory_date:
+        type: date?
+        description: "Last actual inventory date at this location (readonly)"
+
+      next_inventory_date:
+        type: date?
+        description: "Next planned count (last_inventory_date + cyclic_inventory_frequency)"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    indexes:
+      - type: unique
+        fields: [barcode, company_id]
+        where: "deleted_at IS NULL"
+        description: "R4 — barcode unique per company (NULL barcodes unrestricted, as in Odoo _barcode_company_uniq)"
+      - type: index
+        name: _parent_path_id_idx
+        fields: [parent_path, id]
+        description: "Verbatim _parent_path_id_idx — parent_store hierarchy walks (spec flag: verbatim partial indexes)"
+      - type: index
+        fields: [location_id]
+        description: "Parent lookup"
+      - type: index
+        fields: [usage]
+        description: "Internal-location filtering"
+      - type: index
+        fields: [warehouse_id]
+      - type: index
+        fields: [company_id]
+        description: "Derived company filter (NULL = shared row, readable by all)"
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: LocationUsage
+    description: "stock.location.usage — only internal holds on-hand stock; view is a grouping node"
+    variants:
+      - name: supplier
+        description: "Vendor location (virtual; goods enter from here on receipt)"
+      - name: view
+        description: "View — grouping node, can never hold stock"
+      - name: internal
+        description: "Internal location — holds on-hand stock"
+        default: true
+      - name: customer
+        description: "Customer location (virtual; goods leave to here on delivery)"
+      - name: inventory
+        description: "Inventory loss — the scrap/adjustment sink"
+      - name: production
+        description: "Production (WIP)"
+      - name: transit
+        description: "Transit — inter-company holding"

@@ -116,7 +116,7 @@ async fn seed_coa(pool: &PgPool) -> (Uuid, HashMap<&'static str, Uuid>) {
     (company, m)
 }
 async fn warehouse(w: &InventoryWriteService, company: Uuid) -> Uuid {
-    w.create_warehouse(NewWarehouse { company_id: company, code: uq("WH"), name: "Main".into(), warehouse_type: None, parent_warehouse_id: None, is_group: false }).await.unwrap()
+    w.create_warehouse(NewWarehouse { company_id: company, code: uq("WH"), name: uq("Main"), warehouse_type: None, parent_warehouse_id: None, is_group: false }).await.unwrap()
 }
 async fn jrow(pool: &PgPool, jid: Uuid) -> (Decimal, Decimal) {
     let r = sqlx::query("SELECT total_debit, total_credit FROM accounting.journals WHERE id=$1").bind(jid).fetch_one(pool).await.unwrap();

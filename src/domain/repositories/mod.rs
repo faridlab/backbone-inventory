@@ -8,14 +8,25 @@
 
 pub mod delivery_note_repository;
 pub mod delivery_note_item_repository;
+pub mod location_repository;
+pub mod stock_move_repository;
+pub mod stock_move_line_repository;
+pub mod operation_type_repository;
+pub mod transfer_repository;
+pub mod route_repository;
+pub mod route_rule_repository;
+pub mod reordering_rule_repository;
 pub mod purchase_receipt_repository;
 pub mod purchase_receipt_item_repository;
+pub mod quant_repository;
 pub mod stock_entry_repository;
 pub mod stock_entry_item_repository;
 pub mod stock_ledger_entry_repository;
 pub mod bin_repository;
 pub mod stock_reconciliation_repository;
 pub mod stock_reconciliation_item_repository;
+pub mod lot_repository;
+pub mod package_repository;
 pub mod warehouse_repository;
 pub mod stock_item_repository;
 
@@ -32,6 +43,54 @@ pub use delivery_note_item_repository::{
     DeliveryNoteItemPaginatedResult,
     DeliveryNoteItemFilter,
 };
+pub use location_repository::{
+    LocationRepository,
+    LocationPaginationParams,
+    LocationPaginatedResult,
+    LocationFilter,
+};
+pub use stock_move_repository::{
+    StockMoveRepository,
+    StockMovePaginationParams,
+    StockMovePaginatedResult,
+    StockMoveFilter,
+};
+pub use stock_move_line_repository::{
+    StockMoveLineRepository,
+    StockMoveLinePaginationParams,
+    StockMoveLinePaginatedResult,
+    StockMoveLineFilter,
+};
+pub use operation_type_repository::{
+    OperationTypeRepository,
+    OperationTypePaginationParams,
+    OperationTypePaginatedResult,
+    OperationTypeFilter,
+};
+pub use transfer_repository::{
+    TransferRepository,
+    TransferPaginationParams,
+    TransferPaginatedResult,
+    TransferFilter,
+};
+pub use route_repository::{
+    RouteRepository,
+    RoutePaginationParams,
+    RoutePaginatedResult,
+    RouteFilter,
+};
+pub use route_rule_repository::{
+    RouteRuleRepository,
+    RouteRulePaginationParams,
+    RouteRulePaginatedResult,
+    RouteRuleFilter,
+};
+pub use reordering_rule_repository::{
+    ReorderingRuleRepository,
+    ReorderingRulePaginationParams,
+    ReorderingRulePaginatedResult,
+    ReorderingRuleFilter,
+};
 pub use purchase_receipt_repository::{
     PurchaseReceiptRepository,
     PurchaseReceiptPaginationParams,
@@ -43,6 +102,12 @@ pub use purchase_receipt_item_repository::{
     PurchaseReceiptItemPaginationParams,
     PurchaseReceiptItemPaginatedResult,
     PurchaseReceiptItemFilter,
+};
+pub use quant_repository::{
+    QuantRepository,
+    QuantPaginationParams,
+    QuantPaginatedResult,
+    QuantFilter,
 };
 pub use stock_entry_repository::{
     StockEntryRepository,
@@ -79,6 +144,18 @@ pub use stock_reconciliation_item_repository::{
     StockReconciliationItemPaginationParams,
     StockReconciliationItemPaginatedResult,
     StockReconciliationItemFilter,
+};
+pub use lot_repository::{
+    LotRepository,
+    LotPaginationParams,
+    LotPaginatedResult,
+    LotFilter,
+};
+pub use package_repository::{
+    PackageRepository,
+    PackagePaginationParams,
+    PackagePaginatedResult,
+    PackageFilter,
 };
 pub use warehouse_repository::{
     WarehouseRepository,

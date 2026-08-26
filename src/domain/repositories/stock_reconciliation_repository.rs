@@ -49,6 +49,7 @@ pub struct StockReconciliationFilter {
     pub warehouse_id: Option<Uuid>,
     pub inventory_account_id: Option<Uuid>,
     pub adjustment_account_id: Option<Uuid>,
+    pub transfer_id: Option<Uuid>,
     pub status: Option<DocStatus>,
     pub posting_state: Option<GlPostingState>,
     pub journal_id: Option<Uuid>,
@@ -58,7 +59,7 @@ pub struct StockReconciliationFilter {
 impl StockReconciliationFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.recon_number.is_some() || self.company_id.is_some() || self.warehouse_id.is_some() || self.inventory_account_id.is_some() || self.adjustment_account_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some()
+        self.recon_number.is_some() || self.company_id.is_some() || self.warehouse_id.is_some() || self.inventory_account_id.is_some() || self.adjustment_account_id.is_some() || self.transfer_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some()
     }
 }
 

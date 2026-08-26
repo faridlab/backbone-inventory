@@ -59,6 +59,7 @@ pub struct StockReconciliation {
     pub net_difference: Decimal,
     pub inventory_account_id: Uuid,
     pub adjustment_account_id: Uuid,
+    pub transfer_id: Option<Uuid>,
     pub status: DocStatus,
     pub posting_state: GlPostingState,
     pub journal_id: Option<Uuid>,
@@ -86,6 +87,7 @@ impl StockReconciliation {
             net_difference,
             inventory_account_id,
             adjustment_account_id,
+            transfer_id: None,
             status,
             posting_state,
             journal_id: None,
@@ -155,6 +157,12 @@ impl StockReconciliation {
     // Fluent Setters (with_* for optional fields)
     // ==========================================================
 
+    /// Set the transfer_id field (chainable)
+    pub fn with_transfer_id(mut self, value: Uuid) -> Self {
+        self.transfer_id = Some(value);
+        self
+    }
+
     /// Set the journal_id field (chainable)
     pub fn with_journal_id(mut self, value: Uuid) -> Self {
         self.journal_id = Some(value);
@@ -201,6 +209,9 @@ impl StockReconciliation {
                 }
                 "adjustment_account_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.adjustment_account_id = v; }
+                }
+                "transfer_id" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.transfer_id = v; }
                 }
                 "status" => {
                     if let Ok(v) = serde_json::from_value(value) { self.status = v; }
@@ -275,6 +286,7 @@ impl backbone_orm::EntityRepoMeta for StockReconciliation {
         m.insert("warehouse_id".to_string(), "uuid".to_string());
         m.insert("inventory_account_id".to_string(), "uuid".to_string());
         m.insert("adjustment_account_id".to_string(), "uuid".to_string());
+        m.insert("transfer_id".to_string(), "uuid".to_string());
         m.insert("journal_id".to_string(), "uuid".to_string());
         m.insert("accounting_post_id".to_string(), "uuid".to_string());
         m.insert("status".to_string(), "doc_status".to_string());
@@ -302,6 +314,7 @@ pub struct StockReconciliationBuilder {
     net_difference: Option<Decimal>,
     inventory_account_id: Option<Uuid>,
     adjustment_account_id: Option<Uuid>,
+    transfer_id: Option<Uuid>,
     status: Option<DocStatus>,
     posting_state: Option<GlPostingState>,
     journal_id: Option<Uuid>,
@@ -349,6 +362,12 @@ impl StockReconciliationBuilder {
     /// Set the adjustment_account_id field (required)
     pub fn adjustment_account_id(mut self, value: Uuid) -> Self {
         self.adjustment_account_id = Some(value);
+        self
+    }
+
+    /// Set the transfer_id field (optional)
+    pub fn transfer_id(mut self, value: Uuid) -> Self {
+        self.transfer_id = Some(value);
         self
     }
 
@@ -402,6 +421,7 @@ impl StockReconciliationBuilder {
             net_difference: self.net_difference.unwrap_or(Decimal::from(0)),
             inventory_account_id,
             adjustment_account_id,
+            transfer_id: self.transfer_id,
             status: self.status.unwrap_or_default(),
             posting_state: self.posting_state.unwrap_or_default(),
             journal_id: self.journal_id,

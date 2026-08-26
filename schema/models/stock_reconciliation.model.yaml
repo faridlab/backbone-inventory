@@ -53,10 +53,17 @@ models:
         attributes: ["@required", "@exclude_from_foreign_key_check"]
         description: "Stock-adjustment (P&L) account # logical FK to accounting.Account.id"
 
+      transfer_id:
+        type: uuid?
+        attributes: ["@foreign_key(Transfer.id)"]
+        description: "The adjustment transfer this voucher minted (SC-1 convergence): submitting the reconciliation mints a Transfer (internal, is_inventory moves) grouping its StockMoves; the move pipeline's _action_done writes the SLE rows and the value-difference GL post. NULL = not yet minted (draft). Note the quant-staged counting flow (T4) stages counts on stock_quants and mints moves directly — this voucher remains the DOCUMENTED batch-count write surface"
+
       status:
         type: DocStatus
         attributes: ["@default(draft)"]
-        description: "Document lifecycle"
+        lifecycle:
+          shape: hand_set
+        description: "Document lifecycle (hand_set, ADR-0016): draft -> submitted -> cancelled, driven by the voucher submit/cancel pipeline — the minted transfer's state is a projection (T1) and never feeds back into this field"
 
       posting_state:
         type: GlPostingState
@@ -97,6 +104,9 @@ models:
         fields: [company_id, status]
       - type: index
         fields: [posting_state]
+      - type: index
+        fields: [transfer_id]
+        description: "Minted-transfer lookup (voucher -> picking projection)"
 
   - name: StockReconciliationItem
     collection: stock_reconciliation_items

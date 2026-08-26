@@ -63,6 +63,7 @@ pub struct PurchaseReceipt {
     pub total_value: Decimal,
     pub inventory_account_id: Uuid,
     pub grir_account_id: Uuid,
+    pub transfer_id: Option<Uuid>,
     pub status: DocStatus,
     pub posting_state: GlPostingState,
     pub journal_id: Option<Uuid>,
@@ -95,6 +96,7 @@ impl PurchaseReceipt {
             total_value,
             inventory_account_id,
             grir_account_id,
+            transfer_id: None,
             status,
             posting_state,
             journal_id: None,
@@ -177,6 +179,12 @@ impl PurchaseReceipt {
         self
     }
 
+    /// Set the transfer_id field (chainable)
+    pub fn with_transfer_id(mut self, value: Uuid) -> Self {
+        self.transfer_id = Some(value);
+        self
+    }
+
     /// Set the journal_id field (chainable)
     pub fn with_journal_id(mut self, value: Uuid) -> Self {
         self.journal_id = Some(value);
@@ -241,6 +249,9 @@ impl PurchaseReceipt {
                 }
                 "grir_account_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.grir_account_id = v; }
+                }
+                "transfer_id" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.transfer_id = v; }
                 }
                 "status" => {
                     if let Ok(v) = serde_json::from_value(value) { self.status = v; }
@@ -321,6 +332,7 @@ impl backbone_orm::EntityRepoMeta for PurchaseReceipt {
         m.insert("warehouse_id".to_string(), "uuid".to_string());
         m.insert("inventory_account_id".to_string(), "uuid".to_string());
         m.insert("grir_account_id".to_string(), "uuid".to_string());
+        m.insert("transfer_id".to_string(), "uuid".to_string());
         m.insert("journal_id".to_string(), "uuid".to_string());
         m.insert("accounting_post_id".to_string(), "uuid".to_string());
         m.insert("status".to_string(), "doc_status".to_string());
@@ -352,6 +364,7 @@ pub struct PurchaseReceiptBuilder {
     total_value: Option<Decimal>,
     inventory_account_id: Option<Uuid>,
     grir_account_id: Option<Uuid>,
+    transfer_id: Option<Uuid>,
     status: Option<DocStatus>,
     posting_state: Option<GlPostingState>,
     journal_id: Option<Uuid>,
@@ -427,6 +440,12 @@ impl PurchaseReceiptBuilder {
         self
     }
 
+    /// Set the transfer_id field (optional)
+    pub fn transfer_id(mut self, value: Uuid) -> Self {
+        self.transfer_id = Some(value);
+        self
+    }
+
     /// Set the status field (default: `DocStatus::default()`)
     pub fn status(mut self, value: DocStatus) -> Self {
         self.status = Some(value);
@@ -488,6 +507,7 @@ impl PurchaseReceiptBuilder {
             total_value: self.total_value.unwrap_or(Decimal::from(0)),
             inventory_account_id,
             grir_account_id,
+            transfer_id: self.transfer_id,
             status: self.status.unwrap_or_default(),
             posting_state: self.posting_state.unwrap_or_default(),
             journal_id: self.journal_id,

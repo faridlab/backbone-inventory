@@ -59,6 +59,7 @@ pub struct DeliveryNoteDto {
     pub total_cogs: Decimal,
     pub cogs_account_id: Uuid,
     pub inventory_account_id: Uuid,
+    pub transfer_id: Option<Uuid>,
     pub status: DocStatus,
     pub posting_state: GlPostingState,
     pub journal_id: Option<Uuid>,
@@ -141,6 +142,558 @@ pub struct DeliveryNoteItemRef {
 }
 
 // ============================================================================
+// LOCATION TYPES
+// ============================================================================
+
+/// Type-safe ID for Location
+///
+/// Use this instead of raw Uuid for type safety across modules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct LocationId(pub Uuid);
+
+impl LocationId {
+    pub fn new(id: Uuid) -> Self {
+        Self(id)
+    }
+
+    pub fn into_inner(self) -> Uuid {
+        self.0
+    }
+}
+
+impl From<Uuid> for LocationId {
+    fn from(id: Uuid) -> Self {
+        Self(id)
+    }
+}
+
+impl From<LocationId> for Uuid {
+    fn from(id: LocationId) -> Self {
+        id.0
+    }
+}
+
+/// Data transfer object for Location
+///
+/// This is the public representation of Location for other modules.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationDto {
+    pub id: LocationId,
+    pub name: String,
+    pub complete_name: String,
+    pub active: bool,
+    pub usage: LocationUsage,
+    pub location_id: Option<Uuid>,
+    pub parent_path: String,
+    pub barcode: Option<String>,
+    pub company_id: Option<Uuid>,
+    pub warehouse_id: Option<Uuid>,
+    pub cyclic_inventory_frequency: i32,
+    pub last_inventory_date: Option<NaiveDate>,
+    pub next_inventory_date: Option<NaiveDate>,
+    pub metadata: serde_json::Value,
+}
+
+/// Summary view of Location for list displays
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationSummary {
+    pub id: LocationId,
+    pub name: String,
+    pub complete_name: String,
+}
+
+/// Reference to Location for foreign key relationships
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationRef {
+    pub id: LocationId,
+}
+
+// ============================================================================
+// STOCKMOVE TYPES
+// ============================================================================
+
+/// Type-safe ID for StockMove
+///
+/// Use this instead of raw Uuid for type safety across modules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct StockMoveId(pub Uuid);
+
+impl StockMoveId {
+    pub fn new(id: Uuid) -> Self {
+        Self(id)
+    }
+
+    pub fn into_inner(self) -> Uuid {
+        self.0
+    }
+}
+
+impl From<Uuid> for StockMoveId {
+    fn from(id: Uuid) -> Self {
+        Self(id)
+    }
+}
+
+impl From<StockMoveId> for Uuid {
+    fn from(id: StockMoveId) -> Self {
+        id.0
+    }
+}
+
+/// Data transfer object for StockMove
+///
+/// This is the public representation of StockMove for other modules.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StockMoveDto {
+    pub id: StockMoveId,
+    pub name: String,
+    pub state: MoveState,
+    pub priority: Priority,
+    pub create_date: DateTime<Utc>,
+    pub date: DateTime<Utc>,
+    pub item_id: Uuid,
+    pub demand_qty: Decimal,
+    pub quantity: Decimal,
+    pub price_unit: Decimal,
+    pub procure_method: ProcureMethod,
+    pub picking_id: Option<Uuid>,
+    pub origin: Option<String>,
+    pub location_id: Uuid,
+    pub location_dest_id: Uuid,
+    pub partner_id: Option<Uuid>,
+    pub company_id: Uuid,
+    pub rule_id: Option<Uuid>,
+    pub warehouse_id: Option<Uuid>,
+    pub orderpoint_id: Option<Uuid>,
+    pub move_orig_ids: Vec<Uuid>,
+    pub move_dest_ids: Vec<Uuid>,
+    pub is_inventory: bool,
+    pub scrapped: bool,
+    pub propagate_cancel: bool,
+    pub metadata: serde_json::Value,
+}
+
+/// Summary view of StockMove for list displays
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StockMoveSummary {
+    pub id: StockMoveId,
+    pub name: String,
+}
+
+/// Reference to StockMove for foreign key relationships
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StockMoveRef {
+    pub id: StockMoveId,
+}
+
+// ============================================================================
+// STOCKMOVELINE TYPES
+// ============================================================================
+
+/// Type-safe ID for StockMoveLine
+///
+/// Use this instead of raw Uuid for type safety across modules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct StockMoveLineId(pub Uuid);
+
+impl StockMoveLineId {
+    pub fn new(id: Uuid) -> Self {
+        Self(id)
+    }
+
+    pub fn into_inner(self) -> Uuid {
+        self.0
+    }
+}
+
+impl From<Uuid> for StockMoveLineId {
+    fn from(id: Uuid) -> Self {
+        Self(id)
+    }
+}
+
+impl From<StockMoveLineId> for Uuid {
+    fn from(id: StockMoveLineId) -> Self {
+        id.0
+    }
+}
+
+/// Data transfer object for StockMoveLine
+///
+/// This is the public representation of StockMoveLine for other modules.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StockMoveLineDto {
+    pub id: StockMoveLineId,
+    pub quantity: Decimal,
+    pub quantity_product_uom_id: Option<Uuid>,
+    pub picked: bool,
+    pub lot_id: Option<Uuid>,
+    pub package_id: Option<Uuid>,
+    pub result_package_id: Option<Uuid>,
+    pub owner_id: Option<Uuid>,
+    pub state: MoveState,
+    pub date: DateTime<Utc>,
+    pub move_id: Uuid,
+    pub picking_id: Option<Uuid>,
+    pub location_id: Uuid,
+    pub location_dest_id: Uuid,
+    pub item_id: Uuid,
+    pub company_id: Uuid,
+    pub metadata: serde_json::Value,
+}
+
+/// Summary view of StockMoveLine for list displays
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StockMoveLineSummary {
+    pub id: StockMoveLineId,
+}
+
+/// Reference to StockMoveLine for foreign key relationships
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StockMoveLineRef {
+    pub id: StockMoveLineId,
+}
+
+// ============================================================================
+// OPERATIONTYPE TYPES
+// ============================================================================
+
+/// Type-safe ID for OperationType
+///
+/// Use this instead of raw Uuid for type safety across modules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct OperationTypeId(pub Uuid);
+
+impl OperationTypeId {
+    pub fn new(id: Uuid) -> Self {
+        Self(id)
+    }
+
+    pub fn into_inner(self) -> Uuid {
+        self.0
+    }
+}
+
+impl From<Uuid> for OperationTypeId {
+    fn from(id: Uuid) -> Self {
+        Self(id)
+    }
+}
+
+impl From<OperationTypeId> for Uuid {
+    fn from(id: OperationTypeId) -> Self {
+        id.0
+    }
+}
+
+/// Data transfer object for OperationType
+///
+/// This is the public representation of OperationType for other modules.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OperationTypeDto {
+    pub id: OperationTypeId,
+    pub name: String,
+    pub sequence_code: String,
+    pub code: PickingCode,
+    pub active: bool,
+    pub sequence: i32,
+    pub company_id: Option<Uuid>,
+    pub warehouse_id: Option<Uuid>,
+    pub default_location_src_id: Uuid,
+    pub default_location_dest_id: Uuid,
+    pub reservation_method: ReservationMethod,
+    pub reservation_days_before: Option<i32>,
+    pub move_type: MoveType,
+    pub create_backorder: CreateBackorder,
+    pub use_create_lots: bool,
+    pub use_existing_lots: bool,
+    pub metadata: serde_json::Value,
+}
+
+/// Summary view of OperationType for list displays
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OperationTypeSummary {
+    pub id: OperationTypeId,
+    pub name: String,
+}
+
+/// Reference to OperationType for foreign key relationships
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OperationTypeRef {
+    pub id: OperationTypeId,
+}
+
+// ============================================================================
+// TRANSFER TYPES
+// ============================================================================
+
+/// Type-safe ID for Transfer
+///
+/// Use this instead of raw Uuid for type safety across modules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TransferId(pub Uuid);
+
+impl TransferId {
+    pub fn new(id: Uuid) -> Self {
+        Self(id)
+    }
+
+    pub fn into_inner(self) -> Uuid {
+        self.0
+    }
+}
+
+impl From<Uuid> for TransferId {
+    fn from(id: Uuid) -> Self {
+        Self(id)
+    }
+}
+
+impl From<TransferId> for Uuid {
+    fn from(id: TransferId) -> Self {
+        id.0
+    }
+}
+
+/// Data transfer object for Transfer
+///
+/// This is the public representation of Transfer for other modules.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferDto {
+    pub id: TransferId,
+    pub name: String,
+    pub origin: Option<String>,
+    pub note: Option<String>,
+    pub priority: Priority,
+    pub picking_type_id: Uuid,
+    pub location_id: Uuid,
+    pub location_dest_id: Uuid,
+    pub partner_id: Option<Uuid>,
+    pub company_id: Uuid,
+    pub move_type: MoveType,
+    pub scheduled_date: DateTime<Utc>,
+    pub date_done: Option<DateTime<Utc>>,
+    pub state: TransferState,
+    pub is_locked: bool,
+    pub backorder_id: Option<Uuid>,
+    pub return_id: Option<Uuid>,
+    pub metadata: serde_json::Value,
+}
+
+/// Summary view of Transfer for list displays
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferSummary {
+    pub id: TransferId,
+    pub name: String,
+}
+
+/// Reference to Transfer for foreign key relationships
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferRef {
+    pub id: TransferId,
+}
+
+// ============================================================================
+// ROUTE TYPES
+// ============================================================================
+
+/// Type-safe ID for Route
+///
+/// Use this instead of raw Uuid for type safety across modules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct RouteId(pub Uuid);
+
+impl RouteId {
+    pub fn new(id: Uuid) -> Self {
+        Self(id)
+    }
+
+    pub fn into_inner(self) -> Uuid {
+        self.0
+    }
+}
+
+impl From<Uuid> for RouteId {
+    fn from(id: Uuid) -> Self {
+        Self(id)
+    }
+}
+
+impl From<RouteId> for Uuid {
+    fn from(id: RouteId) -> Self {
+        id.0
+    }
+}
+
+/// Data transfer object for Route
+///
+/// This is the public representation of Route for other modules.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteDto {
+    pub id: RouteId,
+    pub name: String,
+    pub active: bool,
+    pub sequence: i32,
+    pub product_selectable: bool,
+    pub product_categ_selectable: bool,
+    pub warehouse_selectable: bool,
+    pub company_id: Option<Uuid>,
+    pub metadata: serde_json::Value,
+}
+
+/// Summary view of Route for list displays
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteSummary {
+    pub id: RouteId,
+    pub name: String,
+}
+
+/// Reference to Route for foreign key relationships
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteRef {
+    pub id: RouteId,
+}
+
+// ============================================================================
+// ROUTERULE TYPES
+// ============================================================================
+
+/// Type-safe ID for RouteRule
+///
+/// Use this instead of raw Uuid for type safety across modules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct RouteRuleId(pub Uuid);
+
+impl RouteRuleId {
+    pub fn new(id: Uuid) -> Self {
+        Self(id)
+    }
+
+    pub fn into_inner(self) -> Uuid {
+        self.0
+    }
+}
+
+impl From<Uuid> for RouteRuleId {
+    fn from(id: Uuid) -> Self {
+        Self(id)
+    }
+}
+
+impl From<RouteRuleId> for Uuid {
+    fn from(id: RouteRuleId) -> Self {
+        id.0
+    }
+}
+
+/// Data transfer object for RouteRule
+///
+/// This is the public representation of RouteRule for other modules.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteRuleDto {
+    pub id: RouteRuleId,
+    pub name: String,
+    pub active: bool,
+    pub sequence: i32,
+    pub action: RuleAction,
+    pub auto: RuleAuto,
+    pub procure_method: ProcureMethod,
+    pub delay: i32,
+    pub location_src_id: Option<Uuid>,
+    pub location_dest_id: Uuid,
+    pub picking_type_id: Uuid,
+    pub route_id: Uuid,
+    pub warehouse_id: Option<Uuid>,
+    pub company_id: Option<Uuid>,
+    pub propagate_cancel: bool,
+    pub metadata: serde_json::Value,
+}
+
+/// Summary view of RouteRule for list displays
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteRuleSummary {
+    pub id: RouteRuleId,
+    pub name: String,
+}
+
+/// Reference to RouteRule for foreign key relationships
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteRuleRef {
+    pub id: RouteRuleId,
+}
+
+// ============================================================================
+// REORDERINGRULE TYPES
+// ============================================================================
+
+/// Type-safe ID for ReorderingRule
+///
+/// Use this instead of raw Uuid for type safety across modules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ReorderingRuleId(pub Uuid);
+
+impl ReorderingRuleId {
+    pub fn new(id: Uuid) -> Self {
+        Self(id)
+    }
+
+    pub fn into_inner(self) -> Uuid {
+        self.0
+    }
+}
+
+impl From<Uuid> for ReorderingRuleId {
+    fn from(id: Uuid) -> Self {
+        Self(id)
+    }
+}
+
+impl From<ReorderingRuleId> for Uuid {
+    fn from(id: ReorderingRuleId) -> Self {
+        id.0
+    }
+}
+
+/// Data transfer object for ReorderingRule
+///
+/// This is the public representation of ReorderingRule for other modules.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReorderingRuleDto {
+    pub id: ReorderingRuleId,
+    pub name: String,
+    pub trigger: OrderpointTrigger,
+    pub active: bool,
+    pub snoozed_until: Option<NaiveDate>,
+    pub item_id: Uuid,
+    pub location_id: Uuid,
+    pub warehouse_id: Uuid,
+    pub company_id: Uuid,
+    pub item_min_qty: Decimal,
+    pub item_max_qty: Decimal,
+    pub route_id: Option<Uuid>,
+    pub qty_on_hand: Decimal,
+    pub qty_forecast: Decimal,
+    pub qty_to_order: Decimal,
+    pub qty_to_order_manual: Decimal,
+    pub lead_days: Decimal,
+    pub deadline_date: Option<NaiveDate>,
+    pub metadata: serde_json::Value,
+}
+
+/// Summary view of ReorderingRule for list displays
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReorderingRuleSummary {
+    pub id: ReorderingRuleId,
+    pub name: String,
+}
+
+/// Reference to ReorderingRule for foreign key relationships
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReorderingRuleRef {
+    pub id: ReorderingRuleId,
+}
+
+// ============================================================================
 // PURCHASERECEIPT TYPES
 // ============================================================================
 
@@ -189,6 +742,7 @@ pub struct PurchaseReceiptDto {
     pub total_value: Decimal,
     pub inventory_account_id: Uuid,
     pub grir_account_id: Uuid,
+    pub transfer_id: Option<Uuid>,
     pub status: DocStatus,
     pub posting_state: GlPostingState,
     pub journal_id: Option<Uuid>,
@@ -271,6 +825,74 @@ pub struct PurchaseReceiptItemRef {
 }
 
 // ============================================================================
+// QUANT TYPES
+// ============================================================================
+
+/// Type-safe ID for Quant
+///
+/// Use this instead of raw Uuid for type safety across modules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct QuantId(pub Uuid);
+
+impl QuantId {
+    pub fn new(id: Uuid) -> Self {
+        Self(id)
+    }
+
+    pub fn into_inner(self) -> Uuid {
+        self.0
+    }
+}
+
+impl From<Uuid> for QuantId {
+    fn from(id: Uuid) -> Self {
+        Self(id)
+    }
+}
+
+impl From<QuantId> for Uuid {
+    fn from(id: QuantId) -> Self {
+        id.0
+    }
+}
+
+/// Data transfer object for Quant
+///
+/// This is the public representation of Quant for other modules.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuantDto {
+    pub id: QuantId,
+    pub item_id: Uuid,
+    pub location_id: Uuid,
+    pub lot_id: Option<Uuid>,
+    pub package_id: Option<Uuid>,
+    pub owner_id: Option<Uuid>,
+    pub quantity: Decimal,
+    pub reserved_quantity: Decimal,
+    pub available_quantity: Decimal,
+    pub in_date: Option<DateTime<Utc>>,
+    pub inventory_quantity: Option<Decimal>,
+    pub inventory_diff_quantity: Option<Decimal>,
+    pub inventory_quantity_set: bool,
+    pub inventory_date: Option<NaiveDate>,
+    pub sn_duplicated: bool,
+    pub company_id: Uuid,
+    pub metadata: serde_json::Value,
+}
+
+/// Summary view of Quant for list displays
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuantSummary {
+    pub id: QuantId,
+}
+
+/// Reference to Quant for foreign key relationships
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuantRef {
+    pub id: QuantId,
+}
+
+// ============================================================================
 // STOCKENTRY TYPES
 // ============================================================================
 
@@ -314,6 +936,7 @@ pub struct StockEntryDto {
     pub from_warehouse_id: Option<Uuid>,
     pub to_warehouse_id: Option<Uuid>,
     pub posting_date: NaiveDate,
+    pub transfer_id: Option<Uuid>,
     pub status: DocStatus,
     pub posting_state: GlPostingState,
     pub notes: Option<String>,
@@ -564,6 +1187,7 @@ pub struct StockReconciliationDto {
     pub net_difference: Decimal,
     pub inventory_account_id: Uuid,
     pub adjustment_account_id: Uuid,
+    pub transfer_id: Option<Uuid>,
     pub status: DocStatus,
     pub posting_state: GlPostingState,
     pub journal_id: Option<Uuid>,
@@ -643,6 +1267,129 @@ pub struct StockReconciliationItemSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StockReconciliationItemRef {
     pub id: StockReconciliationItemId,
+}
+
+// ============================================================================
+// LOT TYPES
+// ============================================================================
+
+/// Type-safe ID for Lot
+///
+/// Use this instead of raw Uuid for type safety across modules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct LotId(pub Uuid);
+
+impl LotId {
+    pub fn new(id: Uuid) -> Self {
+        Self(id)
+    }
+
+    pub fn into_inner(self) -> Uuid {
+        self.0
+    }
+}
+
+impl From<Uuid> for LotId {
+    fn from(id: Uuid) -> Self {
+        Self(id)
+    }
+}
+
+impl From<LotId> for Uuid {
+    fn from(id: LotId) -> Self {
+        id.0
+    }
+}
+
+/// Data transfer object for Lot
+///
+/// This is the public representation of Lot for other modules.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LotDto {
+    pub id: LotId,
+    pub name: String,
+    pub reference: Option<String>,
+    pub item_id: Uuid,
+    pub company_id: Option<Uuid>,
+    pub product_qty: Decimal,
+    pub location_id: Option<Uuid>,
+    pub note: Option<String>,
+    pub metadata: serde_json::Value,
+}
+
+/// Summary view of Lot for list displays
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LotSummary {
+    pub id: LotId,
+    pub name: String,
+}
+
+/// Reference to Lot for foreign key relationships
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LotRef {
+    pub id: LotId,
+}
+
+// ============================================================================
+// PACKAGE TYPES
+// ============================================================================
+
+/// Type-safe ID for Package
+///
+/// Use this instead of raw Uuid for type safety across modules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PackageId(pub Uuid);
+
+impl PackageId {
+    pub fn new(id: Uuid) -> Self {
+        Self(id)
+    }
+
+    pub fn into_inner(self) -> Uuid {
+        self.0
+    }
+}
+
+impl From<Uuid> for PackageId {
+    fn from(id: Uuid) -> Self {
+        Self(id)
+    }
+}
+
+impl From<PackageId> for Uuid {
+    fn from(id: PackageId) -> Self {
+        id.0
+    }
+}
+
+/// Data transfer object for Package
+///
+/// This is the public representation of Package for other modules.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageDto {
+    pub id: PackageId,
+    pub name: String,
+    pub complete_name: String,
+    pub location_id: Option<Uuid>,
+    pub company_id: Option<Uuid>,
+    pub parent_package_id: Option<Uuid>,
+    pub parent_path: String,
+    pub pack_date: Option<NaiveDate>,
+    pub metadata: serde_json::Value,
+}
+
+/// Summary view of Package for list displays
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageSummary {
+    pub id: PackageId,
+    pub name: String,
+    pub complete_name: String,
+}
+
+/// Reference to Package for foreign key relationships
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageRef {
+    pub id: PackageId,
 }
 
 // ============================================================================

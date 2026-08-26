@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::infrastructure::persistence::BinRepository;
+use crate::infrastructure::persistence::{BinRepository, QuantRepository};
 
 /// The available-to-commit view over a bin: `available_qty = actual_qty − reserved_qty`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -24,6 +24,20 @@ pub struct AvailabilityView {
     pub actual_qty: Decimal,
     pub reserved_qty: Decimal,
     pub available_qty: Decimal,
+}
+
+/// The quant-grain availability view at one LOCATION (the reservation triangle's READ arm, spec
+/// stock-business-logic §3 / stock.hook.yaml T2): `available_qty = quantity − reserved_quantity`
+/// summed over the location's quant rows — the authoritative pair, read off; never a second
+/// writer. `quant_count` is the dimension-tuple spread (item x lot x package x owner rows).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct QuantAvailability {
+    pub item_id: Uuid,
+    pub location_id: Uuid,
+    pub on_hand_qty: Decimal,
+    pub reserved_qty: Decimal,
+    pub available_qty: Decimal,
+    pub quant_count: i64,
 }
 
 /// The valuation view over a bin.
@@ -43,12 +57,14 @@ pub struct StockBalance {
 pub struct InventoryReadService {
     db_pool: PgPool,
     bins: Arc<BinRepository>,
+    quants: Arc<QuantRepository>,
 }
 
 impl InventoryReadService {
     pub fn new(db_pool: PgPool) -> Self {
         Self {
             bins: Arc::new(BinRepository::new(db_pool.clone())),
+            quants: Arc::new(QuantRepository::new(db_pool.clone())),
             db_pool,
         }
     }
@@ -81,5 +97,21 @@ impl InventoryReadService {
             item_id, warehouse_id,
             actual_qty: r.actual_qty, valuation_rate: r.valuation_rate, stock_value: r.stock_value,
         }))
+    }
+
+    /// Quant-grain availability at one location: `available = quantity − reserved` over the
+    /// location's quant rows (T2 — the READ arm of the reservation triangle; the warehouse-grain
+    /// [`Self::availability`] above projects the same invariant off the Bin balance). Zeroed view
+    /// when no quant exists — an unreceived item is unavailable, not an error.
+    pub async fn quant_availability(&self, company_id: Uuid, item_id: Uuid, location_id: Uuid) -> Result<QuantAvailability, sqlx::Error> {
+        let row = self.quants.fetch_on_hand(&self.db_pool, company_id, item_id, location_id).await?;
+        Ok(QuantAvailability {
+            item_id,
+            location_id,
+            on_hand_qty: row.on_hand_qty,
+            reserved_qty: row.reserved_qty,
+            available_qty: row.on_hand_qty - row.reserved_qty,
+            quant_count: row.quant_count,
+        })
     }
 }

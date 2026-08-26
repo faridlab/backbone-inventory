@@ -49,6 +49,7 @@ pub struct StockEntryFilter {
     pub stock_entry_type: Option<StockEntryType>,
     pub from_warehouse_id: Option<Uuid>,
     pub to_warehouse_id: Option<Uuid>,
+    pub transfer_id: Option<Uuid>,
     pub status: Option<DocStatus>,
     pub posting_state: Option<GlPostingState>,
     pub notes: Option<String>,
@@ -57,7 +58,7 @@ pub struct StockEntryFilter {
 impl StockEntryFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.entry_number.is_some() || self.company_id.is_some() || self.stock_entry_type.is_some() || self.from_warehouse_id.is_some() || self.to_warehouse_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.notes.is_some()
+        self.entry_number.is_some() || self.company_id.is_some() || self.stock_entry_type.is_some() || self.from_warehouse_id.is_some() || self.to_warehouse_id.is_some() || self.transfer_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.notes.is_some()
     }
 }
 

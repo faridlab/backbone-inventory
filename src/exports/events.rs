@@ -65,6 +65,222 @@ pub struct DeliveryNoteItemDeletedEvent {
 }
 
 // ============================================================================
+// LOCATION EVENTS
+// ============================================================================
+
+/// Event published when a Location is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationCreatedEvent {
+    pub id: LocationId,
+    pub data: LocationDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a Location is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationUpdatedEvent {
+    pub id: LocationId,
+    pub data: LocationDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a Location is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationDeletedEvent {
+    pub id: LocationId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// STOCKMOVE EVENTS
+// ============================================================================
+
+/// Event published when a StockMove is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StockMoveCreatedEvent {
+    pub id: StockMoveId,
+    pub data: StockMoveDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a StockMove is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StockMoveUpdatedEvent {
+    pub id: StockMoveId,
+    pub data: StockMoveDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a StockMove is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StockMoveDeletedEvent {
+    pub id: StockMoveId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// STOCKMOVELINE EVENTS
+// ============================================================================
+
+/// Event published when a StockMoveLine is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StockMoveLineCreatedEvent {
+    pub id: StockMoveLineId,
+    pub data: StockMoveLineDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a StockMoveLine is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StockMoveLineUpdatedEvent {
+    pub id: StockMoveLineId,
+    pub data: StockMoveLineDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a StockMoveLine is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StockMoveLineDeletedEvent {
+    pub id: StockMoveLineId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// OPERATIONTYPE EVENTS
+// ============================================================================
+
+/// Event published when a OperationType is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OperationTypeCreatedEvent {
+    pub id: OperationTypeId,
+    pub data: OperationTypeDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a OperationType is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OperationTypeUpdatedEvent {
+    pub id: OperationTypeId,
+    pub data: OperationTypeDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a OperationType is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OperationTypeDeletedEvent {
+    pub id: OperationTypeId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// TRANSFER EVENTS
+// ============================================================================
+
+/// Event published when a Transfer is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferCreatedEvent {
+    pub id: TransferId,
+    pub data: TransferDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a Transfer is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferUpdatedEvent {
+    pub id: TransferId,
+    pub data: TransferDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a Transfer is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferDeletedEvent {
+    pub id: TransferId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// ROUTE EVENTS
+// ============================================================================
+
+/// Event published when a Route is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteCreatedEvent {
+    pub id: RouteId,
+    pub data: RouteDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a Route is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteUpdatedEvent {
+    pub id: RouteId,
+    pub data: RouteDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a Route is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteDeletedEvent {
+    pub id: RouteId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// ROUTERULE EVENTS
+// ============================================================================
+
+/// Event published when a RouteRule is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteRuleCreatedEvent {
+    pub id: RouteRuleId,
+    pub data: RouteRuleDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a RouteRule is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteRuleUpdatedEvent {
+    pub id: RouteRuleId,
+    pub data: RouteRuleDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a RouteRule is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteRuleDeletedEvent {
+    pub id: RouteRuleId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// REORDERINGRULE EVENTS
+// ============================================================================
+
+/// Event published when a ReorderingRule is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReorderingRuleCreatedEvent {
+    pub id: ReorderingRuleId,
+    pub data: ReorderingRuleDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a ReorderingRule is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReorderingRuleUpdatedEvent {
+    pub id: ReorderingRuleId,
+    pub data: ReorderingRuleDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a ReorderingRule is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReorderingRuleDeletedEvent {
+    pub id: ReorderingRuleId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
 // PURCHASERECEIPT EVENTS
 // ============================================================================
 
@@ -115,6 +331,33 @@ pub struct PurchaseReceiptItemUpdatedEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PurchaseReceiptItemDeletedEvent {
     pub id: PurchaseReceiptItemId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// QUANT EVENTS
+// ============================================================================
+
+/// Event published when a Quant is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuantCreatedEvent {
+    pub id: QuantId,
+    pub data: QuantDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a Quant is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuantUpdatedEvent {
+    pub id: QuantId,
+    pub data: QuantDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a Quant is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuantDeletedEvent {
+    pub id: QuantId,
     pub occurred_at: DateTime<Utc>,
 }
 
@@ -281,6 +524,60 @@ pub struct StockReconciliationItemDeletedEvent {
 }
 
 // ============================================================================
+// LOT EVENTS
+// ============================================================================
+
+/// Event published when a Lot is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LotCreatedEvent {
+    pub id: LotId,
+    pub data: LotDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a Lot is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LotUpdatedEvent {
+    pub id: LotId,
+    pub data: LotDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a Lot is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LotDeletedEvent {
+    pub id: LotId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// PACKAGE EVENTS
+// ============================================================================
+
+/// Event published when a Package is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageCreatedEvent {
+    pub id: PackageId,
+    pub data: PackageDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a Package is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageUpdatedEvent {
+    pub id: PackageId,
+    pub data: PackageDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a Package is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageDeletedEvent {
+    pub id: PackageId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
 // WAREHOUSE EVENTS
 // ============================================================================
 
@@ -348,12 +645,39 @@ pub enum InventoryEvent {
     DeliveryNoteItemCreated(DeliveryNoteItemCreatedEvent),
     DeliveryNoteItemUpdated(DeliveryNoteItemUpdatedEvent),
     DeliveryNoteItemDeleted(DeliveryNoteItemDeletedEvent),
+    LocationCreated(LocationCreatedEvent),
+    LocationUpdated(LocationUpdatedEvent),
+    LocationDeleted(LocationDeletedEvent),
+    StockMoveCreated(StockMoveCreatedEvent),
+    StockMoveUpdated(StockMoveUpdatedEvent),
+    StockMoveDeleted(StockMoveDeletedEvent),
+    StockMoveLineCreated(StockMoveLineCreatedEvent),
+    StockMoveLineUpdated(StockMoveLineUpdatedEvent),
+    StockMoveLineDeleted(StockMoveLineDeletedEvent),
+    OperationTypeCreated(OperationTypeCreatedEvent),
+    OperationTypeUpdated(OperationTypeUpdatedEvent),
+    OperationTypeDeleted(OperationTypeDeletedEvent),
+    TransferCreated(TransferCreatedEvent),
+    TransferUpdated(TransferUpdatedEvent),
+    TransferDeleted(TransferDeletedEvent),
+    RouteCreated(RouteCreatedEvent),
+    RouteUpdated(RouteUpdatedEvent),
+    RouteDeleted(RouteDeletedEvent),
+    RouteRuleCreated(RouteRuleCreatedEvent),
+    RouteRuleUpdated(RouteRuleUpdatedEvent),
+    RouteRuleDeleted(RouteRuleDeletedEvent),
+    ReorderingRuleCreated(ReorderingRuleCreatedEvent),
+    ReorderingRuleUpdated(ReorderingRuleUpdatedEvent),
+    ReorderingRuleDeleted(ReorderingRuleDeletedEvent),
     PurchaseReceiptCreated(PurchaseReceiptCreatedEvent),
     PurchaseReceiptUpdated(PurchaseReceiptUpdatedEvent),
     PurchaseReceiptDeleted(PurchaseReceiptDeletedEvent),
     PurchaseReceiptItemCreated(PurchaseReceiptItemCreatedEvent),
     PurchaseReceiptItemUpdated(PurchaseReceiptItemUpdatedEvent),
     PurchaseReceiptItemDeleted(PurchaseReceiptItemDeletedEvent),
+    QuantCreated(QuantCreatedEvent),
+    QuantUpdated(QuantUpdatedEvent),
+    QuantDeleted(QuantDeletedEvent),
     StockEntryCreated(StockEntryCreatedEvent),
     StockEntryUpdated(StockEntryUpdatedEvent),
     StockEntryDeleted(StockEntryDeletedEvent),
@@ -372,6 +696,12 @@ pub enum InventoryEvent {
     StockReconciliationItemCreated(StockReconciliationItemCreatedEvent),
     StockReconciliationItemUpdated(StockReconciliationItemUpdatedEvent),
     StockReconciliationItemDeleted(StockReconciliationItemDeletedEvent),
+    LotCreated(LotCreatedEvent),
+    LotUpdated(LotUpdatedEvent),
+    LotDeleted(LotDeletedEvent),
+    PackageCreated(PackageCreatedEvent),
+    PackageUpdated(PackageUpdatedEvent),
+    PackageDeleted(PackageDeletedEvent),
     WarehouseCreated(WarehouseCreatedEvent),
     WarehouseUpdated(WarehouseUpdatedEvent),
     WarehouseDeleted(WarehouseDeletedEvent),

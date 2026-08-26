@@ -33,12 +33,39 @@ pub use events::*;
 /// - `DeliveryNoteItemDto` - Data transfer object for DeliveryNoteItem
 /// - `DeliveryNoteItemSummary` - Summary view of DeliveryNoteItem
 /// - `DeliveryNoteItemId` - Type-safe ID wrapper
+/// - `LocationDto` - Data transfer object for Location
+/// - `LocationSummary` - Summary view of Location
+/// - `LocationId` - Type-safe ID wrapper
+/// - `StockMoveDto` - Data transfer object for StockMove
+/// - `StockMoveSummary` - Summary view of StockMove
+/// - `StockMoveId` - Type-safe ID wrapper
+/// - `StockMoveLineDto` - Data transfer object for StockMoveLine
+/// - `StockMoveLineSummary` - Summary view of StockMoveLine
+/// - `StockMoveLineId` - Type-safe ID wrapper
+/// - `OperationTypeDto` - Data transfer object for OperationType
+/// - `OperationTypeSummary` - Summary view of OperationType
+/// - `OperationTypeId` - Type-safe ID wrapper
+/// - `TransferDto` - Data transfer object for Transfer
+/// - `TransferSummary` - Summary view of Transfer
+/// - `TransferId` - Type-safe ID wrapper
+/// - `RouteDto` - Data transfer object for Route
+/// - `RouteSummary` - Summary view of Route
+/// - `RouteId` - Type-safe ID wrapper
+/// - `RouteRuleDto` - Data transfer object for RouteRule
+/// - `RouteRuleSummary` - Summary view of RouteRule
+/// - `RouteRuleId` - Type-safe ID wrapper
+/// - `ReorderingRuleDto` - Data transfer object for ReorderingRule
+/// - `ReorderingRuleSummary` - Summary view of ReorderingRule
+/// - `ReorderingRuleId` - Type-safe ID wrapper
 /// - `PurchaseReceiptDto` - Data transfer object for PurchaseReceipt
 /// - `PurchaseReceiptSummary` - Summary view of PurchaseReceipt
 /// - `PurchaseReceiptId` - Type-safe ID wrapper
 /// - `PurchaseReceiptItemDto` - Data transfer object for PurchaseReceiptItem
 /// - `PurchaseReceiptItemSummary` - Summary view of PurchaseReceiptItem
 /// - `PurchaseReceiptItemId` - Type-safe ID wrapper
+/// - `QuantDto` - Data transfer object for Quant
+/// - `QuantSummary` - Summary view of Quant
+/// - `QuantId` - Type-safe ID wrapper
 /// - `StockEntryDto` - Data transfer object for StockEntry
 /// - `StockEntrySummary` - Summary view of StockEntry
 /// - `StockEntryId` - Type-safe ID wrapper
@@ -57,6 +84,12 @@ pub use events::*;
 /// - `StockReconciliationItemDto` - Data transfer object for StockReconciliationItem
 /// - `StockReconciliationItemSummary` - Summary view of StockReconciliationItem
 /// - `StockReconciliationItemId` - Type-safe ID wrapper
+/// - `LotDto` - Data transfer object for Lot
+/// - `LotSummary` - Summary view of Lot
+/// - `LotId` - Type-safe ID wrapper
+/// - `PackageDto` - Data transfer object for Package
+/// - `PackageSummary` - Summary view of Package
+/// - `PackageId` - Type-safe ID wrapper
 /// - `WarehouseDto` - Data transfer object for Warehouse
 /// - `WarehouseSummary` - Summary view of Warehouse
 /// - `WarehouseId` - Type-safe ID wrapper
@@ -71,12 +104,39 @@ pub use events::*;
 /// - `DeliveryNoteItemCreatedEvent` - Published when DeliveryNoteItem is created
 /// - `DeliveryNoteItemUpdatedEvent` - Published when DeliveryNoteItem is updated
 /// - `DeliveryNoteItemDeletedEvent` - Published when DeliveryNoteItem is deleted
+/// - `LocationCreatedEvent` - Published when Location is created
+/// - `LocationUpdatedEvent` - Published when Location is updated
+/// - `LocationDeletedEvent` - Published when Location is deleted
+/// - `StockMoveCreatedEvent` - Published when StockMove is created
+/// - `StockMoveUpdatedEvent` - Published when StockMove is updated
+/// - `StockMoveDeletedEvent` - Published when StockMove is deleted
+/// - `StockMoveLineCreatedEvent` - Published when StockMoveLine is created
+/// - `StockMoveLineUpdatedEvent` - Published when StockMoveLine is updated
+/// - `StockMoveLineDeletedEvent` - Published when StockMoveLine is deleted
+/// - `OperationTypeCreatedEvent` - Published when OperationType is created
+/// - `OperationTypeUpdatedEvent` - Published when OperationType is updated
+/// - `OperationTypeDeletedEvent` - Published when OperationType is deleted
+/// - `TransferCreatedEvent` - Published when Transfer is created
+/// - `TransferUpdatedEvent` - Published when Transfer is updated
+/// - `TransferDeletedEvent` - Published when Transfer is deleted
+/// - `RouteCreatedEvent` - Published when Route is created
+/// - `RouteUpdatedEvent` - Published when Route is updated
+/// - `RouteDeletedEvent` - Published when Route is deleted
+/// - `RouteRuleCreatedEvent` - Published when RouteRule is created
+/// - `RouteRuleUpdatedEvent` - Published when RouteRule is updated
+/// - `RouteRuleDeletedEvent` - Published when RouteRule is deleted
+/// - `ReorderingRuleCreatedEvent` - Published when ReorderingRule is created
+/// - `ReorderingRuleUpdatedEvent` - Published when ReorderingRule is updated
+/// - `ReorderingRuleDeletedEvent` - Published when ReorderingRule is deleted
 /// - `PurchaseReceiptCreatedEvent` - Published when PurchaseReceipt is created
 /// - `PurchaseReceiptUpdatedEvent` - Published when PurchaseReceipt is updated
 /// - `PurchaseReceiptDeletedEvent` - Published when PurchaseReceipt is deleted
 /// - `PurchaseReceiptItemCreatedEvent` - Published when PurchaseReceiptItem is created
 /// - `PurchaseReceiptItemUpdatedEvent` - Published when PurchaseReceiptItem is updated
 /// - `PurchaseReceiptItemDeletedEvent` - Published when PurchaseReceiptItem is deleted
+/// - `QuantCreatedEvent` - Published when Quant is created
+/// - `QuantUpdatedEvent` - Published when Quant is updated
+/// - `QuantDeletedEvent` - Published when Quant is deleted
 /// - `StockEntryCreatedEvent` - Published when StockEntry is created
 /// - `StockEntryUpdatedEvent` - Published when StockEntry is updated
 /// - `StockEntryDeletedEvent` - Published when StockEntry is deleted
@@ -95,6 +155,12 @@ pub use events::*;
 /// - `StockReconciliationItemCreatedEvent` - Published when StockReconciliationItem is created
 /// - `StockReconciliationItemUpdatedEvent` - Published when StockReconciliationItem is updated
 /// - `StockReconciliationItemDeletedEvent` - Published when StockReconciliationItem is deleted
+/// - `LotCreatedEvent` - Published when Lot is created
+/// - `LotUpdatedEvent` - Published when Lot is updated
+/// - `LotDeletedEvent` - Published when Lot is deleted
+/// - `PackageCreatedEvent` - Published when Package is created
+/// - `PackageUpdatedEvent` - Published when Package is updated
+/// - `PackageDeletedEvent` - Published when Package is deleted
 /// - `WarehouseCreatedEvent` - Published when Warehouse is created
 /// - `WarehouseUpdatedEvent` - Published when Warehouse is updated
 /// - `WarehouseDeletedEvent` - Published when Warehouse is deleted

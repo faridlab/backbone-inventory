@@ -19,3 +19,16 @@
 - stock_reconciliation_item_seed
 - warehouse_seed
 - stock_item_seed
+
+# Newly added seeds (preserve manual order above):
+- transfer_seed
+- stock_move_line_seed
+- quant_seed
+- location_seed
+- route_rule_seed
+- lot_seed
+- package_seed
+- operation_type_seed
+- route_seed
+- stock_move_seed
+- reordering_rule_seed

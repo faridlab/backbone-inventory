@@ -12,7 +12,43 @@
 module: inventory
 version: 2
 schema: inventory
-description: "Inventory: append-only Stock Ledger (SLE) + moving-average valuation + Bin balances. Delivery Note emits COGS (Dr COGS - Cr Inventory) and Purchase Receipt emits asset (Dr Inventory - Cr GR/IR) AccountingPosts into backbone-accounting via the GL-posting contract."
+
+# -----------------------------------------------------------------------------
+# Company fence (ADR-0014) — module-level declaration; the DSL admits exactly
+# one per module, so the per-entity posture is realized by column nullability:
+#
+#   shared_blank  : nullable company_id — NULL rows are first-class shared rows
+#                   (the port of Odoo's `[False]` escape). Applies to MASTER
+#                   DATA: Location, Lot, Package, Route, RouteRule,
+#                   OperationType.
+#   strict        : NOT NULL company_id — the `company_id IS NULL` arm of the
+#                   shared_blank predicate is dead on these tables, making
+#                   them behaviorally strict. Applies to TRANSACTIONS and
+#                   their configuration rows: Warehouse, StockItem, Transfer,
+#                   StockMove, StockMoveLine, Quant, ReorderingRule, Bin,
+#                   StockLedgerEntry, and every voucher header/line.
+#
+# Posture map (entity -> realized fence, all under this one declaration):
+#   Warehouse            -> strict (@required company_id)
+#   StockItem            -> strict
+#   Location             -> shared_blank (shared supplier/customer root trees)
+#   Lot                  -> shared_blank
+#   Package              -> shared_blank (company derived from location chain)
+#   Route                -> shared_blank (global MTO route seeds NULL)
+#   RouteRule            -> shared_blank
+#   OperationType        -> shared_blank (global virtual adjustment type)
+#   ReorderingRule       -> strict (company in the unique key)
+#   Transfer             -> strict (mirrors the type's company)
+#   StockMove            -> strict
+#   StockMoveLine        -> strict
+#   Quant                -> strict (company derived from location chain)
+#   StockLedgerEntry     -> strict
+#   Bin                  -> strict
+#   vouchers x4 + lines  -> strict
+# -----------------------------------------------------------------------------
+company_fence: shared_blank
+
+description: "Inventory: quant-driven stock (one quant per item x location x lot x package x owner; reserved_quantity authoritative) + 7-state stock moves projected onto transfer documents + append-only Stock Ledger (SLE) with moving-average valuation. Vouchers (PurchaseReceipt / DeliveryNote / StockEntry / StockReconciliation) mint Transfers grouping moves; move _action_done writes the SLE rows and GL legs (Dr Inventory - Cr GR/IR on receipt, Dr COGS - Cr Inventory on delivery) into backbone-accounting via the GL-posting contract."
 
 config:
   database: postgresql
@@ -64,6 +100,12 @@ shared_types:
 # Import each entity model (parents before children).
 imports:
   - warehouse.model.yaml
+  - location.model.yaml
+  - tracking.model.yaml
+  - operation.model.yaml
+  - procurement.model.yaml
+  - move.model.yaml
+  - quant.model.yaml
   - stock_ledger.model.yaml
   - stock_entry.model.yaml
   - purchase_receipt.model.yaml

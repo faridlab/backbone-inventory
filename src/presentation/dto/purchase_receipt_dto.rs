@@ -66,6 +66,8 @@ pub struct CreatePurchaseReceiptDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "grir_account_id")]
     pub grir_account_id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "transfer_id")]
+    pub transfer_id: Option<Uuid>,
     pub status: DocStatus,
     #[serde(alias = "posting_state")]
     pub posting_state: GlPostingState,
@@ -124,6 +126,8 @@ pub struct UpdatePurchaseReceiptDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "grir_account_id")]
     pub grir_account_id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "transfer_id")]
+    pub transfer_id: Option<Uuid>,
     pub status: DocStatus,
     #[serde(alias = "posting_state")]
     pub posting_state: GlPostingState,
@@ -183,6 +187,8 @@ pub struct PatchPurchaseReceiptDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "grir_account_id")]
     pub grir_account_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "transfer_id")]
+    pub transfer_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<DocStatus>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "posting_state")]
@@ -201,7 +207,7 @@ pub struct PatchPurchaseReceiptDto {
 impl PatchPurchaseReceiptDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.receipt_number.is_some() || self.company_id.is_some() || self.branch_id.is_some() || self.supplier_id.is_some() || self.source_po_id.is_some() || self.warehouse_id.is_some() || self.posting_date.is_some() || self.currency.is_some() || self.total_value.is_some() || self.inventory_account_id.is_some() || self.grir_account_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some() || self.posted_at.is_some() || self.notes.is_some()
+        self.receipt_number.is_some() || self.company_id.is_some() || self.branch_id.is_some() || self.supplier_id.is_some() || self.source_po_id.is_some() || self.warehouse_id.is_some() || self.posting_date.is_some() || self.currency.is_some() || self.total_value.is_some() || self.inventory_account_id.is_some() || self.grir_account_id.is_some() || self.transfer_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some() || self.posted_at.is_some() || self.notes.is_some()
     }
 }
 
@@ -238,6 +244,7 @@ pub struct PurchaseReceiptResponseDto {
     pub inventory_account_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub grir_account_id: Uuid,
+    pub transfer_id: Option<Uuid>,
     pub status: DocStatus,
     pub posting_state: GlPostingState,
     pub journal_id: Option<Uuid>,
@@ -326,6 +333,7 @@ impl From<PurchaseReceipt> for PurchaseReceiptResponseDto {
             total_value: entity.total_value,
             inventory_account_id: entity.inventory_account_id,
             grir_account_id: entity.grir_account_id,
+            transfer_id: entity.transfer_id,
             status: entity.status,
             posting_state: entity.posting_state,
             journal_id: entity.journal_id,
@@ -365,6 +373,7 @@ impl From<CreatePurchaseReceiptDto> for PurchaseReceipt {
             total_value: dto.total_value,
             inventory_account_id: dto.inventory_account_id,
             grir_account_id: dto.grir_account_id,
+            transfer_id: dto.transfer_id,
             status: dto.status,
             posting_state: dto.posting_state,
             journal_id: dto.journal_id,
@@ -391,6 +400,7 @@ impl From<&PurchaseReceipt> for PurchaseReceiptResponseDto {
             total_value: entity.total_value.clone(),
             inventory_account_id: entity.inventory_account_id.clone(),
             grir_account_id: entity.grir_account_id.clone(),
+            transfer_id: entity.transfer_id.clone(),
             status: entity.status.clone(),
             posting_state: entity.posting_state.clone(),
             journal_id: entity.journal_id.clone(),
@@ -421,6 +431,7 @@ impl backbone_core::ApplyUpdateDto<UpdatePurchaseReceiptDto> for PurchaseReceipt
         self.total_value = dto.total_value;
         self.inventory_account_id = dto.inventory_account_id;
         self.grir_account_id = dto.grir_account_id;
+        self.transfer_id = dto.transfer_id;
         self.status = dto.status;
         self.posting_state = dto.posting_state;
         self.journal_id = dto.journal_id;

@@ -9,14 +9,25 @@ pub use error::{ServiceError, ServiceResult};
 
 pub mod delivery_note_service;
 pub mod delivery_note_item_service;
+pub mod location_service;
+pub mod stock_move_service;
+pub mod stock_move_line_service;
+pub mod operation_type_service;
+pub mod transfer_service;
+pub mod route_service;
+pub mod route_rule_service;
+pub mod reordering_rule_service;
 pub mod purchase_receipt_service;
 pub mod purchase_receipt_item_service;
+pub mod quant_service;
 pub mod stock_entry_service;
 pub mod stock_entry_item_service;
 pub mod stock_ledger_entry_service;
 pub mod bin_service;
 pub mod stock_reconciliation_service;
 pub mod stock_reconciliation_item_service;
+pub mod lot_service;
+pub mod package_service;
 pub mod warehouse_service;
 pub mod stock_item_service;
 
@@ -37,23 +48,43 @@ pub mod inventory_reconciliation;
 pub mod inventory_read;
 pub mod inventory_intake;
 pub mod inventory_cancellation;
+// The converged stock-move engine (_action_confirm / _action_assign / _action_done /
+// _action_cancel) over quant-grain reservation — the stock-convergence service layer. Also the
+// MovePipeline impl the scheduler drives. Declared `user_owned`.
+pub mod inventory_move_engine;
+// Procurement configuration (stock.route / stock.rule / warehouse.orderpoint): rule
+// selection, pull/push move minting, the orderpoint computes, and the MovePipeline port the
+// stock-move engine implements for the daily scheduler. Declared `user_owned`.
+pub mod procurement_service;
 // END CUSTOM
 
 pub use delivery_note_service::DeliveryNoteService;
 pub use delivery_note_item_service::DeliveryNoteItemService;
+pub use location_service::LocationService;
+pub use stock_move_service::StockMoveService;
+pub use stock_move_line_service::StockMoveLineService;
+pub use operation_type_service::OperationTypeService;
+pub use transfer_service::TransferService;
+pub use route_service::RouteService;
+pub use route_rule_service::RouteRuleService;
+pub use reordering_rule_service::ReorderingRuleService;
 pub use purchase_receipt_service::PurchaseReceiptService;
 pub use purchase_receipt_item_service::PurchaseReceiptItemService;
+pub use quant_service::QuantService;
 pub use stock_entry_service::StockEntryService;
 pub use stock_entry_item_service::StockEntryItemService;
 pub use stock_ledger_entry_service::StockLedgerEntryService;
 pub use bin_service::BinService;
 pub use stock_reconciliation_service::StockReconciliationService;
 pub use stock_reconciliation_item_service::StockReconciliationItemService;
+pub use lot_service::LotService;
+pub use package_service::PackageService;
 pub use warehouse_service::WarehouseService;
 pub use stock_item_service::StockItemService;
 // <<< CUSTOM
 pub use inventory_events::{
-    InventoryEvent, InventoryEventSink, StockDelivered, StockMoved, StockReceived, StockReconciled,
+    InventoryEvent, InventoryEventSink, OrderpointTriggered, StockDelivered, StockMoved,
+    StockReceived, StockReconciled,
 };
 pub use inventory_gl::{
     AccountingPostEnvelope, GlPostAck, GlPostLine, GlPostRejected, GlPostSink,
@@ -62,8 +93,15 @@ pub use inventory_write_service::{
     DeliveryLine, InventoryError, InventoryWriteService, NewDelivery, NewReceipt, NewReconciliation,
     NewStockItem, NewTransfer, NewWarehouse, ReceiptLine, ReconLine, SubmitOutcome,
 };
-pub use inventory_read::{AvailabilityView, InventoryReadService, StockBalance};
+pub use inventory_read::{AvailabilityView, InventoryReadService, QuantAvailability, StockBalance};
 pub use inventory_intake::{
     DeliveryIntake, DeliveryRequestLine, DeliveryRequested, ReceiptExpected, ReceiptRequestLine,
+};
+pub use procurement_service::{
+    AssignSweepReport, MovePipeline, MovePipelineError, NewOrderpoint, NewRoute, NewRouteRule,
+    ProcurementError, ProcurementRequest, ProcurementService, ReorderOutcome,
+};
+pub use inventory_move_engine::{
+    BackorderPolicy, MoveAssignOutcome, MoveDoneOutcome, MoveGlDirective, NewStockMove,
 };
 // END CUSTOM

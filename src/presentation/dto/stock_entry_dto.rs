@@ -51,6 +51,8 @@ pub struct CreateStockEntryDto {
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01"))]
     #[serde(alias = "posting_date")]
     pub posting_date: NaiveDate,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "transfer_id")]
+    pub transfer_id: Option<Uuid>,
     pub status: DocStatus,
     #[serde(alias = "posting_state")]
     pub posting_state: GlPostingState,
@@ -88,6 +90,8 @@ pub struct UpdateStockEntryDto {
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01"))]
     #[serde(alias = "posting_date")]
     pub posting_date: NaiveDate,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "transfer_id")]
+    pub transfer_id: Option<Uuid>,
     pub status: DocStatus,
     #[serde(alias = "posting_state")]
     pub posting_state: GlPostingState,
@@ -125,6 +129,8 @@ pub struct PatchStockEntryDto {
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "posting_date")]
     pub posting_date: Option<NaiveDate>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "transfer_id")]
+    pub transfer_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<DocStatus>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "posting_state")]
@@ -137,7 +143,7 @@ pub struct PatchStockEntryDto {
 impl PatchStockEntryDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.entry_number.is_some() || self.company_id.is_some() || self.stock_entry_type.is_some() || self.from_warehouse_id.is_some() || self.to_warehouse_id.is_some() || self.posting_date.is_some() || self.status.is_some() || self.posting_state.is_some() || self.notes.is_some()
+        self.entry_number.is_some() || self.company_id.is_some() || self.stock_entry_type.is_some() || self.from_warehouse_id.is_some() || self.to_warehouse_id.is_some() || self.posting_date.is_some() || self.transfer_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.notes.is_some()
     }
 }
 
@@ -164,6 +170,7 @@ pub struct StockEntryResponseDto {
     pub to_warehouse_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01"))]
     pub posting_date: NaiveDate,
+    pub transfer_id: Option<Uuid>,
     pub status: DocStatus,
     pub posting_state: GlPostingState,
     pub notes: Option<String>,
@@ -244,6 +251,7 @@ impl From<StockEntry> for StockEntryResponseDto {
             from_warehouse_id: entity.from_warehouse_id,
             to_warehouse_id: entity.to_warehouse_id,
             posting_date: entity.posting_date,
+            transfer_id: entity.transfer_id,
             status: entity.status,
             posting_state: entity.posting_state,
             notes: entity.notes,
@@ -275,6 +283,7 @@ impl From<CreateStockEntryDto> for StockEntry {
             from_warehouse_id: dto.from_warehouse_id,
             to_warehouse_id: dto.to_warehouse_id,
             posting_date: dto.posting_date,
+            transfer_id: dto.transfer_id,
             status: dto.status,
             posting_state: dto.posting_state,
             notes: dto.notes,
@@ -293,6 +302,7 @@ impl From<&StockEntry> for StockEntryResponseDto {
             from_warehouse_id: entity.from_warehouse_id.clone(),
             to_warehouse_id: entity.to_warehouse_id.clone(),
             posting_date: entity.posting_date.clone(),
+            transfer_id: entity.transfer_id.clone(),
             status: entity.status.clone(),
             posting_state: entity.posting_state.clone(),
             notes: entity.notes.clone(),
@@ -315,6 +325,7 @@ impl backbone_core::ApplyUpdateDto<UpdateStockEntryDto> for StockEntry {
         self.from_warehouse_id = dto.from_warehouse_id;
         self.to_warehouse_id = dto.to_warehouse_id;
         self.posting_date = dto.posting_date;
+        self.transfer_id = dto.transfer_id;
         self.status = dto.status;
         self.posting_state = dto.posting_state;
         self.notes = dto.notes;

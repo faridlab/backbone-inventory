@@ -58,6 +58,7 @@ pub struct StockEntry {
     pub from_warehouse_id: Option<Uuid>,
     pub to_warehouse_id: Option<Uuid>,
     pub posting_date: NaiveDate,
+    pub transfer_id: Option<Uuid>,
     pub status: DocStatus,
     pub posting_state: GlPostingState,
     pub notes: Option<String>,
@@ -82,6 +83,7 @@ impl StockEntry {
             from_warehouse_id: None,
             to_warehouse_id: None,
             posting_date,
+            transfer_id: None,
             status,
             posting_state,
             notes: None,
@@ -161,6 +163,12 @@ impl StockEntry {
         self
     }
 
+    /// Set the transfer_id field (chainable)
+    pub fn with_transfer_id(mut self, value: Uuid) -> Self {
+        self.transfer_id = Some(value);
+        self
+    }
+
     /// Set the notes field (chainable)
     pub fn with_notes(mut self, value: String) -> Self {
         self.notes = Some(value);
@@ -192,6 +200,9 @@ impl StockEntry {
                 }
                 "posting_date" => {
                     if let Ok(v) = serde_json::from_value(value) { self.posting_date = v; }
+                }
+                "transfer_id" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.transfer_id = v; }
                 }
                 "status" => {
                     if let Ok(v) = serde_json::from_value(value) { self.status = v; }
@@ -259,6 +270,7 @@ impl backbone_orm::EntityRepoMeta for StockEntry {
         m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("from_warehouse_id".to_string(), "uuid".to_string());
         m.insert("to_warehouse_id".to_string(), "uuid".to_string());
+        m.insert("transfer_id".to_string(), "uuid".to_string());
         m.insert("stock_entry_type".to_string(), "stock_entry_type".to_string());
         m.insert("status".to_string(), "doc_status".to_string());
         m.insert("posting_state".to_string(), "gl_posting_state".to_string());
@@ -284,6 +296,7 @@ pub struct StockEntryBuilder {
     from_warehouse_id: Option<Uuid>,
     to_warehouse_id: Option<Uuid>,
     posting_date: Option<NaiveDate>,
+    transfer_id: Option<Uuid>,
     status: Option<DocStatus>,
     posting_state: Option<GlPostingState>,
     notes: Option<String>,
@@ -326,6 +339,12 @@ impl StockEntryBuilder {
         self
     }
 
+    /// Set the transfer_id field (optional)
+    pub fn transfer_id(mut self, value: Uuid) -> Self {
+        self.transfer_id = Some(value);
+        self
+    }
+
     /// Set the status field (default: `DocStatus::default()`)
     pub fn status(mut self, value: DocStatus) -> Self {
         self.status = Some(value);
@@ -360,6 +379,7 @@ impl StockEntryBuilder {
             from_warehouse_id: self.from_warehouse_id,
             to_warehouse_id: self.to_warehouse_id,
             posting_date,
+            transfer_id: self.transfer_id,
             status: self.status.unwrap_or_default(),
             posting_state: self.posting_state.unwrap_or_default(),
             notes: self.notes,

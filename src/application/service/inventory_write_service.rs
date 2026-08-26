@@ -41,8 +41,10 @@ use uuid::Uuid;
 use crate::infrastructure::persistence::{
     BinRepository, DeliveryNoteItemRepository, DeliveryNoteRepository, GlSettlementState, GlVoucher,
     GlVoucherRepository, PurchaseReceiptItemRepository, PurchaseReceiptRepository,
-    StockEntryItemRepository, StockEntryRepository, StockItemRepository, StockLedgerEntryRepository,
-    StockReconciliationItemRepository, StockReconciliationRepository, WarehouseRepository,
+    QuantRepository, StockAdjustmentRepository, StockEntryItemRepository, StockEntryRepository,
+    StockItemRepository, StockLedgerEntryRepository, StockMoveLineRepository, StockMoveRepository,
+    StockPickingRepository, StockReconciliationItemRepository, StockReconciliationRepository,
+    WarehouseRepository,
 };
 
 use super::inventory_events::{InventoryEventSink, LoggingSink};
@@ -176,6 +178,35 @@ pub enum InventoryError {
     /// issued). Reverse the issue first, or correct via a reconciliation.
     InsufficientStockToReverse { item_id: Uuid, warehouse_id: Uuid, available: Decimal, requested: Decimal },
     GlRejected { code: String, message: String },
+    // ---- stock-move pipeline (the converged lifecycle engine) -----------------------------
+    /// The move is not in the state this action requires (the guarded state machine rejected the
+    /// transition — e.g. `_action_assign` on a draft move, or `_action_done` on a cancelled one).
+    WrongMoveState { move_id: Uuid, action: &'static str, current: String },
+    /// A move whose source and destination location are the same row (a physical no-op — rejected,
+    /// stock.hook.yaml R9).
+    SameLocation { move_id: Uuid, location_id: Uuid },
+    /// `_action_done` requires at least one execution line (the picking's done-needs-lines guard,
+    /// R24 at move grain).
+    MoveLinesRequired { move_id: Uuid },
+    /// Every done line must carry a non-negative quantity and the move a positive total (R23)
+    /// — reuses [`InventoryError::NegativeQuantity`] for the plain negative case.
+    /// The source location of a quant write is a view location (view nodes hold no stock — R13).
+    ViewLocationHoldsNoStock { location_id: Uuid },
+    /// The location a move/quant references does not exist (or is soft-deleted).
+    LocationNotFound(Uuid),
+    /// A quant's company must follow its location's company (R26/T3 — derived at write time).
+    QuantCompanyMismatch { location_id: Uuid, location_company: Option<Uuid>, move_company: Uuid },
+    // ---- quant-driven adjustment door (spec §5.2 — no stock.inventory model) ----------------
+    /// A count cannot be staged or applied while the quant holds reservations (stock.hook.yaml
+    /// R24 `no_count_while_reserved`) — release the reservations first.
+    CountReserved { quant_id: Uuid, reserved_qty: Decimal },
+    /// The staged count is stale: the quant's on-hand moved between the count and the apply
+    /// (spec §5.2 `is_outdated` — a move landed in the window; the user must re-count).
+    OutdatedCount { quant_id: Uuid, counted_qty: Decimal, on_hand_qty: Decimal },
+    /// The reconciliation write surface only carries counted QUANTITY; an explicit counted
+    /// RATE is a valuation-overlay concern (the quant-driven door values the diff at the
+    /// current moving average — never a silent rate revaluation).
+    CountedRateUnsupported,
     Db(sqlx::Error),
 }
 
@@ -193,6 +224,15 @@ impl InventoryError {
             InventoryError::InsufficientStockToReverse { .. } => "insufficient_stock_to_reverse".into(),
             InventoryError::SameWarehouse => "same_warehouse".into(),
             InventoryError::GlRejected { code, .. } => code.clone(),
+            InventoryError::WrongMoveState { .. } => "wrong_move_state".into(),
+            InventoryError::SameLocation { .. } => "same_location".into(),
+            InventoryError::MoveLinesRequired { .. } => "move_lines_required".into(),
+            InventoryError::ViewLocationHoldsNoStock { .. } => "quant_on_view_location".into(),
+            InventoryError::LocationNotFound(_) => "location_not_found".into(),
+            InventoryError::QuantCompanyMismatch { .. } => "quant_company_mismatch".into(),
+            InventoryError::CountReserved { .. } => "quant_reserved".into(),
+            InventoryError::OutdatedCount { .. } => "outdated_count".into(),
+            InventoryError::CountedRateUnsupported => "counted_rate_unsupported".into(),
             InventoryError::Db(_) => "internal_error".into(),
         }
     }
@@ -243,6 +283,15 @@ pub struct InventoryWriteService {
     pub(super) recons: Arc<StockReconciliationRepository>,
     pub(super) recon_items: Arc<StockReconciliationItemRepository>,
     pub(super) gl: Arc<GlVoucherRepository>,
+    // The stock-convergence engine's repositories (quant reservation apex, move lifecycle,
+    // move-line mirror) — same construction pattern as the voucher doors above.
+    pub(super) quants: Arc<QuantRepository>,
+    pub(super) moves: Arc<StockMoveRepository>,
+    pub(super) move_lines: Arc<StockMoveLineRepository>,
+    // The picking-as-projection + quant-driven adjustment companions (transfer header mint,
+    // projection probes, location resolution, quant-surface heal; count staging/consume).
+    pub(super) pickings: Arc<StockPickingRepository>,
+    pub(super) adjustments: Arc<StockAdjustmentRepository>,
 }
 
 impl InventoryWriteService {
@@ -264,6 +313,11 @@ impl InventoryWriteService {
             recons: Arc::new(StockReconciliationRepository::new(db_pool.clone())),
             recon_items: Arc::new(StockReconciliationItemRepository::new(db_pool.clone())),
             gl: Arc::new(GlVoucherRepository::new()),
+            quants: Arc::new(QuantRepository::new(db_pool.clone())),
+            moves: Arc::new(StockMoveRepository::new(db_pool.clone())),
+            move_lines: Arc::new(StockMoveLineRepository::new(db_pool.clone())),
+            pickings: Arc::new(StockPickingRepository::new()),
+            adjustments: Arc::new(StockAdjustmentRepository::new()),
             db_pool,
             sink,
         }

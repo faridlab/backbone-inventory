@@ -1,0 +1,903 @@
+//! The converged stock-move engine (hand-authored, user-owned): `_action_confirm` /
+//! `_action_assign` / `_action_done` / `_action_cancel` over quant-grain reservation.
+//!
+//! Spec: `docs/odoo/inventory/stock/stock-business-logic.md` §1 (7-state lifecycle), §2 (T1
+//! picking projection), §3 (reservation triangle), §4 (`_action_done` pipeline); the declared
+//! contract is `schema/hooks/stock.hook.yaml`. The MOVE owns the lifecycle
+//! (draft/waiting/confirmed/partially_available/assigned/done/cancel); the transfer/picking state
+//! is a PROJECTION re-derived on every move change (never its own state machine, ADR-0016).
+//!
+//! **The reservation triangle** (§3): `stock_quants.reserved_quantity` is AUTHORITATIVE — written
+//! only under the quant row's `FOR UPDATE` (`QuantRepository`); each move LINE mirrors the grain it
+//! reserved (item x src x dest x lot x package x owner x qty); the move STATE aggregates the mirror
+//! (`assigned` when the mirror meets demand, `partially_available` when positive but short).
+//! `available = quantity - reserved` is a READ everywhere (T2), never a second writer.
+//!
+//! **`_action_done`** (§4): guards R22 (physical stock suffices for every draw) + R23 (positive
+//! qty) + R24-at-move-grain (done needs lines) + R9 (src != dest); then per line the TWO-STEP
+//! `_synchronize_quant` — the reserved step releases the line's reservation, the available step
+//! moves the physical quantity (src quant decremented, dest quant incremented); done-qty propagates
+//! along `move_orig_ids`/`move_dest_ids` (a `waiting` child releases to `confirmed` once ALL its
+//! parents are done); a partial done (qty < demand) mints the BACKORDER move per policy; `date` is
+//! stamped to the processing instant and `state='done'`; the transfer reprojects (T1).
+//!
+//! **Valuation (money path — unchanged contract).** The pipeline mints Stock Ledger Entries through
+//! the EXISTING `StockLedgerEntryRepository` + the Bin moving-average reblende, and posts the GL
+//! legs through the existing `AccountingPost` seam (`inventory_gl.rs`). There is NO
+//! stock.valuation.layer and no second ledger: receipt blends the rate (`value += qty·price; rate =
+//! value/qty`), delivery consumes the current average (`cogs = qty·rate; rate unchanged`),
+//! transfer is value-neutral at the carried rate — the W1-proven legs. The V7 ordering invariant
+//! (stock-account §2.1: OUT valued BEFORE, IN valued AFTER) is structural here: the OUT leg's value
+//! is computed from the src Bin snapshot taken under the canonical FOR UPDATE locks BEFORE the dest
+//! reblend runs; the IN leg then reblends the destination with the carried value.
+//!
+//! **Voucher identity note.** Move-minted SLE rows ride `voucher_type='stock_entry'` (the generic
+//! stock-operation door) with `voucher_id = move_id` — the `voucher_type` enum has no
+//! `stock_move` variant. GL legs are emitted with `idempotency_key = move_id`; moves carry no
+//! `posting_state` column, so a rejected post surfaces as an error while the physical movement
+//! stays committed (the module's eventually-consistent posture); a `repost`-style re-drive needs a
+//! posting-state surface on moves and is registered as an open seam.
+//!
+//! Per the module's 4-layer rule this file holds no SQL — the statements live on
+//! `QuantRepository` / `StockMoveRepository` / `StockMoveLineRepository` / `BinRepository` /
+//! `StockLedgerEntryRepository`, whose write methods take THIS service's transaction so the quant
+//! flips, the Bin reblende, the SLE rows and the move state commit as one unit.
+
+use async_trait::async_trait;
+use backbone_orm::company_scope;
+use chrono::Utc;
+use rust_decimal::Decimal;
+use uuid::Uuid;
+
+use crate::domain::entity::MoveState;
+use crate::infrastructure::persistence::{MoveRow, NewMoveLineRow, NewMoveRow, QuantDims};
+
+use super::inventory_events::{
+    BackorderCreated, InventoryEvent, MoveAssigned, MoveCancelled, MoveConfirmed, MoveDone,
+    TransferProjected,
+};
+use super::inventory_gl::{AccountingPostEnvelope, GlPostLine, GlPostSink};
+use super::inventory_write_service::{money, rate6, InventoryError, InventoryWriteService};
+use super::procurement_service::{MovePipeline, MovePipelineError};
+
+// --- input vocabulary ---------------------------------------------------------
+
+/// The move-creation input (draft insert; the pipeline advances state).
+#[derive(Debug, Clone)]
+pub struct NewStockMove {
+    pub name: String,
+    pub company_id: Uuid,
+    pub item_id: Uuid,
+    pub demand_qty: Decimal,
+    /// Unit valuation price the SLE mint uses on the IN leg (external receipts). 0 = carry the
+    /// current average (value-neutral receive).
+    pub price_unit: Decimal,
+    /// "make_to_stock" | "make_to_order" | "mts_else_mto".
+    pub procure_method: String,
+    pub picking_id: Option<Uuid>,
+    pub origin: Option<String>,
+    pub location_id: Uuid,
+    pub location_dest_id: Uuid,
+    pub partner_id: Option<Uuid>,
+    pub warehouse_id: Option<Uuid>,
+    pub orderpoint_id: Option<Uuid>,
+    pub move_orig_ids: Vec<Uuid>,
+    pub move_dest_ids: Vec<Uuid>,
+    pub is_inventory: bool,
+    pub scrapped: bool,
+}
+
+/// Backorder policy on partial validate (spec §4 step 4: `create_backorder ∈ {always, never,
+/// delayed}` — always/delayed mint the backorder, never leaves the remainder unbackordered).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackorderPolicy {
+    Always,
+    Never,
+    Delayed,
+}
+
+/// GL accounts for the legs `_action_done` may post. Accounts are inventory/composition config —
+/// the same posture as the intake contract (the caller supplies them; they are not move columns).
+/// A leg whose accounts are absent is simply not posted (`gl_posted=false`), the physical movement
+/// is unaffected.
+#[derive(Debug, Clone, Default)]
+pub struct MoveGlDirective {
+    /// COGS debit account for OUT legs (internal -> customer).
+    pub cogs_account_id: Option<Uuid>,
+    /// Inventory valuation account (credit side of OUT, debit side of IN).
+    pub inventory_account_id: Option<Uuid>,
+    /// GR/IR clearing account (credit side of external IN legs).
+    pub grir_account_id: Option<Uuid>,
+    /// Adjustment account for `is_inventory` moves (the value-diff counterleg).
+    pub adjustment_account_id: Option<Uuid>,
+    /// Ledger currency of the post.
+    pub currency: String,
+}
+
+/// Outcome of `_action_done`.
+#[derive(Debug, Clone)]
+pub struct MoveDoneOutcome {
+    pub move_id: Uuid,
+    pub done_qty: Decimal,
+    /// The minted backorder move (remaining demand), if any.
+    pub backorder_move_id: Option<Uuid>,
+    /// SLE rows minted by the valuation core (0 for value-neutral same-warehouse moves).
+    pub sle_count: i32,
+    pub gl_posted: bool,
+    pub gl_amount: Decimal,
+}
+
+/// Outcome of `_action_assign`.
+#[derive(Debug, Clone)]
+pub struct MoveAssignOutcome {
+    pub move_id: Uuid,
+    /// The move's post-assign state: `assigned` (fully reserved), `partially_available` (some
+    /// reserved), `confirmed` (nothing reservable at the source location).
+    pub state: String,
+    pub reserved_qty: Decimal,
+}
+
+/// The move lifecycle engine. An `impl InventoryWriteService` chunk over the vocabulary in
+/// [`super::inventory_write_service`] — the converged stock pipeline the routes/scheduler surfaces
+/// drive.
+impl InventoryWriteService {
+    // ---- create -------------------------------------------------------------
+
+    /// Create a DRAFT move (spec §1: `draft → waiting/confirmed` happens on confirm, never at
+    /// insert). Guards: R9 (src != dest), non-negative demand (R23 at the door), R13 (a quant
+    /// surface can never be a view location — checked for both endpoints that hold stock), R26
+    /// (the move's company must match its internal locations' company).
+    pub async fn create_move(&self, m: NewStockMove) -> Result<Uuid, InventoryError> {
+        if m.demand_qty < Decimal::ZERO || m.price_unit < Decimal::ZERO {
+            return Err(InventoryError::NegativeQuantity);
+        }
+        if m.location_id == m.location_dest_id {
+            return Err(InventoryError::SameLocation { move_id: Uuid::new_v4(), location_id: m.location_id });
+        }
+        let id = Uuid::new_v4();
+        let mut tx = self.db_pool.begin().await?;
+        company_scope::bind_company_on(&mut tx, m.company_id).await?;
+        let locs = self.moves.fetch_move_locations(&mut tx, m.location_id, m.location_dest_id).await?;
+        let (src, dst) = match locs {
+            (Some(s), Some(d)) => (s, d),
+            (None, _) => return Err(InventoryError::LocationNotFound(m.location_id)),
+            (_, None) => return Err(InventoryError::LocationNotFound(m.location_dest_id)),
+        };
+        for loc in [&src, &dst] {
+            if loc.usage == "view" {
+                return Err(InventoryError::ViewLocationHoldsNoStock { location_id: loc.id });
+            }
+            if loc.usage == "internal" {
+                if loc.company_id != Some(m.company_id) {
+                    return Err(InventoryError::QuantCompanyMismatch {
+                        location_id: loc.id,
+                        location_company: loc.company_id,
+                        move_company: m.company_id,
+                    });
+                }
+            }
+        }
+        self.moves.insert_move(&mut tx, &NewMoveRow {
+            id,
+            name: &m.name,
+            item_id: m.item_id,
+            demand_qty: m.demand_qty,
+            price_unit: m.price_unit,
+            procure_method: &m.procure_method,
+            picking_id: m.picking_id,
+            origin: m.origin.as_deref(),
+            location_id: m.location_id,
+            location_dest_id: m.location_dest_id,
+            partner_id: m.partner_id,
+            company_id: m.company_id,
+            warehouse_id: m.warehouse_id,
+            orderpoint_id: m.orderpoint_id,
+            move_orig_ids: m.move_orig_ids.clone(),
+            move_dest_ids: m.move_dest_ids.clone(),
+            is_inventory: m.is_inventory,
+            scrapped: m.scrapped,
+        }).await?;
+        // Chain bookkeeping: a move naming its `move_orig_ids` parents gets the REVERSE link
+        // written too (each parent's move_dest_ids gains this move) — the done-qty propagation
+        // and waiting-release walk the parent's `move_dest_ids`, so both directions must exist
+        // (`link_chain` is idempotent per pair).
+        for parent in &m.move_orig_ids {
+            self.moves.link_chain(&mut tx, *parent, id).await?;
+        }
+        if let Some(picking) = m.picking_id {
+            self.moves.reproject_picking(&mut tx, picking).await?;
+        }
+        tx.commit().await?;
+        Ok(id)
+    }
+
+    // ---- _action_confirm ------------------------------------------------------
+
+    /// `draft → confirmed`, or `draft → waiting` while any `move_orig_ids` parent is not done
+    /// (spec §1: `waiting` is the state a chained move sits in until its parents land).
+    /// `procure_method` gates supply: `make_to_order` / `mts_else_mto` moves are minted by the
+    /// procurement (rule) engine, not here — this method only owns the state gate.
+    pub async fn action_confirm(&self, move_id: Uuid) -> Result<String, InventoryError> {
+        let mut tx = self.db_pool.begin().await?;
+        let mv = self.moves.fetch_move(&mut tx, move_id).await?.ok_or(InventoryError::NotFound(move_id))?;
+        if mv.state != "draft" {
+            return Err(InventoryError::WrongMoveState { move_id, action: "confirm", current: mv.state });
+        }
+        company_scope::bind_company_on(&mut tx, mv.company_id).await?;
+        let to = self.confirm_core(&mut tx, &mv).await?;
+        let company = mv.company_id;
+        tx.commit().await?;
+        if to == "confirmed" {
+            self.sink.publish(InventoryEvent::MoveConfirmed(MoveConfirmed {
+                move_id, company_id: company, item_id: mv.item_id,
+                demand_qty: mv.demand_qty, picking_id: mv.picking_id,
+            }));
+        }
+        Ok(to)
+    }
+
+    /// The confirm verb's core on the caller's connection (company scope already bound): the
+    /// parents-done check, the guarded transition, and the picking reproject. Shared by the
+    /// public verb (own transaction) and the [`MovePipeline`] port the scheduler drives on its
+    /// per-batch connection.
+    async fn confirm_core(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        mv: &MoveRow,
+    ) -> Result<String, InventoryError> {
+        let parents_done = if mv.move_orig_ids.is_empty() {
+            true
+        } else {
+            let parents = self.moves.fetch_moves(conn, &mv.move_orig_ids).await?;
+            parents.iter().all(|p| p.state == "done")
+        };
+        let to = if parents_done { "confirmed" } else { "waiting" };
+        let ok = self.moves.transition_state(conn, mv.id, "draft", to).await?;
+        if !ok {
+            return Err(InventoryError::WrongMoveState { move_id: mv.id, action: "confirm", current: "raced".into() });
+        }
+        if let Some(picking) = mv.picking_id {
+            self.moves.reproject_picking(conn, picking).await?;
+        }
+        Ok(to.into())
+    }
+
+    // ---- _action_assign -------------------------------------------------------
+
+    /// Reserve against quants at the source location (spec §1 `_action_assign`): the authoritative
+    /// `reserved_quantity` is written under each quant's `FOR UPDATE` (competing reservations
+    /// serialize there — one winner per unit of stock, R22/R25), a mirror move-line is minted per
+    /// reserved quant grain, and the move state aggregates the mirror.
+    pub async fn action_assign(&self, move_id: Uuid) -> Result<MoveAssignOutcome, InventoryError> {
+        let mut tx = self.db_pool.begin().await?;
+        let mv = self.moves.fetch_move(&mut tx, move_id).await?.ok_or(InventoryError::NotFound(move_id))?;
+        if mv.state != "confirmed" && mv.state != "partially_available" {
+            return Err(InventoryError::WrongMoveState { move_id, action: "assign", current: mv.state });
+        }
+        company_scope::bind_company_on(&mut tx, mv.company_id).await?;
+        let (to, total) = self.assign_core(&mut tx, &mv).await?;
+        let company = mv.company_id;
+        let picking = mv.picking_id;
+        tx.commit().await?;
+        if to == "assigned" {
+            self.sink.publish(InventoryEvent::MoveAssigned(MoveAssigned {
+                move_id, company_id: company, picking_id: picking,
+            }));
+        }
+        Ok(MoveAssignOutcome { move_id, state: to, reserved_qty: total })
+    }
+
+    /// The assign verb's core on the caller's connection (company scope already bound): the
+    /// reservation loop, the mirror mint, the aggregate state transition, the line re-mirror and
+    /// the picking reproject. Returns `(new_state, reserved_qty)`. Shared by the public verb and
+    /// the [`MovePipeline`] port.
+    async fn assign_core(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        mv: &MoveRow,
+    ) -> Result<(String, Decimal), InventoryError> {
+        let locs = self.moves.fetch_move_locations(conn, mv.location_id, mv.location_dest_id).await?;
+        let src = locs.0.ok_or(InventoryError::LocationNotFound(mv.location_id))?;
+        // Reservation only draws from INTERNAL stock; an inbound move (supplier source) has nothing
+        // to reserve and stays `confirmed`.
+        let mut reserved = Decimal::ZERO;
+        if src.usage == "internal" {
+            let already = self.move_lines.sum_mirror_qty(conn, mv.id).await?;
+            let mut remaining = mv.demand_qty - already;
+            let candidates = self.quants.fetch_reservation_candidates(conn, mv.company_id, mv.item_id, mv.location_id).await?;
+            for cand in candidates {
+                if remaining <= Decimal::ZERO { break; }
+                let dims = QuantDims {
+                    item_id: cand.item_id, location_id: cand.location_id,
+                    lot_id: cand.lot_id, package_id: cand.package_id, owner_id: cand.owner_id,
+                };
+                // Lock the quant row, re-read the free availability under the lock (READ COMMITTED
+                // sees the competitor's committed reservation), then reserve the min(free, need).
+                let locked = self.quants.lock_or_init(conn, mv.company_id, dims).await?;
+                let free = locked.available();
+                if free <= Decimal::ZERO { continue; }
+                let take = if free < remaining { free } else { remaining };
+                self.quants.adjust_reserved(conn, locked.id, take).await?;
+                self.move_lines.insert_line(conn, &NewMoveLineRow {
+                    id: Uuid::new_v4(),
+                    quantity: take,
+                    lot_id: cand.lot_id,
+                    package_id: cand.package_id,
+                    result_package_id: None,
+                    owner_id: cand.owner_id,
+                    move_id: mv.id,
+                    picking_id: mv.picking_id,
+                    location_id: mv.location_id,
+                    location_dest_id: mv.location_dest_id,
+                    item_id: mv.item_id,
+                    company_id: mv.company_id,
+                    state: mv.state.as_str(), // transient: re-mirrored to the post-assign state below
+                }).await?;
+                reserved += take;
+                remaining -= take;
+            }
+            reserved += already;
+        } else {
+            // An INBOUND move (non-internal source — supplier/production) has no stock to
+            // reserve: its supply is unconditionally available, so `_action_assign` mints the
+            // execution line for the full remaining demand (Odoo's incoming-move readiness) —
+            // the line records what will land, with no quant touched at the source.
+            let already = self.move_lines.sum_mirror_qty(conn, mv.id).await?;
+            if already < mv.demand_qty {
+                self.move_lines.insert_line(conn, &NewMoveLineRow {
+                    id: Uuid::new_v4(),
+                    quantity: mv.demand_qty - already,
+                    lot_id: None,
+                    package_id: None,
+                    result_package_id: None,
+                    owner_id: None,
+                    move_id: mv.id,
+                    picking_id: mv.picking_id,
+                    location_id: mv.location_id,
+                    location_dest_id: mv.location_dest_id,
+                    item_id: mv.item_id,
+                    company_id: mv.company_id,
+                    state: mv.state.as_str(), // transient: re-mirrored to the post-assign state below
+                }).await?;
+            }
+            reserved = mv.demand_qty;
+        }
+        let total = if mv.demand_qty < reserved { mv.demand_qty } else { reserved };
+        let to = if total >= mv.demand_qty && mv.demand_qty > Decimal::ZERO {
+            "assigned"
+        } else if total > Decimal::ZERO {
+            "partially_available"
+        } else {
+            "confirmed"
+        };
+        let ok = self.moves.transition_state(conn, mv.id, mv.state.as_str(), to).await?;
+        if !ok {
+            return Err(InventoryError::WrongMoveState { move_id: mv.id, action: "assign", current: "raced".into() });
+        }
+        self.move_lines.mirror_state(conn, mv.id, to).await?;
+        if let Some(picking) = mv.picking_id {
+            self.moves.reproject_picking(conn, picking).await?;
+        }
+        Ok((to.into(), total))
+    }
+
+    // ---- unreserve (the triangle's release arm) --------------------------------
+
+    /// Release every reservation the move holds (spec §1: cancel frees reservations first; assign
+    /// retries also release-then-re.reserve). The mirror lines zero out; the authoritative
+    /// `reserved_quantity` drops by exactly what the lines held.
+    pub async fn unreserve_move(&self, move_id: Uuid) -> Result<Decimal, InventoryError> {
+        let mut tx = self.db_pool.begin().await?;
+        let mv = self.moves.fetch_move(&mut tx, move_id).await?.ok_or(InventoryError::NotFound(move_id))?;
+        company_scope::bind_company_on(&mut tx, mv.company_id).await?;
+        let released = self.unreserve_lines(&mut tx, &mv).await?;
+        tx.commit().await?;
+        Ok(released)
+    }
+
+    /// Internal: release all live reservations of a move inside the caller's transaction, by
+    /// zeroing the mirror lines and re-deriving each touched quant's authoritative counter from
+    /// the live mirror (the triangle's self-heal — a quant can never hold a reservation no live
+    /// line claims). Returns the quantity the lines held. The zeroed lines stay as the record of
+    /// what the move had reserved.
+    async fn unreserve_lines(
+        &self,
+        tx: &mut sqlx::PgConnection,
+        mv: &MoveRow,
+    ) -> Result<Decimal, InventoryError> {
+        let lines = self.move_lines.fetch_lines_for_move(tx, mv.id).await?;
+        let mut released = Decimal::ZERO;
+        let mut seen_dims: Vec<QuantDims> = Vec::new();
+        for line in lines {
+            if line.quantity > Decimal::ZERO {
+                released += line.quantity;
+            }
+            self.move_lines.set_quantity(tx, line.id, Decimal::ZERO).await?;
+            let dims = QuantDims {
+                item_id: line.item_id, location_id: line.location_id,
+                lot_id: line.lot_id, package_id: line.package_id, owner_id: line.owner_id,
+            };
+            if !seen_dims.contains(&dims) { seen_dims.push(dims); }
+        }
+        for dims in seen_dims {
+            let quant = self.quants.lock_or_init(tx, mv.company_id, dims).await?;
+            self.quants.recompute_reserved_from_mirror(tx, quant.id, mv.company_id, dims).await?;
+        }
+        Ok(released)
+    }
+
+    // ---- _action_done ----------------------------------------------------------
+
+    /// The mutation core (spec §4). See the module docs above for the full pipeline; the guards,
+    /// the two-step quant sync, the V7-ordered valuation, the chain propagation, the backorder
+    /// split and the projection all live here.
+    pub async fn action_done(
+        &self,
+        move_id: Uuid,
+        backorder: BackorderPolicy,
+        gl: &MoveGlDirective,
+        sink: &dyn GlPostSink,
+    ) -> Result<MoveDoneOutcome, InventoryError> {
+        let mut tx = self.db_pool.begin().await?;
+        let mv = self.moves.fetch_move(&mut tx, move_id).await?.ok_or(InventoryError::NotFound(move_id))?;
+        match mv.state.as_str() {
+            "assigned" | "partially_available" | "confirmed" => {}
+            other => return Err(InventoryError::WrongMoveState { move_id, action: "done", current: other.into() }),
+        }
+        company_scope::bind_company_on(&mut tx, mv.company_id).await?;
+
+        let lines = self.move_lines.fetch_lines_for_move(&mut tx, move_id).await?;
+        if lines.is_empty() {
+            return Err(InventoryError::MoveLinesRequired { move_id }); // R24 at move grain
+        }
+        let mut done_qty = Decimal::ZERO;
+        for l in &lines {
+            if l.quantity < Decimal::ZERO {
+                return Err(InventoryError::NegativeQuantity); // R23
+            }
+            done_qty += l.quantity;
+        }
+        if done_qty <= Decimal::ZERO && mv.demand_qty > Decimal::ZERO {
+            return Err(InventoryError::MoveLinesRequired { move_id }); // nothing to validate
+        }
+
+        let locs = self.moves.fetch_move_locations(&mut tx, mv.location_id, mv.location_dest_id).await?;
+        let src = locs.0.ok_or(InventoryError::LocationNotFound(mv.location_id))?;
+        let dst = locs.1.ok_or(InventoryError::LocationNotFound(mv.location_dest_id))?;
+
+        // -- the done write FIRST, so the lines drop out of the live-reservation mirror before
+        //    the reserved step re-derives the quant's counter (the two steps below are ordered
+        //    by exactly this dependency) -------------------------------------------------------
+        let now = Utc::now();
+        let ok = self.moves.mark_done(&mut tx, move_id, mv.state.as_str(), done_qty, now).await?;
+        if !ok {
+            return Err(InventoryError::WrongMoveState { move_id, action: "done", current: "raced".into() });
+        }
+        self.move_lines.mirror_state(&mut tx, move_id, "done").await?;
+
+        // -- Step 1 of _synchronize_quant (the RESERVED step): re-derive each touched quant's
+        //    authoritative reserved_quantity from the live mirror. Flipping this move's lines to
+        //    `done` dropped them out of the SUM, so the reservation releases here — including any
+        //    residual a shrunk line would otherwise strand. One recompute per DISTINCT source
+        //    dimension tuple; quants that flip to zero on-hand keep their zeroed counter.
+        let mut seen_dims: Vec<QuantDims> = Vec::new();
+        for line in &lines {
+            if line.quantity <= Decimal::ZERO { continue; }
+            let src_dims = QuantDims {
+                item_id: line.item_id, location_id: line.location_id,
+                lot_id: line.lot_id, package_id: line.package_id, owner_id: line.owner_id,
+            };
+            if seen_dims.contains(&src_dims) { continue; }
+            seen_dims.push(src_dims);
+            let quant = self.quants.lock_or_init(&mut tx, mv.company_id, src_dims).await?;
+            self.quants.recompute_reserved_from_mirror(&mut tx, quant.id, mv.company_id, src_dims).await?;
+        }
+
+        // -- Step 2 of _synchronize_quant (the AVAILABLE step): the physical flip, guarded by R22
+        //    at quant grain — the PHYSICAL on-hand must cover the draw (the reserved <= available
+        //    invariant itself is held by the row lock + the CHECK backstop). Only an INTERNAL
+        //    source is drawn from: the quant estate tracks our own stock, so an inbound move
+        //    (supplier/production source) has no source quant to decrement — its supply materializes
+        //    at the destination quant below.
+        let draw_from_src = src.usage == "internal";
+        for line in &lines {
+            if line.quantity <= Decimal::ZERO { continue; }
+            if draw_from_src {
+                let src_dims = QuantDims {
+                    item_id: line.item_id, location_id: line.location_id,
+                    lot_id: line.lot_id, package_id: line.package_id, owner_id: line.owner_id,
+                };
+                let src_quant = self.quants.lock_or_init(&mut tx, mv.company_id, src_dims).await?;
+                if src_quant.quantity < line.quantity {
+                    return Err(InventoryError::InsufficientStock {
+                        item_id: mv.item_id,
+                        warehouse_id: mv.warehouse_id.unwrap_or(mv.location_id),
+                        available: src_quant.quantity,
+                        requested: line.quantity,
+                    });
+                }
+                self.quants.apply_qty(&mut tx, src_quant.id, -line.quantity, Decimal::ZERO).await?;
+            }
+            let dst_dims = QuantDims {
+                item_id: line.item_id, location_id: line.location_dest_id,
+                lot_id: line.lot_id, package_id: line.result_package_id.or(line.package_id), owner_id: line.owner_id,
+            };
+            let dst_quant = self.quants.lock_or_init(&mut tx, mv.company_id, dst_dims).await?;
+            self.quants.apply_qty(&mut tx, dst_quant.id, line.quantity, Decimal::ZERO).await?;
+        }
+
+        // -- valuation core (V7: OUT valued before, IN after) --------------------------------
+        let (sle_count, out_value, in_value) = self
+            .mint_move_valuation(&mut tx, &mv, &src, &dst, done_qty)
+            .await?;
+
+        // -- backorder split (partial validate) ----------------------------------------------
+        let mut backorder_move_id = None;
+        if done_qty < mv.demand_qty && backorder != BackorderPolicy::Never {
+            let remaining = mv.demand_qty - done_qty;
+            let child = Uuid::new_v4();
+            let backorder_name = format!("{}/BO", mv.name);
+            self.moves.insert_move(&mut tx, &NewMoveRow {
+                id: child,
+                name: &backorder_name,
+                item_id: mv.item_id,
+                demand_qty: remaining,
+                price_unit: mv.price_unit,
+                procure_method: &mv.procure_method,
+                picking_id: mv.picking_id,
+                origin: mv.origin.as_deref(),
+                location_id: mv.location_id,
+                location_dest_id: mv.location_dest_id,
+                partner_id: mv.partner_id,
+                company_id: mv.company_id,
+                warehouse_id: mv.warehouse_id,
+                orderpoint_id: mv.orderpoint_id,
+                move_orig_ids: vec![move_id],
+                move_dest_ids: mv.move_dest_ids.clone(),
+                is_inventory: mv.is_inventory,
+                scrapped: mv.scrapped,
+            }).await?;
+            self.moves.link_chain(&mut tx, move_id, child).await?;
+            backorder_move_id = Some(child);
+        }
+
+        // -- done-qty propagation: release waiting children whose parents are all done --------
+        let mut released_children: Vec<crate::infrastructure::persistence::MoveRow> = Vec::new();
+        if !mv.move_dest_ids.is_empty() {
+            let children = self.moves.fetch_moves(&mut tx, &mv.move_dest_ids).await?;
+            for ch in &children {
+                if ch.state != "waiting" { continue; }
+                let parents = self.moves.fetch_moves(&mut tx, &ch.move_orig_ids).await?;
+                if parents.iter().all(|p| p.state == "done") {
+                    let ok = self.moves.transition_state(&mut tx, ch.id, "waiting", "confirmed").await?;
+                    if ok {
+                        released_children.push(ch.clone());
+                    }
+                }
+            }
+        }
+
+        let mut projected_state: Option<String> = None;
+        if let Some(picking) = mv.picking_id {
+            projected_state = self.moves.reproject_picking(&mut tx, picking).await?;
+        }
+        let company = mv.company_id;
+        let picking = mv.picking_id;
+        tx.commit().await?;
+
+        // -- GL post (eventually consistent — the physical movement already committed) ---------
+        let mut gl_posted = false;
+        let mut gl_amount = Decimal::ZERO;
+        if let Some(env) = self.move_gl_envelope(&mv, &src, &dst, gl, out_value, in_value) {
+            debug_assert!(env.is_balanced());
+            gl_amount = env.lines.iter().map(|l| l.debit).sum();
+            match sink.post(&env).await {
+                Ok(_) => gl_posted = true,
+                Err(rej) => {
+                    return Err(InventoryError::GlRejected { code: rej.code, message: rej.message });
+                }
+            }
+        }
+
+        // -- events ----------------------------------------------------------------------------
+        self.sink.publish(InventoryEvent::MoveDone(MoveDone {
+            move_id, company_id: company, item_id: mv.item_id,
+            quantity: done_qty, price_unit: mv.price_unit, is_inventory: mv.is_inventory,
+        }));
+        if let Some(child) = backorder_move_id {
+            self.sink.publish(InventoryEvent::BackorderCreated(BackorderCreated {
+                backorder_id: child, company_id: company, origin_id: move_id,
+            }));
+        }
+        for ch in released_children {
+            self.sink.publish(InventoryEvent::MoveConfirmed(MoveConfirmed {
+                move_id: ch.id, company_id: ch.company_id, item_id: ch.item_id,
+                demand_qty: ch.demand_qty, picking_id: ch.picking_id,
+            }));
+        }
+        if let Some(p) = picking {
+            if let Some(state) = projected_state {
+                self.sink.publish(InventoryEvent::TransferProjected(TransferProjected {
+                    transfer_id: p, company_id: company, state, previous_state: mv.state.clone(),
+                }));
+            }
+        }
+        Ok(MoveDoneOutcome { move_id, done_qty, backorder_move_id, sle_count, gl_posted, gl_amount })
+    }
+
+    // ---- _action_cancel --------------------------------------------------------
+
+    /// `* → cancel` (spec §1): frees the reservation first, then propagates to the chained
+    /// children (`move_dest_ids`) unless `propagate_cancel=false` — never into a done move.
+    pub async fn action_cancel(&self, move_id: Uuid) -> Result<Decimal, InventoryError> {
+        let mut tx = self.db_pool.begin().await?;
+        let mv = self.moves.fetch_move(&mut tx, move_id).await?.ok_or(InventoryError::NotFound(move_id))?;
+        match mv.state.as_str() {
+            "draft" | "waiting" | "confirmed" | "partially_available" | "assigned" => {}
+            other => return Err(InventoryError::WrongMoveState { move_id, action: "cancel", current: other.into() }),
+        }
+        company_scope::bind_company_on(&mut tx, mv.company_id).await?;
+        let released = self.unreserve_lines(&mut tx, &mv).await?;
+        let ok = self.moves.transition_state(&mut tx, move_id, mv.state.as_str(), "cancel").await?;
+        if !ok {
+            return Err(InventoryError::WrongMoveState { move_id, action: "cancel", current: "raced".into() });
+        }
+        self.move_lines.mirror_state(&mut tx, move_id, "cancel").await?;
+        if mv.propagate_cancel && !mv.move_dest_ids.is_empty() {
+            let children = self.moves.fetch_moves(&mut tx, &mv.move_dest_ids).await?;
+            for ch in children {
+                if matches!(ch.state.as_str(), "done" | "cancel") { continue; }
+                let _ = self.moves.transition_state(&mut tx, ch.id, ch.state.as_str(), "cancel").await?;
+                self.move_lines.mirror_state(&mut tx, ch.id, "cancel").await?;
+            }
+        }
+        if let Some(picking) = mv.picking_id {
+            self.moves.reproject_picking(&mut tx, picking).await?;
+        }
+        let company = mv.company_id;
+        tx.commit().await?;
+        self.sink.publish(InventoryEvent::MoveCancelled(MoveCancelled {
+            move_id, company_id: company, released_qty: released,
+        }));
+        Ok(released)
+    }
+
+    // ---- valuation core (private) -----------------------------------------------
+
+    /// The Bin/SLE half of `_action_done` — the moving-average engine over the move's legs, with
+    /// the W1-proven arithmetic (receipt blends, delivery consumes, transfer carries; residual
+    /// flush when a bin drains to zero) and the V7 ordering (OUT valued from the locked src
+    /// snapshot BEFORE the dest reblend). Returns `(sle_count, out_value, in_value)`.
+    ///
+    /// Skips valuation entirely (returns zeros) when neither side resolves to an internal
+    /// warehouse bin, and for same-warehouse moves (the bin grain is (item, warehouse): a move
+    /// inside one warehouse changes no balance — the quant flips above carry the physical truth).
+    async fn mint_move_valuation(
+        &self,
+        tx: &mut sqlx::PgConnection,
+        mv: &crate::infrastructure::persistence::MoveRow,
+        src: &crate::infrastructure::persistence::LocationFacts,
+        dst: &crate::infrastructure::persistence::LocationFacts,
+        qty: Decimal,
+    ) -> Result<(i32, Decimal, Decimal), InventoryError> {
+        let src_wh = if src.usage == "internal" { src.warehouse_id } else { None };
+        let dst_wh = if dst.usage == "internal" { dst.warehouse_id } else { None };
+        if src_wh.is_none() && dst_wh.is_none() { return Ok((0, Decimal::ZERO, Decimal::ZERO)); }
+        if let (Some(a), Some(b)) = (src_wh, dst_wh) {
+            if a == b { return Ok((0, Decimal::ZERO, Decimal::ZERO)); }
+        }
+        let posting_date = Utc::now().date_naive();
+        let mut sle_no = self.sles.fetch_max_sle_no(tx, "stock_entry", mv.id).await?;
+
+        // Lock BOTH bins in canonical warehouse order (the deadlock rule proven by the transfer
+        // path: opposing moves on the same pair serialize instead of deadlocking).
+        let mut legs: Vec<(Uuid, crate::infrastructure::persistence::BinBalanceRow)> = Vec::new();
+        for wh in [src_wh, dst_wh].into_iter().flatten() {
+            let bal = self.bins.lock_or_init(tx, mv.company_id, mv.item_id, wh).await?;
+            legs.push((wh, bal));
+        }
+        // `BinBalanceRow` is not Clone; `Decimal` is Copy, so reconstruct on lookup.
+        let balance_of = |wh: Uuid| {
+            legs.iter().find(|(w, _)| *w == wh).map(|(_, b)| crate::infrastructure::persistence::BinBalanceRow {
+                actual_qty: b.actual_qty, valuation_rate: b.valuation_rate, stock_value: b.stock_value,
+            })
+        };
+
+        let mut out_value = Decimal::ZERO;
+        let mut in_value = Decimal::ZERO;
+
+        // OUT leg (V7: valued BEFORE the IN reblend, at the src bin's pre-move average).
+        if let (Some(wh), Some(bal)) = (src_wh, src_wh.and_then(balance_of)) {
+            let out_qty = bal.actual_qty - qty;
+            if out_qty < Decimal::ZERO {
+                return Err(InventoryError::InsufficientStock {
+                    item_id: mv.item_id, warehouse_id: wh,
+                    available: bal.actual_qty, requested: qty,
+                });
+            }
+            // Residual-flush rule: draining the bin to 0 carries its entire remaining value.
+            out_value = if out_qty.is_zero() { bal.stock_value } else { money(qty * bal.valuation_rate) };
+            let out_stock_value = bal.stock_value - out_value;
+            let out_rate = if out_qty > Decimal::ZERO { bal.valuation_rate } else { Decimal::ZERO };
+            self.bins.update_balance(tx, mv.company_id, mv.item_id, wh, out_qty, out_rate, out_stock_value).await?;
+            sle_no += 1;
+            self.sles.insert_sle(tx, &crate::infrastructure::persistence::NewSleRow {
+                company_id: mv.company_id, item_id: mv.item_id, warehouse_id: wh, posting_date,
+                actual_qty: -qty, qty_after_txn: out_qty, incoming_rate: Decimal::ZERO,
+                valuation_rate: out_rate, stock_value: out_stock_value,
+                stock_value_difference: -out_value,
+                voucher_type: "stock_entry", voucher_id: mv.id, voucher_no: &mv.name, sle_no,
+            }).await?;
+        }
+
+        // IN leg (V7: valued AFTER — reblends the destination with the carried value).
+        if let (Some(wh), Some(bal)) = (dst_wh, dst_wh.and_then(balance_of)) {
+            // Carried value: an external source (receipt) values the inflow at the move's unit
+            // price; an internal transfer carries the OUT value. A zero price on an external
+            // receive carries the destination's current average (value-neutral receive).
+            let carried = if src.usage != "internal" {
+                if mv.price_unit > Decimal::ZERO { money(qty * mv.price_unit) } else { money(qty * bal.valuation_rate) }
+            } else {
+                out_value
+            };
+            in_value = carried;
+            let in_qty = bal.actual_qty + qty;
+            let in_stock_value = bal.stock_value + carried;
+            let in_rate = if in_qty > Decimal::ZERO { rate6(in_stock_value / in_qty) } else { Decimal::ZERO };
+            self.bins.update_balance(tx, mv.company_id, mv.item_id, wh, in_qty, in_rate, in_stock_value).await?;
+            sle_no += 1;
+            self.sles.insert_sle(tx, &crate::infrastructure::persistence::NewSleRow {
+                company_id: mv.company_id, item_id: mv.item_id, warehouse_id: wh, posting_date,
+                actual_qty: qty, qty_after_txn: in_qty, incoming_rate: mv.price_unit,
+                valuation_rate: in_rate, stock_value: in_stock_value,
+                stock_value_difference: carried,
+                voucher_type: "stock_entry", voucher_id: mv.id, voucher_no: &mv.name, sle_no,
+            }).await?;
+        }
+
+        Ok((sle_no, out_value, in_value))
+    }
+
+    /// Build the GL envelope for the done move's leg shape, or `None` when the shape posts no GL
+    /// (cross-warehouse internal transfer: value-neutral) or the directive lacks the accounts.
+    fn move_gl_envelope(
+        &self,
+        mv: &crate::infrastructure::persistence::MoveRow,
+        src: &crate::infrastructure::persistence::LocationFacts,
+        dst: &crate::infrastructure::persistence::LocationFacts,
+        gl: &MoveGlDirective,
+        out_value: Decimal,
+        in_value: Decimal,
+    ) -> Option<AccountingPostEnvelope> {
+        let (description, lines) = if mv.is_inventory {
+            // Adjustment shape (reconciliation vocabulary): the signed value diff between the
+            // inventory account and the adjustment counterleg.
+            let inv = gl.inventory_account_id?;
+            let adj = gl.adjustment_account_id?;
+            if in_value > out_value {
+                ("Inventory adjustment".to_string(), vec![
+                    GlPostLine::debit(inv, in_value - out_value).with_description("Inventory"),
+                    GlPostLine::credit(adj, in_value - out_value).with_description("Adjustment"),
+                ])
+            } else if out_value > in_value {
+                ("Inventory adjustment".to_string(), vec![
+                    GlPostLine::debit(adj, out_value - in_value).with_description("Adjustment"),
+                    GlPostLine::credit(inv, out_value - in_value).with_description("Inventory"),
+                ])
+            } else {
+                return None;
+            }
+        } else if src.usage == "internal" && dst.usage != "internal" {
+            // OUT (delivery shape): Dr COGS / Cr Inventory — the W1-proven leg.
+            ("Stock issue".to_string(), vec![
+                GlPostLine::debit(gl.cogs_account_id?, out_value).with_description("COGS"),
+                GlPostLine::credit(gl.inventory_account_id?, out_value).with_description("Inventory"),
+            ])
+        } else if src.usage != "internal" && dst.usage == "internal" {
+            // IN (receipt shape): Dr Inventory / Cr GR/IR.
+            ("Goods receipt".to_string(), vec![
+                GlPostLine::debit(gl.inventory_account_id?, in_value).with_description("Inventory"),
+                GlPostLine::credit(gl.grir_account_id?, in_value).with_description("GR/IR clearing"),
+            ])
+        } else {
+            // Internal cross-warehouse: value-neutral, no GL (the transfer-path contract).
+            return None;
+        };
+        Some(AccountingPostEnvelope {
+            idempotency_key: mv.id.to_string(),
+            company_id: mv.company_id,
+            branch_id: None,
+            source_type: "inventory".into(),
+            source_id: mv.id,
+            source_reference: Some(mv.name.clone()),
+            posting_date: Utc::now().date_naive(),
+            currency: if gl.currency.is_empty() { "IDR".into() } else { gl.currency.clone() },
+            posting_type: "original".into(),
+            reverses_post_id: None,
+            description: Some(description),
+            lines,
+        })
+    }
+}
+
+// --- the scheduler's MovePipeline port ------------------------------------------
+
+/// The write service IS the move engine, so it implements the port the daily scheduler drives
+/// (`procurement_service::MovePipeline`): the per-move confirm/assign verbs on the CALLER'S
+/// connection — the scheduler runs them inside its per-batch transaction, so a batch's
+/// transitions commit or roll back together. Failures cross the boundary as a flat
+/// `{code, message}` (the engine's own error taxonomy stays on this side of the port). Events
+/// publish immediately through the advisory sink; the batch commit boundary is the scheduler's
+/// concern.
+#[async_trait]
+impl MovePipeline for InventoryWriteService {
+    async fn confirm(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        company_id: Uuid,
+        move_id: Uuid,
+    ) -> Result<MoveState, MovePipelineError> {
+        let pipe = |e: InventoryError| MovePipelineError { code: e.code(), message: e.to_string() };
+        let mv = self
+            .moves
+            .fetch_move(conn, move_id)
+            .await
+            .map_err(|e| pipe(InventoryError::Db(e)))?
+            .ok_or_else(|| pipe(InventoryError::NotFound(move_id)))?;
+        if mv.company_id != company_id {
+            return Err(MovePipelineError {
+                code: "company_mismatch".into(),
+                message: format!("move {move_id} belongs to another company"),
+            });
+        }
+        if mv.state != "draft" {
+            return Err(pipe(InventoryError::WrongMoveState { move_id, action: "confirm", current: mv.state }));
+        }
+        company_scope::bind_company_on(conn, company_id).await.map_err(|e| pipe(InventoryError::Db(e)))?;
+        let to = self.confirm_core(conn, &mv).await.map_err(pipe)?;
+        if to == "confirmed" {
+            self.sink.publish(InventoryEvent::MoveConfirmed(MoveConfirmed {
+                move_id,
+                company_id,
+                item_id: mv.item_id,
+                demand_qty: mv.demand_qty,
+                picking_id: mv.picking_id,
+            }));
+        }
+        to.parse::<MoveState>()
+            .map_err(|e| MovePipelineError { code: "bad_move_state".into(), message: e })
+    }
+
+    async fn assign(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        company_id: Uuid,
+        move_id: Uuid,
+    ) -> Result<MoveState, MovePipelineError> {
+        let pipe = |e: InventoryError| MovePipelineError { code: e.code(), message: e.to_string() };
+        let mv = self
+            .moves
+            .fetch_move(conn, move_id)
+            .await
+            .map_err(|e| pipe(InventoryError::Db(e)))?
+            .ok_or_else(|| pipe(InventoryError::NotFound(move_id)))?;
+        if mv.company_id != company_id {
+            return Err(MovePipelineError {
+                code: "company_mismatch".into(),
+                message: format!("move {move_id} belongs to another company"),
+            });
+        }
+        if mv.state != "confirmed" && mv.state != "partially_available" {
+            return Err(pipe(InventoryError::WrongMoveState { move_id, action: "assign", current: mv.state }));
+        }
+        company_scope::bind_company_on(conn, company_id).await.map_err(|e| pipe(InventoryError::Db(e)))?;
+        let (to, _reserved) = self.assign_core(conn, &mv).await.map_err(pipe)?;
+        if to == "assigned" {
+            self.sink.publish(InventoryEvent::MoveAssigned(MoveAssigned {
+                move_id, company_id, picking_id: mv.picking_id,
+            }));
+        }
+        to.parse::<MoveState>()
+            .map_err(|e| MovePipelineError { code: "bad_move_state".into(), message: e })
+    }
+}

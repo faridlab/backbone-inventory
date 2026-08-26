@@ -1,0 +1,144 @@
+# =============================================================================
+# Domain: Inventory
+# Entities: Lot (Odoo `stock.lot`), Package (Odoo `stock.package`)
+# =============================================================================
+# Tracking aggregates. Lot is the lot/serial registry, unique per
+# (name, item, company) — guard R5. Package is the physical container:
+# nested via parent_package_id + materialized parent_path, with company
+# derived recursively from the location chain (guard R27 — a write-time
+# derivation, not a free column).
+#
+# Naming fidelity (Odoo master): the lot model is `stock.lot` (not
+# production.lot) and the package is `stock.package` (not quant.package).
+#
+# Company fence (ADR-0014): MASTER DATA, `shared_blank`. Both carry a
+# nullable company_id — NULL rows are first-class shared rows (Odoo's
+# `[False]` escape), non-NULL rows stay fenced.
+# =============================================================================
+
+models:
+  # ===========================================================================
+  # Entity: Lot — a lot / serial number per item
+  # ===========================================================================
+  - name: Lot
+    collection: lots
+    description: "A lot / serial number for an item (unique per name x item x company — guard R5)"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique lot identifier"
+
+      name:
+        type: string
+        attributes: ["@required", "@max(150)"]
+        description: "Lot / serial identifier (unique per item x company — guard R5)"
+
+      reference:
+        type: string?
+        attributes: ["@max(150)"]
+        description: "External reference (stock.lot's `ref` field, renamed — `ref` is a reserved Rust keyword and the generator emits broken identifiers for it)"
+
+      item_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "The item # logical FK to catalog.Item.id (the spec's product.product)"
+
+      company_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Owning company; NULL = shared lot visible to every company (shared_blank, ADR-0014) # logical FK to organization.Company.id"
+
+      product_qty:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,4)"]
+        description: "Quantity on hand across quants tracking this lot (stored compute over quants — trigger T10)"
+
+      location_id:
+        type: uuid?
+        attributes: ["@foreign_key(Location.id)"]
+        description: "Current dominant location of this lot (stored compute over its quants — trigger T10; editable inverse resets the quant's location)"
+
+      note:
+        type: string?
+        attributes: ["@max(2000)"]
+        description: "Free-form notes"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    indexes:
+      - type: unique
+        fields: [name, item_id, company_id]
+        where: "deleted_at IS NULL"
+        description: "R5 — one lot name per item x company (_check_unique_lot)"
+      - type: index
+        fields: [item_id]
+      - type: index
+        fields: [company_id]
+
+  # ===========================================================================
+  # Entity: Package — a physical container (nestable)
+  # ===========================================================================
+  - name: Package
+    collection: packages
+    description: "A physical package containing quants; supports nesting (parent_package_id + parent_path); company derived from the location chain (guard R27)"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique package identifier"
+
+      name:
+        type: string
+        attributes: ["@required", "@max(150)"]
+        description: "Package identifier (often the SSCC)"
+
+      complete_name:
+        type: string
+        attributes: ["@max(1000)"]
+        description: "Full nested path including parent packages (recursive stored compute — trigger T7)"
+
+      location_id:
+        type: uuid?
+        attributes: ["@foreign_key(Location.id)"]
+        description: "Current location (recursive stored compute; editable inverse moves the contained quants)"
+
+      company_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "DERIVED recursively from the location chain (guard R27 — write-time derivation, never a free write column); NULL when the location is shared # logical FK to organization.Company.id"
+
+      parent_package_id:
+        type: uuid?
+        attributes: ["@foreign_key(Package.id)"]
+        description: "Parent package (self-referential nesting); null = top-level"
+
+      parent_path:
+        type: string
+        attributes: ["@max(1000)"]
+        description: "Materialized path of the package tree — load-bearing for subtree walks"
+
+      pack_date:
+        type: date?
+        description: "Date the package was packed"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    indexes:
+      - type: index
+        fields: [parent_path]
+        description: "Package-tree hierarchy walks (parent_store pattern)"
+      - type: index
+        fields: [parent_package_id]
+      - type: index
+        fields: [location_id]
+      - type: index
+        fields: [company_id]

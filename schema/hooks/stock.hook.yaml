@@ -1,0 +1,191 @@
+# =============================================================================
+# inventory Hooks — stock move pipeline (converged quant/move/route model).
+# Declarative spec of the 7-state move lifecycle, the reservation triangle
+# invariants, and the quant/route/orderpoint guards. IDs below are the
+# stock-convergence register flags (docs/odoo/inventory/stock §11 guards,
+# §12 triggers) — they intentionally do NOT collide with the voucher-pipeline
+# R1-R7 in inventory.hook.yaml (separate rule namespace per file).
+#
+# The StockMove machine is THE only state machine in the converged model:
+# Transfer.state is a stored-compute projection of its moves (T1) and has NO
+# machine anywhere. The move pipeline (confirm / assign / _action_done /
+# _action_cancel) is implemented in the custom service layer; this file is
+# the declared contract it must satisfy.
+# =============================================================================
+
+module: inventory
+version: 2
+
+# -----------------------------------------------------------------------------
+# State machines — the move owns the lifecycle
+# -----------------------------------------------------------------------------
+state_machines:
+  - entity: StockMove
+    field: state
+    initial: draft
+    states: [draft, waiting, confirmed, partially_available, assigned, done, cancel]
+    transitions:
+      - { from: draft, to: confirmed, on: confirm }            # _action_confirm
+      - { from: draft, to: waiting, on: wait_chain }           # chained move not ready
+      - { from: waiting, to: confirmed, on: release }          # upstream move landed
+      - { from: confirmed, to: partially_available, on: assign } # partial reservation
+      - { from: confirmed, to: assigned, on: assign }          # full reservation
+      - { from: partially_available, to: assigned, on: assign }
+      - { from: assigned, to: done, on: validate }             # _action_done: quant flips + SLE mint + GL legs
+      - { from: partially_available, to: done, on: validate }  # partial validate (backorder mint follows)
+      - { from: confirmed, to: done, on: validate }            # forced done (zero-qty / no reservation)
+      - { from: draft, to: cancel, on: cancel }
+      - { from: waiting, to: cancel, on: cancel }
+      - { from: confirmed, to: cancel, on: cancel }
+      - { from: partially_available, to: cancel, on: cancel }  # releases the partial reservation first
+      - { from: assigned, to: cancel, on: cancel }             # releases the full reservation first
+      # NO transition into done from cancel and none out of done: a done move is
+      # corrected by a REVERSAL move (return), never by editing the row (T6).
+
+# -----------------------------------------------------------------------------
+# Reservation-triangle + quant/route/orderpoint guards.
+# Each maps to a stable error_code the service layer must raise.
+# -----------------------------------------------------------------------------
+rules:
+  # -- reservation triangle (T2) ------------------------------------------------
+  - id: T2
+    name: quant_reserved_authoritative
+    when: reserve, unreserve, validate
+    assert: "stock_move_line.quantity mirrors quant.reserved_quantity; move.state is the aggregate of its lines — never independent counters"
+    error_code: null
+    enforcement: service
+  - id: T2-avail
+    name: available_is_read
+    when: always
+    assert: "quant.available_quantity == quant.quantity - quant.reserved_quantity (stored compute; never hand-written)"
+    error_code: available_mismatch
+    enforcement: service
+  # -- quant invariants ----------------------------------------------------------
+  - id: R12
+    name: one_quant_per_dimension
+    when: write
+    assert: "exactly one quant per (item, location, lot, package, owner) — NULL dimensions dedup in the engine, not in the table"
+    error_code: duplicate_quant
+    enforcement: both
+  - id: R13
+    name: view_location_no_stock
+    when: write
+    assert: "quant.location.usage != 'view'"
+    error_code: quant_on_view_location
+    enforcement: service
+  - id: R24
+    name: no_count_while_reserved
+    when: apply_inventory
+    assert: "quant.reserved_quantity == 0 when staging/applying an inventory count"
+    error_code: quant_reserved
+    enforcement: service
+  - id: T5
+    name: serial_unique
+    when: write
+    assert: "a serial-tracked lot appears on at most one quant with quantity > 0 (sn_duplicated flags the attempt)"
+    error_code: sn_duplicated
+    enforcement: service
+  - id: R26
+    name: quant_company_follows_location
+    when: write
+    assert: "quant.company_id == location.company_id (derived at write time; shared locations hold no quants)"
+    error_code: quant_company_mismatch
+    enforcement: service
+  # -- move lifecycle guards ------------------------------------------------------
+  - id: R9
+    name: location_change_required
+    when: validate
+    assert: "move.location_id != move.location_dest_id (a move with identical src/dest is a no-op and is rejected)"
+    error_code: same_location
+    enforcement: service
+  - id: R19
+    name: cancel_propagates_through_chain
+    when: cancel
+    assert: "cancelling a move with move_dest_ids and propagate_cancel propagates the cancellation downstream (never into done moves)"
+    error_code: null
+    enforcement: service
+  - id: T6
+    name: done_moves_immutable
+    when: update
+    assert: "no field of a done move is edited; corrections are reversal moves (returns)"
+    error_code: done_move_immutable
+    enforcement: service
+  - id: R23
+    name: validate_requires_reserved_or_forced
+    when: validate
+    assert: "outgoing moves validate from assigned, or forced from confirmed with an explicit backorder policy decision"
+    error_code: not_reserved
+    enforcement: service
+  # -- uniqueness guards (indexes carry the DB enforcement) ----------------------
+  - id: R3
+    name: transfer_name_unique_per_company
+    when: create
+    assert: "transfer (name, company_id) unique — carried by the unique index on transfers"
+    error_code: transfer_name_exists
+    enforcement: db
+  - id: R4
+    name: location_barcode_unique_per_company
+    when: create, update
+    assert: "location (barcode, company_id) unique — carried by the unique index on locations"
+    error_code: barcode_exists
+    enforcement: db
+  - id: R5
+    name: lot_name_unique_per_item_company
+    when: create
+    assert: "lot (name, item, company) unique — carried by the unique index on lots"
+    error_code: lot_name_exists
+    enforcement: db
+  - id: R6
+    name: orderpoint_unique_per_item_location_company
+    when: create
+    assert: "reordering rule (item, location, company) unique — carried by the unique index on reordering_rules"
+    error_code: orderpoint_exists
+    enforcement: db
+  # -- route configuration guards --------------------------------------------------
+  - id: R11
+    name: rule_company_consistency
+    when: create, update
+    assert: "rule.company_id == picking_type.company_id == warehouse.company_id when all are set"
+    error_code: rule_company_mismatch
+    enforcement: both
+  - id: R13-rule
+    name: rule_dest_not_view
+    when: create, update
+    assert: "rule.location_dest_id.usage != 'view' (rules never push INTO a view location)"
+    error_code: rule_dest_is_view
+    enforcement: both
+  - id: R1
+    name: warehouse_name_unique_per_company
+    when: create
+    assert: "warehouse (code, company) and (name, company) unique — carried by the unique indexes on warehouses"
+    error_code: warehouse_name_exists
+    enforcement: db
+
+# -----------------------------------------------------------------------------
+# Stock-pipeline domain events (emitted via the module event sink after commit).
+# -----------------------------------------------------------------------------
+events:
+  MoveConfirmed:
+    when: "a stock move hits confirmed"
+    payload: [move_id, company_id, item_id, demand_qty, picking_id]
+  MoveAssigned:
+    when: "a stock move hits assigned (fully reserved)"
+    payload: [move_id, company_id, picking_id]
+  MoveDone:
+    when: "a stock move hits done (quants flipped, SLE minted)"
+    payload: [move_id, company_id, item_id, quantity, price_unit, is_inventory]
+  MoveCancelled:
+    when: "a stock move hits cancel (reservation released)"
+    payload: [move_id, company_id, released_qty]
+  TransferProjected:
+    when: "a transfer's projected state changes (T1 recompute)"
+    payload: [transfer_id, company_id, state, previous_state]
+  BackorderCreated:
+    when: "a partial validate mints the backorder transfer"
+    payload: [backorder_id, company_id, origin_id]
+  QuantAdjusted:
+    when: "an inventory count applies through _apply_inventory (T4)"
+    payload: [quant_id, company_id, item_id, location_id, diff_qty, adjustment_move_id]
+  OrderpointTriggered:
+    when: "the scheduler orders on a reordering rule (T11)"
+    payload: [orderpoint_id, company_id, item_id, qty_to_order, forecast_qty]

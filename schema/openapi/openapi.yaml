@@ -15,10 +15,28 @@ tags:
     description: DeliveryNote management endpoints
   - name: DeliveryNoteItems
     description: DeliveryNoteItem management endpoints
+  - name: Locations
+    description: Location management endpoints
+  - name: StockMoves
+    description: StockMove management endpoints
+  - name: StockMoveLines
+    description: StockMoveLine management endpoints
+  - name: OperationTypes
+    description: OperationType management endpoints
+  - name: Transfers
+    description: Transfer management endpoints
+  - name: Routes
+    description: Route management endpoints
+  - name: RouteRules
+    description: RouteRule management endpoints
+  - name: ReorderingRules
+    description: ReorderingRule management endpoints
   - name: PurchaseReceipts
     description: PurchaseReceipt management endpoints
   - name: PurchaseReceiptItems
     description: PurchaseReceiptItem management endpoints
+  - name: Quants
+    description: Quant management endpoints
   - name: StockEntries
     description: StockEntry management endpoints
   - name: StockEntryItems
@@ -31,6 +49,10 @@ tags:
     description: StockReconciliation management endpoints
   - name: StockReconciliationItems
     description: StockReconciliationItem management endpoints
+  - name: Lots
+    description: Lot management endpoints
+  - name: Packages
+    description: Package management endpoints
   - name: Warehouses
     description: Warehouse management endpoints
   - name: StockItems
@@ -769,6 +791,2934 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /api/v1/locations:
+    get:
+      tags:
+        - Locations
+      summary: List Locations
+      description: Get a paginated list of Locations with optional filtering and sorting
+      operationId: listLocations
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Locations
+      summary: Create Location
+      description: Create a new Location
+      operationId: createLocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLocationRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Location'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/locations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - Locations
+      summary: Get Location by ID
+      operationId: getLocation
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Location'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Locations
+      summary: Update Location (full)
+      operationId: updateLocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLocationRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Location'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Locations
+      summary: Update Location (partial)
+      operationId: patchLocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchLocationRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Location'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Locations
+      summary: Delete Location (soft)
+      operationId: deleteLocation
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/locations/bulk:
+    post:
+      tags:
+        - Locations
+      summary: Bulk create Locations
+      operationId: bulkCreateLocations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateLocationRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Location'
+    put:
+      tags:
+        - Locations
+      summary: Bulk update Locations (full, atomic)
+      operationId: bulkUpdateLocations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdateLocationRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - Locations
+      summary: Bulk partial-update Locations (atomic)
+      operationId: bulkPatchLocations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/locations/upsert:
+    post:
+      tags:
+        - Locations
+      summary: Upsert Location
+      operationId: upsertLocation
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLocationRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Location'
+
+  /api/v1/locations/trash:
+    get:
+      tags:
+        - Locations
+      summary: List deleted Locations
+      operationId: listDeletedLocations
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationList'
+
+  /api/v1/locations/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - Locations
+      summary: Restore deleted Location
+      operationId: restoreLocation
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Location'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/locations/empty:
+    delete:
+      tags:
+        - Locations
+      summary: Empty trash for Locations
+      operationId: emptyTrashLocations
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/locations/delete/bulk:
+    post:
+      tags:
+        - Locations
+      summary: Bulk soft-delete Locations by ids (atomic)
+      operationId: bulkDeleteLocations
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/locations/restore/bulk:
+    post:
+      tags:
+        - Locations
+      summary: Bulk restore Locations by ids (atomic)
+      operationId: bulkRestoreLocations
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/locations/restore/all:
+    post:
+      tags:
+        - Locations
+      summary: Restore all soft-deleted Locations
+      operationId: restoreAllLocations
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/locations/trash/bulk:
+    delete:
+      tags:
+        - Locations
+      summary: Bulk permanently-delete Locations from trash by ids (atomic)
+      operationId: bulkPermanentDeleteLocations
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/stock_moves:
+    get:
+      tags:
+        - StockMoves
+      summary: List StockMoves
+      description: Get a paginated list of StockMoves with optional filtering and sorting
+      operationId: listStockMoves
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMoveList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - StockMoves
+      summary: Create StockMove
+      description: Create a new StockMove
+      operationId: createStockMove
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStockMoveRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMove'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/stock_moves/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - StockMoves
+      summary: Get StockMove by ID
+      operationId: getStockMove
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMove'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - StockMoves
+      summary: Update StockMove (full)
+      operationId: updateStockMove
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStockMoveRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMove'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - StockMoves
+      summary: Update StockMove (partial)
+      operationId: patchStockMove
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchStockMoveRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMove'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - StockMoves
+      summary: Delete StockMove (soft)
+      operationId: deleteStockMove
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/stock_moves/bulk:
+    post:
+      tags:
+        - StockMoves
+      summary: Bulk create StockMoves
+      operationId: bulkCreateStockMoves
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateStockMoveRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StockMove'
+    put:
+      tags:
+        - StockMoves
+      summary: Bulk update StockMoves (full, atomic)
+      operationId: bulkUpdateStockMoves
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdateStockMoveRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMoveBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - StockMoves
+      summary: Bulk partial-update StockMoves (atomic)
+      operationId: bulkPatchStockMoves
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMoveBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/stock_moves/upsert:
+    post:
+      tags:
+        - StockMoves
+      summary: Upsert StockMove
+      operationId: upsertStockMove
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStockMoveRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMove'
+
+  /api/v1/stock_moves/trash:
+    get:
+      tags:
+        - StockMoves
+      summary: List deleted StockMoves
+      operationId: listDeletedStockMoves
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMoveList'
+
+  /api/v1/stock_moves/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - StockMoves
+      summary: Restore deleted StockMove
+      operationId: restoreStockMove
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMove'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/stock_moves/empty:
+    delete:
+      tags:
+        - StockMoves
+      summary: Empty trash for StockMoves
+      operationId: emptyTrashStockMoves
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/stock_moves/delete/bulk:
+    post:
+      tags:
+        - StockMoves
+      summary: Bulk soft-delete StockMoves by ids (atomic)
+      operationId: bulkDeleteStockMoves
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/stock_moves/restore/bulk:
+    post:
+      tags:
+        - StockMoves
+      summary: Bulk restore StockMoves by ids (atomic)
+      operationId: bulkRestoreStockMoves
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMoveBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/stock_moves/restore/all:
+    post:
+      tags:
+        - StockMoves
+      summary: Restore all soft-deleted StockMoves
+      operationId: restoreAllStockMoves
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/stock_moves/trash/bulk:
+    delete:
+      tags:
+        - StockMoves
+      summary: Bulk permanently-delete StockMoves from trash by ids (atomic)
+      operationId: bulkPermanentDeleteStockMoves
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/stock_move_lines:
+    get:
+      tags:
+        - StockMoveLines
+      summary: List StockMoveLines
+      description: Get a paginated list of StockMoveLines with optional filtering and sorting
+      operationId: listStockMoveLines
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMoveLineList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - StockMoveLines
+      summary: Create StockMoveLine
+      description: Create a new StockMoveLine
+      operationId: createStockMoveLine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStockMoveLineRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMoveLine'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/stock_move_lines/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - StockMoveLines
+      summary: Get StockMoveLine by ID
+      operationId: getStockMoveLine
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMoveLine'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - StockMoveLines
+      summary: Update StockMoveLine (full)
+      operationId: updateStockMoveLine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStockMoveLineRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMoveLine'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - StockMoveLines
+      summary: Update StockMoveLine (partial)
+      operationId: patchStockMoveLine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchStockMoveLineRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMoveLine'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - StockMoveLines
+      summary: Delete StockMoveLine (soft)
+      operationId: deleteStockMoveLine
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/stock_move_lines/bulk:
+    post:
+      tags:
+        - StockMoveLines
+      summary: Bulk create StockMoveLines
+      operationId: bulkCreateStockMoveLines
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateStockMoveLineRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StockMoveLine'
+    put:
+      tags:
+        - StockMoveLines
+      summary: Bulk update StockMoveLines (full, atomic)
+      operationId: bulkUpdateStockMoveLines
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdateStockMoveLineRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMoveLineBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - StockMoveLines
+      summary: Bulk partial-update StockMoveLines (atomic)
+      operationId: bulkPatchStockMoveLines
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMoveLineBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/stock_move_lines/upsert:
+    post:
+      tags:
+        - StockMoveLines
+      summary: Upsert StockMoveLine
+      operationId: upsertStockMoveLine
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStockMoveLineRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMoveLine'
+
+  /api/v1/stock_move_lines/trash:
+    get:
+      tags:
+        - StockMoveLines
+      summary: List deleted StockMoveLines
+      operationId: listDeletedStockMoveLines
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMoveLineList'
+
+  /api/v1/stock_move_lines/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - StockMoveLines
+      summary: Restore deleted StockMoveLine
+      operationId: restoreStockMoveLine
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMoveLine'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/stock_move_lines/empty:
+    delete:
+      tags:
+        - StockMoveLines
+      summary: Empty trash for StockMoveLines
+      operationId: emptyTrashStockMoveLines
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/stock_move_lines/delete/bulk:
+    post:
+      tags:
+        - StockMoveLines
+      summary: Bulk soft-delete StockMoveLines by ids (atomic)
+      operationId: bulkDeleteStockMoveLines
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/stock_move_lines/restore/bulk:
+    post:
+      tags:
+        - StockMoveLines
+      summary: Bulk restore StockMoveLines by ids (atomic)
+      operationId: bulkRestoreStockMoveLines
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMoveLineBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/stock_move_lines/restore/all:
+    post:
+      tags:
+        - StockMoveLines
+      summary: Restore all soft-deleted StockMoveLines
+      operationId: restoreAllStockMoveLines
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/stock_move_lines/trash/bulk:
+    delete:
+      tags:
+        - StockMoveLines
+      summary: Bulk permanently-delete StockMoveLines from trash by ids (atomic)
+      operationId: bulkPermanentDeleteStockMoveLines
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/operation_types:
+    get:
+      tags:
+        - OperationTypes
+      summary: List OperationTypes
+      description: Get a paginated list of OperationTypes with optional filtering and sorting
+      operationId: listOperationTypes
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationTypeList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - OperationTypes
+      summary: Create OperationType
+      description: Create a new OperationType
+      operationId: createOperationType
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOperationTypeRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationType'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/operation_types/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - OperationTypes
+      summary: Get OperationType by ID
+      operationId: getOperationType
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationType'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - OperationTypes
+      summary: Update OperationType (full)
+      operationId: updateOperationType
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOperationTypeRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationType'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - OperationTypes
+      summary: Update OperationType (partial)
+      operationId: patchOperationType
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchOperationTypeRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationType'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - OperationTypes
+      summary: Delete OperationType (soft)
+      operationId: deleteOperationType
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/operation_types/bulk:
+    post:
+      tags:
+        - OperationTypes
+      summary: Bulk create OperationTypes
+      operationId: bulkCreateOperationTypes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateOperationTypeRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OperationType'
+    put:
+      tags:
+        - OperationTypes
+      summary: Bulk update OperationTypes (full, atomic)
+      operationId: bulkUpdateOperationTypes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdateOperationTypeRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationTypeBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - OperationTypes
+      summary: Bulk partial-update OperationTypes (atomic)
+      operationId: bulkPatchOperationTypes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationTypeBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/operation_types/upsert:
+    post:
+      tags:
+        - OperationTypes
+      summary: Upsert OperationType
+      operationId: upsertOperationType
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOperationTypeRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationType'
+
+  /api/v1/operation_types/trash:
+    get:
+      tags:
+        - OperationTypes
+      summary: List deleted OperationTypes
+      operationId: listDeletedOperationTypes
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationTypeList'
+
+  /api/v1/operation_types/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - OperationTypes
+      summary: Restore deleted OperationType
+      operationId: restoreOperationType
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationType'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/operation_types/empty:
+    delete:
+      tags:
+        - OperationTypes
+      summary: Empty trash for OperationTypes
+      operationId: emptyTrashOperationTypes
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/operation_types/delete/bulk:
+    post:
+      tags:
+        - OperationTypes
+      summary: Bulk soft-delete OperationTypes by ids (atomic)
+      operationId: bulkDeleteOperationTypes
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/operation_types/restore/bulk:
+    post:
+      tags:
+        - OperationTypes
+      summary: Bulk restore OperationTypes by ids (atomic)
+      operationId: bulkRestoreOperationTypes
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationTypeBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/operation_types/restore/all:
+    post:
+      tags:
+        - OperationTypes
+      summary: Restore all soft-deleted OperationTypes
+      operationId: restoreAllOperationTypes
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/operation_types/trash/bulk:
+    delete:
+      tags:
+        - OperationTypes
+      summary: Bulk permanently-delete OperationTypes from trash by ids (atomic)
+      operationId: bulkPermanentDeleteOperationTypes
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/transfers:
+    get:
+      tags:
+        - Transfers
+      summary: List Transfers
+      description: Get a paginated list of Transfers with optional filtering and sorting
+      operationId: listTransfers
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Transfers
+      summary: Create Transfer
+      description: Create a new Transfer
+      operationId: createTransfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTransferRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transfer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/transfers/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - Transfers
+      summary: Get Transfer by ID
+      operationId: getTransfer
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transfer'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Transfers
+      summary: Update Transfer (full)
+      operationId: updateTransfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTransferRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transfer'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Transfers
+      summary: Update Transfer (partial)
+      operationId: patchTransfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchTransferRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transfer'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Transfers
+      summary: Delete Transfer (soft)
+      operationId: deleteTransfer
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/transfers/bulk:
+    post:
+      tags:
+        - Transfers
+      summary: Bulk create Transfers
+      operationId: bulkCreateTransfers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateTransferRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Transfer'
+    put:
+      tags:
+        - Transfers
+      summary: Bulk update Transfers (full, atomic)
+      operationId: bulkUpdateTransfers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdateTransferRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - Transfers
+      summary: Bulk partial-update Transfers (atomic)
+      operationId: bulkPatchTransfers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/transfers/upsert:
+    post:
+      tags:
+        - Transfers
+      summary: Upsert Transfer
+      operationId: upsertTransfer
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTransferRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transfer'
+
+  /api/v1/transfers/trash:
+    get:
+      tags:
+        - Transfers
+      summary: List deleted Transfers
+      operationId: listDeletedTransfers
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferList'
+
+  /api/v1/transfers/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - Transfers
+      summary: Restore deleted Transfer
+      operationId: restoreTransfer
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transfer'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/transfers/empty:
+    delete:
+      tags:
+        - Transfers
+      summary: Empty trash for Transfers
+      operationId: emptyTrashTransfers
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/transfers/delete/bulk:
+    post:
+      tags:
+        - Transfers
+      summary: Bulk soft-delete Transfers by ids (atomic)
+      operationId: bulkDeleteTransfers
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/transfers/restore/bulk:
+    post:
+      tags:
+        - Transfers
+      summary: Bulk restore Transfers by ids (atomic)
+      operationId: bulkRestoreTransfers
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/transfers/restore/all:
+    post:
+      tags:
+        - Transfers
+      summary: Restore all soft-deleted Transfers
+      operationId: restoreAllTransfers
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/transfers/trash/bulk:
+    delete:
+      tags:
+        - Transfers
+      summary: Bulk permanently-delete Transfers from trash by ids (atomic)
+      operationId: bulkPermanentDeleteTransfers
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/routes:
+    get:
+      tags:
+        - Routes
+      summary: List Routes
+      description: Get a paginated list of Routes with optional filtering and sorting
+      operationId: listRoutes
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Routes
+      summary: Create Route
+      description: Create a new Route
+      operationId: createRoute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRouteRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Route'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/routes/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - Routes
+      summary: Get Route by ID
+      operationId: getRoute
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Route'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Routes
+      summary: Update Route (full)
+      operationId: updateRoute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRouteRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Route'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Routes
+      summary: Update Route (partial)
+      operationId: patchRoute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchRouteRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Route'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Routes
+      summary: Delete Route (soft)
+      operationId: deleteRoute
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/routes/bulk:
+    post:
+      tags:
+        - Routes
+      summary: Bulk create Routes
+      operationId: bulkCreateRoutes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateRouteRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Route'
+    put:
+      tags:
+        - Routes
+      summary: Bulk update Routes (full, atomic)
+      operationId: bulkUpdateRoutes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdateRouteRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - Routes
+      summary: Bulk partial-update Routes (atomic)
+      operationId: bulkPatchRoutes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/routes/upsert:
+    post:
+      tags:
+        - Routes
+      summary: Upsert Route
+      operationId: upsertRoute
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRouteRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Route'
+
+  /api/v1/routes/trash:
+    get:
+      tags:
+        - Routes
+      summary: List deleted Routes
+      operationId: listDeletedRoutes
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteList'
+
+  /api/v1/routes/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - Routes
+      summary: Restore deleted Route
+      operationId: restoreRoute
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Route'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/routes/empty:
+    delete:
+      tags:
+        - Routes
+      summary: Empty trash for Routes
+      operationId: emptyTrashRoutes
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/routes/delete/bulk:
+    post:
+      tags:
+        - Routes
+      summary: Bulk soft-delete Routes by ids (atomic)
+      operationId: bulkDeleteRoutes
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/routes/restore/bulk:
+    post:
+      tags:
+        - Routes
+      summary: Bulk restore Routes by ids (atomic)
+      operationId: bulkRestoreRoutes
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/routes/restore/all:
+    post:
+      tags:
+        - Routes
+      summary: Restore all soft-deleted Routes
+      operationId: restoreAllRoutes
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/routes/trash/bulk:
+    delete:
+      tags:
+        - Routes
+      summary: Bulk permanently-delete Routes from trash by ids (atomic)
+      operationId: bulkPermanentDeleteRoutes
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/route_rules:
+    get:
+      tags:
+        - RouteRules
+      summary: List RouteRules
+      description: Get a paginated list of RouteRules with optional filtering and sorting
+      operationId: listRouteRules
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteRuleList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - RouteRules
+      summary: Create RouteRule
+      description: Create a new RouteRule
+      operationId: createRouteRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRouteRuleRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteRule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/route_rules/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - RouteRules
+      summary: Get RouteRule by ID
+      operationId: getRouteRule
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteRule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - RouteRules
+      summary: Update RouteRule (full)
+      operationId: updateRouteRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRouteRuleRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteRule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - RouteRules
+      summary: Update RouteRule (partial)
+      operationId: patchRouteRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchRouteRuleRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteRule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - RouteRules
+      summary: Delete RouteRule (soft)
+      operationId: deleteRouteRule
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/route_rules/bulk:
+    post:
+      tags:
+        - RouteRules
+      summary: Bulk create RouteRules
+      operationId: bulkCreateRouteRules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateRouteRuleRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RouteRule'
+    put:
+      tags:
+        - RouteRules
+      summary: Bulk update RouteRules (full, atomic)
+      operationId: bulkUpdateRouteRules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdateRouteRuleRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteRuleBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - RouteRules
+      summary: Bulk partial-update RouteRules (atomic)
+      operationId: bulkPatchRouteRules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteRuleBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/route_rules/upsert:
+    post:
+      tags:
+        - RouteRules
+      summary: Upsert RouteRule
+      operationId: upsertRouteRule
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRouteRuleRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteRule'
+
+  /api/v1/route_rules/trash:
+    get:
+      tags:
+        - RouteRules
+      summary: List deleted RouteRules
+      operationId: listDeletedRouteRules
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteRuleList'
+
+  /api/v1/route_rules/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - RouteRules
+      summary: Restore deleted RouteRule
+      operationId: restoreRouteRule
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteRule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/route_rules/empty:
+    delete:
+      tags:
+        - RouteRules
+      summary: Empty trash for RouteRules
+      operationId: emptyTrashRouteRules
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/route_rules/delete/bulk:
+    post:
+      tags:
+        - RouteRules
+      summary: Bulk soft-delete RouteRules by ids (atomic)
+      operationId: bulkDeleteRouteRules
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/route_rules/restore/bulk:
+    post:
+      tags:
+        - RouteRules
+      summary: Bulk restore RouteRules by ids (atomic)
+      operationId: bulkRestoreRouteRules
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteRuleBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/route_rules/restore/all:
+    post:
+      tags:
+        - RouteRules
+      summary: Restore all soft-deleted RouteRules
+      operationId: restoreAllRouteRules
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/route_rules/trash/bulk:
+    delete:
+      tags:
+        - RouteRules
+      summary: Bulk permanently-delete RouteRules from trash by ids (atomic)
+      operationId: bulkPermanentDeleteRouteRules
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/reordering_rules:
+    get:
+      tags:
+        - ReorderingRules
+      summary: List ReorderingRules
+      description: Get a paginated list of ReorderingRules with optional filtering and sorting
+      operationId: listReorderingRules
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReorderingRuleList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - ReorderingRules
+      summary: Create ReorderingRule
+      description: Create a new ReorderingRule
+      operationId: createReorderingRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReorderingRuleRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReorderingRule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/reordering_rules/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - ReorderingRules
+      summary: Get ReorderingRule by ID
+      operationId: getReorderingRule
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReorderingRule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - ReorderingRules
+      summary: Update ReorderingRule (full)
+      operationId: updateReorderingRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateReorderingRuleRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReorderingRule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - ReorderingRules
+      summary: Update ReorderingRule (partial)
+      operationId: patchReorderingRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchReorderingRuleRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReorderingRule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - ReorderingRules
+      summary: Delete ReorderingRule (soft)
+      operationId: deleteReorderingRule
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/reordering_rules/bulk:
+    post:
+      tags:
+        - ReorderingRules
+      summary: Bulk create ReorderingRules
+      operationId: bulkCreateReorderingRules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateReorderingRuleRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReorderingRule'
+    put:
+      tags:
+        - ReorderingRules
+      summary: Bulk update ReorderingRules (full, atomic)
+      operationId: bulkUpdateReorderingRules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdateReorderingRuleRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReorderingRuleBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - ReorderingRules
+      summary: Bulk partial-update ReorderingRules (atomic)
+      operationId: bulkPatchReorderingRules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReorderingRuleBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/reordering_rules/upsert:
+    post:
+      tags:
+        - ReorderingRules
+      summary: Upsert ReorderingRule
+      operationId: upsertReorderingRule
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateReorderingRuleRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReorderingRule'
+
+  /api/v1/reordering_rules/trash:
+    get:
+      tags:
+        - ReorderingRules
+      summary: List deleted ReorderingRules
+      operationId: listDeletedReorderingRules
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReorderingRuleList'
+
+  /api/v1/reordering_rules/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - ReorderingRules
+      summary: Restore deleted ReorderingRule
+      operationId: restoreReorderingRule
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReorderingRule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/reordering_rules/empty:
+    delete:
+      tags:
+        - ReorderingRules
+      summary: Empty trash for ReorderingRules
+      operationId: emptyTrashReorderingRules
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/reordering_rules/delete/bulk:
+    post:
+      tags:
+        - ReorderingRules
+      summary: Bulk soft-delete ReorderingRules by ids (atomic)
+      operationId: bulkDeleteReorderingRules
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/reordering_rules/restore/bulk:
+    post:
+      tags:
+        - ReorderingRules
+      summary: Bulk restore ReorderingRules by ids (atomic)
+      operationId: bulkRestoreReorderingRules
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReorderingRuleBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/reordering_rules/restore/all:
+    post:
+      tags:
+        - ReorderingRules
+      summary: Restore all soft-deleted ReorderingRules
+      operationId: restoreAllReorderingRules
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/reordering_rules/trash/bulk:
+    delete:
+      tags:
+        - ReorderingRules
+      summary: Bulk permanently-delete ReorderingRules from trash by ids (atomic)
+      operationId: bulkPermanentDeleteReorderingRules
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /api/v1/purchase_receipts:
     get:
       tags:
@@ -1487,6 +4437,372 @@ paths:
         - PurchaseReceiptItems
       summary: Bulk permanently-delete PurchaseReceiptItems from trash by ids (atomic)
       operationId: bulkPermanentDeletePurchaseReceiptItems
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/quants:
+    get:
+      tags:
+        - Quants
+      summary: List Quants
+      description: Get a paginated list of Quants with optional filtering and sorting
+      operationId: listQuants
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuantList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Quants
+      summary: Create Quant
+      description: Create a new Quant
+      operationId: createQuant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateQuantRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/quants/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - Quants
+      summary: Get Quant by ID
+      operationId: getQuant
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quant'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Quants
+      summary: Update Quant (full)
+      operationId: updateQuant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateQuantRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quant'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Quants
+      summary: Update Quant (partial)
+      operationId: patchQuant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchQuantRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quant'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Quants
+      summary: Delete Quant (soft)
+      operationId: deleteQuant
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/quants/bulk:
+    post:
+      tags:
+        - Quants
+      summary: Bulk create Quants
+      operationId: bulkCreateQuants
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateQuantRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Quant'
+    put:
+      tags:
+        - Quants
+      summary: Bulk update Quants (full, atomic)
+      operationId: bulkUpdateQuants
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdateQuantRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuantBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - Quants
+      summary: Bulk partial-update Quants (atomic)
+      operationId: bulkPatchQuants
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuantBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/quants/upsert:
+    post:
+      tags:
+        - Quants
+      summary: Upsert Quant
+      operationId: upsertQuant
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateQuantRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quant'
+
+  /api/v1/quants/trash:
+    get:
+      tags:
+        - Quants
+      summary: List deleted Quants
+      operationId: listDeletedQuants
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuantList'
+
+  /api/v1/quants/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - Quants
+      summary: Restore deleted Quant
+      operationId: restoreQuant
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quant'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/quants/empty:
+    delete:
+      tags:
+        - Quants
+      summary: Empty trash for Quants
+      operationId: emptyTrashQuants
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/quants/delete/bulk:
+    post:
+      tags:
+        - Quants
+      summary: Bulk soft-delete Quants by ids (atomic)
+      operationId: bulkDeleteQuants
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/quants/restore/bulk:
+    post:
+      tags:
+        - Quants
+      summary: Bulk restore Quants by ids (atomic)
+      operationId: bulkRestoreQuants
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuantBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/quants/restore/all:
+    post:
+      tags:
+        - Quants
+      summary: Restore all soft-deleted Quants
+      operationId: restoreAllQuants
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/quants/trash/bulk:
+    delete:
+      tags:
+        - Quants
+      summary: Bulk permanently-delete Quants from trash by ids (atomic)
+      operationId: bulkPermanentDeleteQuants
       requestBody:
         $ref: '#/components/requestBodies/BatchIds'
       responses:
@@ -3697,6 +7013,738 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /api/v1/lots:
+    get:
+      tags:
+        - Lots
+      summary: List Lots
+      description: Get a paginated list of Lots with optional filtering and sorting
+      operationId: listLots
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LotList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Lots
+      summary: Create Lot
+      description: Create a new Lot
+      operationId: createLot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLotRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/lots/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - Lots
+      summary: Get Lot by ID
+      operationId: getLot
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lot'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Lots
+      summary: Update Lot (full)
+      operationId: updateLot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLotRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lot'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Lots
+      summary: Update Lot (partial)
+      operationId: patchLot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchLotRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lot'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Lots
+      summary: Delete Lot (soft)
+      operationId: deleteLot
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/lots/bulk:
+    post:
+      tags:
+        - Lots
+      summary: Bulk create Lots
+      operationId: bulkCreateLots
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateLotRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Lot'
+    put:
+      tags:
+        - Lots
+      summary: Bulk update Lots (full, atomic)
+      operationId: bulkUpdateLots
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdateLotRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LotBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - Lots
+      summary: Bulk partial-update Lots (atomic)
+      operationId: bulkPatchLots
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LotBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/lots/upsert:
+    post:
+      tags:
+        - Lots
+      summary: Upsert Lot
+      operationId: upsertLot
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLotRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lot'
+
+  /api/v1/lots/trash:
+    get:
+      tags:
+        - Lots
+      summary: List deleted Lots
+      operationId: listDeletedLots
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LotList'
+
+  /api/v1/lots/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - Lots
+      summary: Restore deleted Lot
+      operationId: restoreLot
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lot'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/lots/empty:
+    delete:
+      tags:
+        - Lots
+      summary: Empty trash for Lots
+      operationId: emptyTrashLots
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/lots/delete/bulk:
+    post:
+      tags:
+        - Lots
+      summary: Bulk soft-delete Lots by ids (atomic)
+      operationId: bulkDeleteLots
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/lots/restore/bulk:
+    post:
+      tags:
+        - Lots
+      summary: Bulk restore Lots by ids (atomic)
+      operationId: bulkRestoreLots
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LotBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/lots/restore/all:
+    post:
+      tags:
+        - Lots
+      summary: Restore all soft-deleted Lots
+      operationId: restoreAllLots
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/lots/trash/bulk:
+    delete:
+      tags:
+        - Lots
+      summary: Bulk permanently-delete Lots from trash by ids (atomic)
+      operationId: bulkPermanentDeleteLots
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/packages:
+    get:
+      tags:
+        - Packages
+      summary: List Packages
+      description: Get a paginated list of Packages with optional filtering and sorting
+      operationId: listPackages
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Packages
+      summary: Create Package
+      description: Create a new Package
+      operationId: createPackage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePackageRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Package'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/packages/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - Packages
+      summary: Get Package by ID
+      operationId: getPackage
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Package'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Packages
+      summary: Update Package (full)
+      operationId: updatePackage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePackageRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Package'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Packages
+      summary: Update Package (partial)
+      operationId: patchPackage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchPackageRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Package'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Packages
+      summary: Delete Package (soft)
+      operationId: deletePackage
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/packages/bulk:
+    post:
+      tags:
+        - Packages
+      summary: Bulk create Packages
+      operationId: bulkCreatePackages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreatePackageRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Package'
+    put:
+      tags:
+        - Packages
+      summary: Bulk update Packages (full, atomic)
+      operationId: bulkUpdatePackages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdatePackageRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - Packages
+      summary: Bulk partial-update Packages (atomic)
+      operationId: bulkPatchPackages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/packages/upsert:
+    post:
+      tags:
+        - Packages
+      summary: Upsert Package
+      operationId: upsertPackage
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePackageRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Package'
+
+  /api/v1/packages/trash:
+    get:
+      tags:
+        - Packages
+      summary: List deleted Packages
+      operationId: listDeletedPackages
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageList'
+
+  /api/v1/packages/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - Packages
+      summary: Restore deleted Package
+      operationId: restorePackage
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Package'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/packages/empty:
+    delete:
+      tags:
+        - Packages
+      summary: Empty trash for Packages
+      operationId: emptyTrashPackages
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/packages/delete/bulk:
+    post:
+      tags:
+        - Packages
+      summary: Bulk soft-delete Packages by ids (atomic)
+      operationId: bulkDeletePackages
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/packages/restore/bulk:
+    post:
+      tags:
+        - Packages
+      summary: Bulk restore Packages by ids (atomic)
+      operationId: bulkRestorePackages
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/packages/restore/all:
+    post:
+      tags:
+        - Packages
+      summary: Restore all soft-deleted Packages
+      operationId: restoreAllPackages
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/packages/trash/bulk:
+    delete:
+      tags:
+        - Packages
+      summary: Bulk permanently-delete Packages from trash by ids (atomic)
+      operationId: bulkPermanentDeletePackages
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /api/v1/warehouses:
     get:
       tags:
@@ -4481,6 +8529,10 @@ components:
         inventory_account_id:
           type: string
           format: uuid
+        transfer_id:
+          nullable: true
+          type: string
+          format: uuid
         status:
           type: string
         posting_state:
@@ -4563,6 +8615,10 @@ components:
         inventory_account_id:
           type: string
           format: uuid
+        transfer_id:
+          nullable: true
+          type: string
+          format: uuid
         status:
           type: string
         posting_state:
@@ -4632,6 +8688,10 @@ components:
         inventory_account_id:
           type: string
           format: uuid
+        transfer_id:
+          nullable: true
+          type: string
+          format: uuid
         status:
           type: string
         posting_state:
@@ -4687,6 +8747,10 @@ components:
           type: string
           format: uuid
         inventory_account_id:
+          type: string
+          format: uuid
+        transfer_id:
+          nullable: true
           type: string
           format: uuid
         status:
@@ -4857,6 +8921,2116 @@ components:
         meta:
           $ref: '#/components/schemas/PaginationMeta'
 
+    Location:
+      type: object
+      required:
+        - id
+        - name
+        - complete_name
+        - active
+        - usage
+        - parent_path
+        - cyclic_inventory_frequency
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 150
+        complete_name:
+          type: string
+          maxLength: 500
+        active:
+          type: boolean
+        usage:
+          type: string
+        location_id:
+          nullable: true
+          type: string
+          format: uuid
+        parent_path:
+          type: string
+          maxLength: 1000
+        barcode:
+          nullable: true
+          type: string
+          maxLength: 64
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        warehouse_id:
+          nullable: true
+          type: string
+          format: uuid
+        cyclic_inventory_frequency:
+          type: integer
+          format: int32
+        last_inventory_date:
+          nullable: true
+          type: string
+          format: date
+        next_inventory_date:
+          nullable: true
+          type: string
+          format: date
+        metadata:
+          type: object
+
+    LocationBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Location'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreateLocationRequest:
+      type: object
+      required:
+        - name
+        - complete_name
+        - active
+        - usage
+        - parent_path
+        - cyclic_inventory_frequency
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        complete_name:
+          type: string
+          maxLength: 500
+        active:
+          type: boolean
+        usage:
+          type: string
+        location_id:
+          nullable: true
+          type: string
+          format: uuid
+        parent_path:
+          type: string
+          maxLength: 1000
+        barcode:
+          nullable: true
+          type: string
+          maxLength: 64
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        warehouse_id:
+          nullable: true
+          type: string
+          format: uuid
+        cyclic_inventory_frequency:
+          type: integer
+          format: int32
+        last_inventory_date:
+          nullable: true
+          type: string
+          format: date
+        next_inventory_date:
+          nullable: true
+          type: string
+          format: date
+        metadata:
+          type: object
+
+    UpdateLocationRequest:
+      type: object
+      required:
+        - name
+        - complete_name
+        - active
+        - usage
+        - parent_path
+        - cyclic_inventory_frequency
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        complete_name:
+          type: string
+          maxLength: 500
+        active:
+          type: boolean
+        usage:
+          type: string
+        location_id:
+          nullable: true
+          type: string
+          format: uuid
+        parent_path:
+          type: string
+          maxLength: 1000
+        barcode:
+          nullable: true
+          type: string
+          maxLength: 64
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        warehouse_id:
+          nullable: true
+          type: string
+          format: uuid
+        cyclic_inventory_frequency:
+          type: integer
+          format: int32
+        last_inventory_date:
+          nullable: true
+          type: string
+          format: date
+        next_inventory_date:
+          nullable: true
+          type: string
+          format: date
+        metadata:
+          type: object
+
+    PatchLocationRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        complete_name:
+          type: string
+          maxLength: 500
+        active:
+          type: boolean
+        usage:
+          type: string
+        location_id:
+          nullable: true
+          type: string
+          format: uuid
+        parent_path:
+          type: string
+          maxLength: 1000
+        barcode:
+          nullable: true
+          type: string
+          maxLength: 64
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        warehouse_id:
+          nullable: true
+          type: string
+          format: uuid
+        cyclic_inventory_frequency:
+          type: integer
+          format: int32
+        last_inventory_date:
+          nullable: true
+          type: string
+          format: date
+        next_inventory_date:
+          nullable: true
+          type: string
+          format: date
+        metadata:
+          type: object
+
+    LocationList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Location'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    StockMove:
+      type: object
+      required:
+        - id
+        - name
+        - state
+        - priority
+        - create_date
+        - date
+        - item_id
+        - demand_qty
+        - quantity
+        - price_unit
+        - procure_method
+        - location_id
+        - location_dest_id
+        - company_id
+        - move_orig_ids
+        - move_dest_ids
+        - is_inventory
+        - scrapped
+        - propagate_cancel
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 400
+        state:
+          type: string
+        priority:
+          type: string
+        create_date:
+          type: string
+          format: date-time
+        date:
+          type: string
+          format: date-time
+        item_id:
+          type: string
+          format: uuid
+        demand_qty:
+          type: string
+        quantity:
+          type: string
+        price_unit:
+          type: string
+        procure_method:
+          type: string
+        picking_id:
+          nullable: true
+          type: string
+          format: uuid
+        origin:
+          nullable: true
+          type: string
+          maxLength: 200
+        location_id:
+          type: string
+          format: uuid
+        location_dest_id:
+          type: string
+          format: uuid
+        partner_id:
+          nullable: true
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        rule_id:
+          nullable: true
+          type: string
+          format: uuid
+        warehouse_id:
+          nullable: true
+          type: string
+          format: uuid
+        orderpoint_id:
+          nullable: true
+          type: string
+          format: uuid
+        move_orig_ids:
+          type: array
+        move_dest_ids:
+          type: array
+        is_inventory:
+          type: boolean
+        scrapped:
+          type: boolean
+        propagate_cancel:
+          type: boolean
+        metadata:
+          type: object
+
+    StockMoveBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockMove'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreateStockMoveRequest:
+      type: object
+      required:
+        - name
+        - state
+        - priority
+        - create_date
+        - date
+        - item_id
+        - demand_qty
+        - quantity
+        - price_unit
+        - procure_method
+        - location_id
+        - location_dest_id
+        - company_id
+        - move_orig_ids
+        - move_dest_ids
+        - is_inventory
+        - scrapped
+        - propagate_cancel
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 400
+        state:
+          type: string
+        priority:
+          type: string
+        create_date:
+          type: string
+          format: date-time
+        date:
+          type: string
+          format: date-time
+        item_id:
+          type: string
+          format: uuid
+        demand_qty:
+          type: string
+        quantity:
+          type: string
+        price_unit:
+          type: string
+        procure_method:
+          type: string
+        picking_id:
+          nullable: true
+          type: string
+          format: uuid
+        origin:
+          nullable: true
+          type: string
+          maxLength: 200
+        location_id:
+          type: string
+          format: uuid
+        location_dest_id:
+          type: string
+          format: uuid
+        partner_id:
+          nullable: true
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        rule_id:
+          nullable: true
+          type: string
+          format: uuid
+        warehouse_id:
+          nullable: true
+          type: string
+          format: uuid
+        orderpoint_id:
+          nullable: true
+          type: string
+          format: uuid
+        move_orig_ids:
+          type: array
+        move_dest_ids:
+          type: array
+        is_inventory:
+          type: boolean
+        scrapped:
+          type: boolean
+        propagate_cancel:
+          type: boolean
+        metadata:
+          type: object
+
+    UpdateStockMoveRequest:
+      type: object
+      required:
+        - name
+        - state
+        - priority
+        - create_date
+        - date
+        - item_id
+        - demand_qty
+        - quantity
+        - price_unit
+        - procure_method
+        - location_id
+        - location_dest_id
+        - company_id
+        - move_orig_ids
+        - move_dest_ids
+        - is_inventory
+        - scrapped
+        - propagate_cancel
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 400
+        state:
+          type: string
+        priority:
+          type: string
+        create_date:
+          type: string
+          format: date-time
+        date:
+          type: string
+          format: date-time
+        item_id:
+          type: string
+          format: uuid
+        demand_qty:
+          type: string
+        quantity:
+          type: string
+        price_unit:
+          type: string
+        procure_method:
+          type: string
+        picking_id:
+          nullable: true
+          type: string
+          format: uuid
+        origin:
+          nullable: true
+          type: string
+          maxLength: 200
+        location_id:
+          type: string
+          format: uuid
+        location_dest_id:
+          type: string
+          format: uuid
+        partner_id:
+          nullable: true
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        rule_id:
+          nullable: true
+          type: string
+          format: uuid
+        warehouse_id:
+          nullable: true
+          type: string
+          format: uuid
+        orderpoint_id:
+          nullable: true
+          type: string
+          format: uuid
+        move_orig_ids:
+          type: array
+        move_dest_ids:
+          type: array
+        is_inventory:
+          type: boolean
+        scrapped:
+          type: boolean
+        propagate_cancel:
+          type: boolean
+        metadata:
+          type: object
+
+    PatchStockMoveRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 400
+        state:
+          type: string
+        priority:
+          type: string
+        create_date:
+          type: string
+          format: date-time
+        date:
+          type: string
+          format: date-time
+        item_id:
+          type: string
+          format: uuid
+        demand_qty:
+          type: string
+        quantity:
+          type: string
+        price_unit:
+          type: string
+        procure_method:
+          type: string
+        picking_id:
+          nullable: true
+          type: string
+          format: uuid
+        origin:
+          nullable: true
+          type: string
+          maxLength: 200
+        location_id:
+          type: string
+          format: uuid
+        location_dest_id:
+          type: string
+          format: uuid
+        partner_id:
+          nullable: true
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        rule_id:
+          nullable: true
+          type: string
+          format: uuid
+        warehouse_id:
+          nullable: true
+          type: string
+          format: uuid
+        orderpoint_id:
+          nullable: true
+          type: string
+          format: uuid
+        move_orig_ids:
+          type: array
+        move_dest_ids:
+          type: array
+        is_inventory:
+          type: boolean
+        scrapped:
+          type: boolean
+        propagate_cancel:
+          type: boolean
+        metadata:
+          type: object
+
+    StockMoveList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockMove'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    StockMoveLine:
+      type: object
+      required:
+        - id
+        - quantity
+        - picked
+        - state
+        - date
+        - move_id
+        - location_id
+        - location_dest_id
+        - item_id
+        - company_id
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        quantity:
+          type: string
+        quantity_product_uom_id:
+          nullable: true
+          type: string
+          format: uuid
+        picked:
+          type: boolean
+        lot_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_id:
+          nullable: true
+          type: string
+          format: uuid
+        result_package_id:
+          nullable: true
+          type: string
+          format: uuid
+        owner_id:
+          nullable: true
+          type: string
+          format: uuid
+        state:
+          type: string
+        date:
+          type: string
+          format: date-time
+        move_id:
+          type: string
+          format: uuid
+        picking_id:
+          nullable: true
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        location_dest_id:
+          type: string
+          format: uuid
+        item_id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    StockMoveLineBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockMoveLine'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreateStockMoveLineRequest:
+      type: object
+      required:
+        - quantity
+        - picked
+        - state
+        - date
+        - move_id
+        - location_id
+        - location_dest_id
+        - item_id
+        - company_id
+        - metadata
+      properties:
+        quantity:
+          type: string
+        quantity_product_uom_id:
+          nullable: true
+          type: string
+          format: uuid
+        picked:
+          type: boolean
+        lot_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_id:
+          nullable: true
+          type: string
+          format: uuid
+        result_package_id:
+          nullable: true
+          type: string
+          format: uuid
+        owner_id:
+          nullable: true
+          type: string
+          format: uuid
+        state:
+          type: string
+        date:
+          type: string
+          format: date-time
+        move_id:
+          type: string
+          format: uuid
+        picking_id:
+          nullable: true
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        location_dest_id:
+          type: string
+          format: uuid
+        item_id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    UpdateStockMoveLineRequest:
+      type: object
+      required:
+        - quantity
+        - picked
+        - state
+        - date
+        - move_id
+        - location_id
+        - location_dest_id
+        - item_id
+        - company_id
+        - metadata
+      properties:
+        quantity:
+          type: string
+        quantity_product_uom_id:
+          nullable: true
+          type: string
+          format: uuid
+        picked:
+          type: boolean
+        lot_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_id:
+          nullable: true
+          type: string
+          format: uuid
+        result_package_id:
+          nullable: true
+          type: string
+          format: uuid
+        owner_id:
+          nullable: true
+          type: string
+          format: uuid
+        state:
+          type: string
+        date:
+          type: string
+          format: date-time
+        move_id:
+          type: string
+          format: uuid
+        picking_id:
+          nullable: true
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        location_dest_id:
+          type: string
+          format: uuid
+        item_id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    PatchStockMoveLineRequest:
+      type: object
+      properties:
+        quantity:
+          type: string
+        quantity_product_uom_id:
+          nullable: true
+          type: string
+          format: uuid
+        picked:
+          type: boolean
+        lot_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_id:
+          nullable: true
+          type: string
+          format: uuid
+        result_package_id:
+          nullable: true
+          type: string
+          format: uuid
+        owner_id:
+          nullable: true
+          type: string
+          format: uuid
+        state:
+          type: string
+        date:
+          type: string
+          format: date-time
+        move_id:
+          type: string
+          format: uuid
+        picking_id:
+          nullable: true
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        location_dest_id:
+          type: string
+          format: uuid
+        item_id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    StockMoveLineList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockMoveLine'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    OperationType:
+      type: object
+      required:
+        - id
+        - name
+        - sequence_code
+        - code
+        - active
+        - sequence
+        - default_location_src_id
+        - default_location_dest_id
+        - reservation_method
+        - move_type
+        - create_backorder
+        - use_create_lots
+        - use_existing_lots
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 150
+        sequence_code:
+          type: string
+          maxLength: 10
+        code:
+          type: string
+        active:
+          type: boolean
+        sequence:
+          type: integer
+          format: int32
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        warehouse_id:
+          nullable: true
+          type: string
+          format: uuid
+        default_location_src_id:
+          type: string
+          format: uuid
+        default_location_dest_id:
+          type: string
+          format: uuid
+        reservation_method:
+          type: string
+        reservation_days_before:
+          nullable: true
+          type: integer
+          format: int32
+        move_type:
+          type: string
+        create_backorder:
+          type: string
+        use_create_lots:
+          type: boolean
+        use_existing_lots:
+          type: boolean
+        metadata:
+          type: object
+
+    OperationTypeBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationType'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreateOperationTypeRequest:
+      type: object
+      required:
+        - name
+        - sequence_code
+        - code
+        - active
+        - sequence
+        - default_location_src_id
+        - default_location_dest_id
+        - reservation_method
+        - move_type
+        - create_backorder
+        - use_create_lots
+        - use_existing_lots
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        sequence_code:
+          type: string
+          maxLength: 10
+        code:
+          type: string
+        active:
+          type: boolean
+        sequence:
+          type: integer
+          format: int32
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        warehouse_id:
+          nullable: true
+          type: string
+          format: uuid
+        default_location_src_id:
+          type: string
+          format: uuid
+        default_location_dest_id:
+          type: string
+          format: uuid
+        reservation_method:
+          type: string
+        reservation_days_before:
+          nullable: true
+          type: integer
+          format: int32
+        move_type:
+          type: string
+        create_backorder:
+          type: string
+        use_create_lots:
+          type: boolean
+        use_existing_lots:
+          type: boolean
+        metadata:
+          type: object
+
+    UpdateOperationTypeRequest:
+      type: object
+      required:
+        - name
+        - sequence_code
+        - code
+        - active
+        - sequence
+        - default_location_src_id
+        - default_location_dest_id
+        - reservation_method
+        - move_type
+        - create_backorder
+        - use_create_lots
+        - use_existing_lots
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        sequence_code:
+          type: string
+          maxLength: 10
+        code:
+          type: string
+        active:
+          type: boolean
+        sequence:
+          type: integer
+          format: int32
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        warehouse_id:
+          nullable: true
+          type: string
+          format: uuid
+        default_location_src_id:
+          type: string
+          format: uuid
+        default_location_dest_id:
+          type: string
+          format: uuid
+        reservation_method:
+          type: string
+        reservation_days_before:
+          nullable: true
+          type: integer
+          format: int32
+        move_type:
+          type: string
+        create_backorder:
+          type: string
+        use_create_lots:
+          type: boolean
+        use_existing_lots:
+          type: boolean
+        metadata:
+          type: object
+
+    PatchOperationTypeRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        sequence_code:
+          type: string
+          maxLength: 10
+        code:
+          type: string
+        active:
+          type: boolean
+        sequence:
+          type: integer
+          format: int32
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        warehouse_id:
+          nullable: true
+          type: string
+          format: uuid
+        default_location_src_id:
+          type: string
+          format: uuid
+        default_location_dest_id:
+          type: string
+          format: uuid
+        reservation_method:
+          type: string
+        reservation_days_before:
+          nullable: true
+          type: integer
+          format: int32
+        move_type:
+          type: string
+        create_backorder:
+          type: string
+        use_create_lots:
+          type: boolean
+        use_existing_lots:
+          type: boolean
+        metadata:
+          type: object
+
+    OperationTypeList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperationType'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    Transfer:
+      type: object
+      required:
+        - id
+        - name
+        - priority
+        - picking_type_id
+        - location_id
+        - location_dest_id
+        - company_id
+        - move_type
+        - scheduled_date
+        - state
+        - is_locked
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 40
+        origin:
+          nullable: true
+          type: string
+          maxLength: 200
+        note:
+          nullable: true
+          type: string
+          maxLength: 2000
+        priority:
+          type: string
+        picking_type_id:
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        location_dest_id:
+          type: string
+          format: uuid
+        partner_id:
+          nullable: true
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        move_type:
+          type: string
+        scheduled_date:
+          type: string
+          format: date-time
+        date_done:
+          nullable: true
+          type: string
+          format: date-time
+        state:
+          type: string
+        is_locked:
+          type: boolean
+        backorder_id:
+          nullable: true
+          type: string
+          format: uuid
+        return_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    TransferBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transfer'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreateTransferRequest:
+      type: object
+      required:
+        - name
+        - priority
+        - picking_type_id
+        - location_id
+        - location_dest_id
+        - company_id
+        - move_type
+        - scheduled_date
+        - state
+        - is_locked
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 40
+        origin:
+          nullable: true
+          type: string
+          maxLength: 200
+        note:
+          nullable: true
+          type: string
+          maxLength: 2000
+        priority:
+          type: string
+        picking_type_id:
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        location_dest_id:
+          type: string
+          format: uuid
+        partner_id:
+          nullable: true
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        move_type:
+          type: string
+        scheduled_date:
+          type: string
+          format: date-time
+        date_done:
+          nullable: true
+          type: string
+          format: date-time
+        state:
+          type: string
+        is_locked:
+          type: boolean
+        backorder_id:
+          nullable: true
+          type: string
+          format: uuid
+        return_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    UpdateTransferRequest:
+      type: object
+      required:
+        - name
+        - priority
+        - picking_type_id
+        - location_id
+        - location_dest_id
+        - company_id
+        - move_type
+        - scheduled_date
+        - state
+        - is_locked
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 40
+        origin:
+          nullable: true
+          type: string
+          maxLength: 200
+        note:
+          nullable: true
+          type: string
+          maxLength: 2000
+        priority:
+          type: string
+        picking_type_id:
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        location_dest_id:
+          type: string
+          format: uuid
+        partner_id:
+          nullable: true
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        move_type:
+          type: string
+        scheduled_date:
+          type: string
+          format: date-time
+        date_done:
+          nullable: true
+          type: string
+          format: date-time
+        state:
+          type: string
+        is_locked:
+          type: boolean
+        backorder_id:
+          nullable: true
+          type: string
+          format: uuid
+        return_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    PatchTransferRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 40
+        origin:
+          nullable: true
+          type: string
+          maxLength: 200
+        note:
+          nullable: true
+          type: string
+          maxLength: 2000
+        priority:
+          type: string
+        picking_type_id:
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        location_dest_id:
+          type: string
+          format: uuid
+        partner_id:
+          nullable: true
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        move_type:
+          type: string
+        scheduled_date:
+          type: string
+          format: date-time
+        date_done:
+          nullable: true
+          type: string
+          format: date-time
+        state:
+          type: string
+        is_locked:
+          type: boolean
+        backorder_id:
+          nullable: true
+          type: string
+          format: uuid
+        return_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    TransferList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transfer'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    Route:
+      type: object
+      required:
+        - id
+        - name
+        - active
+        - sequence
+        - product_selectable
+        - product_categ_selectable
+        - warehouse_selectable
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 150
+        active:
+          type: boolean
+        sequence:
+          type: integer
+          format: int32
+        product_selectable:
+          type: boolean
+        product_categ_selectable:
+          type: boolean
+        warehouse_selectable:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    RouteBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Route'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreateRouteRequest:
+      type: object
+      required:
+        - name
+        - active
+        - sequence
+        - product_selectable
+        - product_categ_selectable
+        - warehouse_selectable
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        active:
+          type: boolean
+        sequence:
+          type: integer
+          format: int32
+        product_selectable:
+          type: boolean
+        product_categ_selectable:
+          type: boolean
+        warehouse_selectable:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    UpdateRouteRequest:
+      type: object
+      required:
+        - name
+        - active
+        - sequence
+        - product_selectable
+        - product_categ_selectable
+        - warehouse_selectable
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        active:
+          type: boolean
+        sequence:
+          type: integer
+          format: int32
+        product_selectable:
+          type: boolean
+        product_categ_selectable:
+          type: boolean
+        warehouse_selectable:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    PatchRouteRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        active:
+          type: boolean
+        sequence:
+          type: integer
+          format: int32
+        product_selectable:
+          type: boolean
+        product_categ_selectable:
+          type: boolean
+        warehouse_selectable:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    RouteList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Route'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    RouteRule:
+      type: object
+      required:
+        - id
+        - name
+        - active
+        - sequence
+        - action
+        - auto
+        - procure_method
+        - delay
+        - location_dest_id
+        - picking_type_id
+        - route_id
+        - propagate_cancel
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 150
+        active:
+          type: boolean
+        sequence:
+          type: integer
+          format: int32
+        action:
+          type: string
+        auto:
+          type: string
+        procure_method:
+          type: string
+        delay:
+          type: integer
+          format: int32
+        location_src_id:
+          nullable: true
+          type: string
+          format: uuid
+        location_dest_id:
+          type: string
+          format: uuid
+        picking_type_id:
+          type: string
+          format: uuid
+        route_id:
+          type: string
+          format: uuid
+        warehouse_id:
+          nullable: true
+          type: string
+          format: uuid
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        propagate_cancel:
+          type: boolean
+        metadata:
+          type: object
+
+    RouteRuleBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteRule'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreateRouteRuleRequest:
+      type: object
+      required:
+        - name
+        - active
+        - sequence
+        - action
+        - auto
+        - procure_method
+        - delay
+        - location_dest_id
+        - picking_type_id
+        - route_id
+        - propagate_cancel
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        active:
+          type: boolean
+        sequence:
+          type: integer
+          format: int32
+        action:
+          type: string
+        auto:
+          type: string
+        procure_method:
+          type: string
+        delay:
+          type: integer
+          format: int32
+        location_src_id:
+          nullable: true
+          type: string
+          format: uuid
+        location_dest_id:
+          type: string
+          format: uuid
+        picking_type_id:
+          type: string
+          format: uuid
+        route_id:
+          type: string
+          format: uuid
+        warehouse_id:
+          nullable: true
+          type: string
+          format: uuid
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        propagate_cancel:
+          type: boolean
+        metadata:
+          type: object
+
+    UpdateRouteRuleRequest:
+      type: object
+      required:
+        - name
+        - active
+        - sequence
+        - action
+        - auto
+        - procure_method
+        - delay
+        - location_dest_id
+        - picking_type_id
+        - route_id
+        - propagate_cancel
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        active:
+          type: boolean
+        sequence:
+          type: integer
+          format: int32
+        action:
+          type: string
+        auto:
+          type: string
+        procure_method:
+          type: string
+        delay:
+          type: integer
+          format: int32
+        location_src_id:
+          nullable: true
+          type: string
+          format: uuid
+        location_dest_id:
+          type: string
+          format: uuid
+        picking_type_id:
+          type: string
+          format: uuid
+        route_id:
+          type: string
+          format: uuid
+        warehouse_id:
+          nullable: true
+          type: string
+          format: uuid
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        propagate_cancel:
+          type: boolean
+        metadata:
+          type: object
+
+    PatchRouteRuleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        active:
+          type: boolean
+        sequence:
+          type: integer
+          format: int32
+        action:
+          type: string
+        auto:
+          type: string
+        procure_method:
+          type: string
+        delay:
+          type: integer
+          format: int32
+        location_src_id:
+          nullable: true
+          type: string
+          format: uuid
+        location_dest_id:
+          type: string
+          format: uuid
+        picking_type_id:
+          type: string
+          format: uuid
+        route_id:
+          type: string
+          format: uuid
+        warehouse_id:
+          nullable: true
+          type: string
+          format: uuid
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        propagate_cancel:
+          type: boolean
+        metadata:
+          type: object
+
+    RouteRuleList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteRule'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    ReorderingRule:
+      type: object
+      required:
+        - id
+        - name
+        - trigger
+        - active
+        - item_id
+        - location_id
+        - warehouse_id
+        - company_id
+        - item_min_qty
+        - item_max_qty
+        - qty_on_hand
+        - qty_forecast
+        - qty_to_order
+        - qty_to_order_manual
+        - lead_days
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 40
+        trigger:
+          type: string
+        active:
+          type: boolean
+        snoozed_until:
+          nullable: true
+          type: string
+          format: date
+        item_id:
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        warehouse_id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        item_min_qty:
+          type: string
+        item_max_qty:
+          type: string
+        route_id:
+          nullable: true
+          type: string
+          format: uuid
+        qty_on_hand:
+          type: string
+        qty_forecast:
+          type: string
+        qty_to_order:
+          type: string
+        qty_to_order_manual:
+          type: string
+        lead_days:
+          type: string
+        deadline_date:
+          nullable: true
+          type: string
+          format: date
+        metadata:
+          type: object
+
+    ReorderingRuleBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReorderingRule'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreateReorderingRuleRequest:
+      type: object
+      required:
+        - name
+        - trigger
+        - active
+        - item_id
+        - location_id
+        - warehouse_id
+        - company_id
+        - item_min_qty
+        - item_max_qty
+        - qty_on_hand
+        - qty_forecast
+        - qty_to_order
+        - qty_to_order_manual
+        - lead_days
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 40
+        trigger:
+          type: string
+        active:
+          type: boolean
+        snoozed_until:
+          nullable: true
+          type: string
+          format: date
+        item_id:
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        warehouse_id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        item_min_qty:
+          type: string
+        item_max_qty:
+          type: string
+        route_id:
+          nullable: true
+          type: string
+          format: uuid
+        qty_on_hand:
+          type: string
+        qty_forecast:
+          type: string
+        qty_to_order:
+          type: string
+        qty_to_order_manual:
+          type: string
+        lead_days:
+          type: string
+        deadline_date:
+          nullable: true
+          type: string
+          format: date
+        metadata:
+          type: object
+
+    UpdateReorderingRuleRequest:
+      type: object
+      required:
+        - name
+        - trigger
+        - active
+        - item_id
+        - location_id
+        - warehouse_id
+        - company_id
+        - item_min_qty
+        - item_max_qty
+        - qty_on_hand
+        - qty_forecast
+        - qty_to_order
+        - qty_to_order_manual
+        - lead_days
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 40
+        trigger:
+          type: string
+        active:
+          type: boolean
+        snoozed_until:
+          nullable: true
+          type: string
+          format: date
+        item_id:
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        warehouse_id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        item_min_qty:
+          type: string
+        item_max_qty:
+          type: string
+        route_id:
+          nullable: true
+          type: string
+          format: uuid
+        qty_on_hand:
+          type: string
+        qty_forecast:
+          type: string
+        qty_to_order:
+          type: string
+        qty_to_order_manual:
+          type: string
+        lead_days:
+          type: string
+        deadline_date:
+          nullable: true
+          type: string
+          format: date
+        metadata:
+          type: object
+
+    PatchReorderingRuleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 40
+        trigger:
+          type: string
+        active:
+          type: boolean
+        snoozed_until:
+          nullable: true
+          type: string
+          format: date
+        item_id:
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        warehouse_id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        item_min_qty:
+          type: string
+        item_max_qty:
+          type: string
+        route_id:
+          nullable: true
+          type: string
+          format: uuid
+        qty_on_hand:
+          type: string
+        qty_forecast:
+          type: string
+        qty_to_order:
+          type: string
+        qty_to_order_manual:
+          type: string
+        lead_days:
+          type: string
+        deadline_date:
+          nullable: true
+          type: string
+          format: date
+        metadata:
+          type: object
+
+    ReorderingRuleList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReorderingRule'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
     PurchaseReceipt:
       type: object
       required:
@@ -4909,6 +11083,10 @@ components:
           type: string
           format: uuid
         grir_account_id:
+          type: string
+          format: uuid
+        transfer_id:
+          nullable: true
           type: string
           format: uuid
         status:
@@ -4997,6 +11175,10 @@ components:
         grir_account_id:
           type: string
           format: uuid
+        transfer_id:
+          nullable: true
+          type: string
+          format: uuid
         status:
           type: string
         posting_state:
@@ -5070,6 +11252,10 @@ components:
         grir_account_id:
           type: string
           format: uuid
+        transfer_id:
+          nullable: true
+          type: string
+          format: uuid
         status:
           type: string
         posting_state:
@@ -5128,6 +11314,10 @@ components:
           type: string
           format: uuid
         grir_account_id:
+          type: string
+          format: uuid
+        transfer_id:
+          nullable: true
           type: string
           format: uuid
         status:
@@ -5298,6 +11488,267 @@ components:
         meta:
           $ref: '#/components/schemas/PaginationMeta'
 
+    Quant:
+      type: object
+      required:
+        - id
+        - item_id
+        - location_id
+        - quantity
+        - reserved_quantity
+        - available_quantity
+        - inventory_quantity_set
+        - sn_duplicated
+        - company_id
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        item_id:
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        lot_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_id:
+          nullable: true
+          type: string
+          format: uuid
+        owner_id:
+          nullable: true
+          type: string
+          format: uuid
+        quantity:
+          type: string
+        reserved_quantity:
+          type: string
+        available_quantity:
+          type: string
+        in_date:
+          nullable: true
+          type: string
+          format: date-time
+        inventory_quantity:
+          nullable: true
+          type: string
+        inventory_diff_quantity:
+          nullable: true
+          type: string
+        inventory_quantity_set:
+          type: boolean
+        inventory_date:
+          nullable: true
+          type: string
+          format: date
+        sn_duplicated:
+          type: boolean
+        company_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    QuantBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Quant'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreateQuantRequest:
+      type: object
+      required:
+        - item_id
+        - location_id
+        - quantity
+        - reserved_quantity
+        - available_quantity
+        - inventory_quantity_set
+        - sn_duplicated
+        - company_id
+        - metadata
+      properties:
+        item_id:
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        lot_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_id:
+          nullable: true
+          type: string
+          format: uuid
+        owner_id:
+          nullable: true
+          type: string
+          format: uuid
+        quantity:
+          type: string
+        reserved_quantity:
+          type: string
+        available_quantity:
+          type: string
+        in_date:
+          nullable: true
+          type: string
+          format: date-time
+        inventory_quantity:
+          nullable: true
+          type: string
+        inventory_diff_quantity:
+          nullable: true
+          type: string
+        inventory_quantity_set:
+          type: boolean
+        inventory_date:
+          nullable: true
+          type: string
+          format: date
+        sn_duplicated:
+          type: boolean
+        company_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    UpdateQuantRequest:
+      type: object
+      required:
+        - item_id
+        - location_id
+        - quantity
+        - reserved_quantity
+        - available_quantity
+        - inventory_quantity_set
+        - sn_duplicated
+        - company_id
+        - metadata
+      properties:
+        item_id:
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        lot_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_id:
+          nullable: true
+          type: string
+          format: uuid
+        owner_id:
+          nullable: true
+          type: string
+          format: uuid
+        quantity:
+          type: string
+        reserved_quantity:
+          type: string
+        available_quantity:
+          type: string
+        in_date:
+          nullable: true
+          type: string
+          format: date-time
+        inventory_quantity:
+          nullable: true
+          type: string
+        inventory_diff_quantity:
+          nullable: true
+          type: string
+        inventory_quantity_set:
+          type: boolean
+        inventory_date:
+          nullable: true
+          type: string
+          format: date
+        sn_duplicated:
+          type: boolean
+        company_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    PatchQuantRequest:
+      type: object
+      properties:
+        item_id:
+          type: string
+          format: uuid
+        location_id:
+          type: string
+          format: uuid
+        lot_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_id:
+          nullable: true
+          type: string
+          format: uuid
+        owner_id:
+          nullable: true
+          type: string
+          format: uuid
+        quantity:
+          type: string
+        reserved_quantity:
+          type: string
+        available_quantity:
+          type: string
+        in_date:
+          nullable: true
+          type: string
+          format: date-time
+        inventory_quantity:
+          nullable: true
+          type: string
+        inventory_diff_quantity:
+          nullable: true
+          type: string
+        inventory_quantity_set:
+          type: boolean
+        inventory_date:
+          nullable: true
+          type: string
+          format: date
+        sn_duplicated:
+          type: boolean
+        company_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    QuantList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Quant'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
     StockEntry:
       type: object
       required:
@@ -5332,6 +11783,10 @@ components:
         posting_date:
           type: string
           format: date
+        transfer_id:
+          nullable: true
+          type: string
+          format: uuid
         status:
           type: string
         posting_state:
@@ -5386,6 +11841,10 @@ components:
         posting_date:
           type: string
           format: date
+        transfer_id:
+          nullable: true
+          type: string
+          format: uuid
         status:
           type: string
         posting_state:
@@ -5427,6 +11886,10 @@ components:
         posting_date:
           type: string
           format: date
+        transfer_id:
+          nullable: true
+          type: string
+          format: uuid
         status:
           type: string
         posting_state:
@@ -5460,6 +11923,10 @@ components:
         posting_date:
           type: string
           format: date
+        transfer_id:
+          nullable: true
+          type: string
+          format: uuid
         status:
           type: string
         posting_state:
@@ -6028,6 +12495,10 @@ components:
         adjustment_account_id:
           type: string
           format: uuid
+        transfer_id:
+          nullable: true
+          type: string
+          format: uuid
         status:
           type: string
         posting_state:
@@ -6094,6 +12565,10 @@ components:
         adjustment_account_id:
           type: string
           format: uuid
+        transfer_id:
+          nullable: true
+          type: string
+          format: uuid
         status:
           type: string
         posting_state:
@@ -6147,6 +12622,10 @@ components:
         adjustment_account_id:
           type: string
           format: uuid
+        transfer_id:
+          nullable: true
+          type: string
+          format: uuid
         status:
           type: string
         posting_state:
@@ -6187,6 +12666,10 @@ components:
           type: string
           format: uuid
         adjustment_account_id:
+          type: string
+          format: uuid
+        transfer_id:
+          nullable: true
           type: string
           format: uuid
         status:
@@ -6361,6 +12844,334 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/StockReconciliationItem'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    Lot:
+      type: object
+      required:
+        - id
+        - name
+        - item_id
+        - product_qty
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 150
+        reference:
+          nullable: true
+          type: string
+          maxLength: 150
+        item_id:
+          type: string
+          format: uuid
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        product_qty:
+          type: string
+        location_id:
+          nullable: true
+          type: string
+          format: uuid
+        note:
+          nullable: true
+          type: string
+          maxLength: 2000
+        metadata:
+          type: object
+
+    LotBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Lot'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreateLotRequest:
+      type: object
+      required:
+        - name
+        - item_id
+        - product_qty
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        reference:
+          nullable: true
+          type: string
+          maxLength: 150
+        item_id:
+          type: string
+          format: uuid
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        product_qty:
+          type: string
+        location_id:
+          nullable: true
+          type: string
+          format: uuid
+        note:
+          nullable: true
+          type: string
+          maxLength: 2000
+        metadata:
+          type: object
+
+    UpdateLotRequest:
+      type: object
+      required:
+        - name
+        - item_id
+        - product_qty
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        reference:
+          nullable: true
+          type: string
+          maxLength: 150
+        item_id:
+          type: string
+          format: uuid
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        product_qty:
+          type: string
+        location_id:
+          nullable: true
+          type: string
+          format: uuid
+        note:
+          nullable: true
+          type: string
+          maxLength: 2000
+        metadata:
+          type: object
+
+    PatchLotRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        reference:
+          nullable: true
+          type: string
+          maxLength: 150
+        item_id:
+          type: string
+          format: uuid
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        product_qty:
+          type: string
+        location_id:
+          nullable: true
+          type: string
+          format: uuid
+        note:
+          nullable: true
+          type: string
+          maxLength: 2000
+        metadata:
+          type: object
+
+    LotList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Lot'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    Package:
+      type: object
+      required:
+        - id
+        - name
+        - complete_name
+        - parent_path
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 150
+        complete_name:
+          type: string
+          maxLength: 1000
+        location_id:
+          nullable: true
+          type: string
+          format: uuid
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        parent_package_id:
+          nullable: true
+          type: string
+          format: uuid
+        parent_path:
+          type: string
+          maxLength: 1000
+        pack_date:
+          nullable: true
+          type: string
+          format: date
+        metadata:
+          type: object
+
+    PackageBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Package'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreatePackageRequest:
+      type: object
+      required:
+        - name
+        - complete_name
+        - parent_path
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        complete_name:
+          type: string
+          maxLength: 1000
+        location_id:
+          nullable: true
+          type: string
+          format: uuid
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        parent_package_id:
+          nullable: true
+          type: string
+          format: uuid
+        parent_path:
+          type: string
+          maxLength: 1000
+        pack_date:
+          nullable: true
+          type: string
+          format: date
+        metadata:
+          type: object
+
+    UpdatePackageRequest:
+      type: object
+      required:
+        - name
+        - complete_name
+        - parent_path
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        complete_name:
+          type: string
+          maxLength: 1000
+        location_id:
+          nullable: true
+          type: string
+          format: uuid
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        parent_package_id:
+          nullable: true
+          type: string
+          format: uuid
+        parent_path:
+          type: string
+          maxLength: 1000
+        pack_date:
+          nullable: true
+          type: string
+          format: date
+        metadata:
+          type: object
+
+    PatchPackageRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        complete_name:
+          type: string
+          maxLength: 1000
+        location_id:
+          nullable: true
+          type: string
+          format: uuid
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        parent_package_id:
+          nullable: true
+          type: string
+          format: uuid
+        parent_path:
+          type: string
+          maxLength: 1000
+        pack_date:
+          nullable: true
+          type: string
+          format: date
+        metadata:
+          type: object
+
+    PackageList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Package'
         meta:
           $ref: '#/components/schemas/PaginationMeta'
 

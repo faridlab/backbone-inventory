@@ -7,14 +7,25 @@
 
 pub mod delivery_note_dto;
 pub mod delivery_note_item_dto;
+pub mod location_dto;
+pub mod stock_move_dto;
+pub mod stock_move_line_dto;
+pub mod operation_type_dto;
+pub mod transfer_dto;
+pub mod route_dto;
+pub mod route_rule_dto;
+pub mod reordering_rule_dto;
 pub mod purchase_receipt_dto;
 pub mod purchase_receipt_item_dto;
+pub mod quant_dto;
 pub mod stock_entry_dto;
 pub mod stock_entry_item_dto;
 pub mod stock_ledger_entry_dto;
 pub mod bin_dto;
 pub mod stock_reconciliation_dto;
 pub mod stock_reconciliation_item_dto;
+pub mod lot_dto;
+pub mod package_dto;
 pub mod warehouse_dto;
 pub mod stock_item_dto;
 
@@ -35,6 +46,70 @@ pub use delivery_note_item_dto::{
     DeliveryNoteItemListResponseDto,
     DeliveryNoteItemSummaryDto,
 };
+pub use location_dto::{
+    CreateLocationDto,
+    UpdateLocationDto,
+    PatchLocationDto,
+    LocationResponseDto,
+    LocationListResponseDto,
+    LocationSummaryDto,
+};
+pub use stock_move_dto::{
+    CreateStockMoveDto,
+    UpdateStockMoveDto,
+    PatchStockMoveDto,
+    StockMoveResponseDto,
+    StockMoveListResponseDto,
+    StockMoveSummaryDto,
+};
+pub use stock_move_line_dto::{
+    CreateStockMoveLineDto,
+    UpdateStockMoveLineDto,
+    PatchStockMoveLineDto,
+    StockMoveLineResponseDto,
+    StockMoveLineListResponseDto,
+    StockMoveLineSummaryDto,
+};
+pub use operation_type_dto::{
+    CreateOperationTypeDto,
+    UpdateOperationTypeDto,
+    PatchOperationTypeDto,
+    OperationTypeResponseDto,
+    OperationTypeListResponseDto,
+    OperationTypeSummaryDto,
+};
+pub use transfer_dto::{
+    CreateTransferDto,
+    UpdateTransferDto,
+    PatchTransferDto,
+    TransferResponseDto,
+    TransferListResponseDto,
+    TransferSummaryDto,
+};
+pub use route_dto::{
+    CreateRouteDto,
+    UpdateRouteDto,
+    PatchRouteDto,
+    RouteResponseDto,
+    RouteListResponseDto,
+    RouteSummaryDto,
+};
+pub use route_rule_dto::{
+    CreateRouteRuleDto,
+    UpdateRouteRuleDto,
+    PatchRouteRuleDto,
+    RouteRuleResponseDto,
+    RouteRuleListResponseDto,
+    RouteRuleSummaryDto,
+};
+pub use reordering_rule_dto::{
+    CreateReorderingRuleDto,
+    UpdateReorderingRuleDto,
+    PatchReorderingRuleDto,
+    ReorderingRuleResponseDto,
+    ReorderingRuleListResponseDto,
+    ReorderingRuleSummaryDto,
+};
 pub use purchase_receipt_dto::{
     CreatePurchaseReceiptDto,
     UpdatePurchaseReceiptDto,
@@ -50,6 +125,14 @@ pub use purchase_receipt_item_dto::{
     PurchaseReceiptItemResponseDto,
     PurchaseReceiptItemListResponseDto,
     PurchaseReceiptItemSummaryDto,
+};
+pub use quant_dto::{
+    CreateQuantDto,
+    UpdateQuantDto,
+    PatchQuantDto,
+    QuantResponseDto,
+    QuantListResponseDto,
+    QuantSummaryDto,
 };
 pub use stock_entry_dto::{
     CreateStockEntryDto,
@@ -98,6 +181,22 @@ pub use stock_reconciliation_item_dto::{
     StockReconciliationItemResponseDto,
     StockReconciliationItemListResponseDto,
     StockReconciliationItemSummaryDto,
+};
+pub use lot_dto::{
+    CreateLotDto,
+    UpdateLotDto,
+    PatchLotDto,
+    LotResponseDto,
+    LotListResponseDto,
+    LotSummaryDto,
+};
+pub use package_dto::{
+    CreatePackageDto,
+    UpdatePackageDto,
+    PatchPackageDto,
+    PackageResponseDto,
+    PackageListResponseDto,
+    PackageSummaryDto,
 };
 pub use warehouse_dto::{
     CreateWarehouseDto,

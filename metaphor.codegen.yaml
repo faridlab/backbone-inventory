@@ -26,6 +26,9 @@ user_owned:
   - "src/application/service/inventory_reconciliation.rs"
   - "src/application/service/inventory_read.rs"
   - "src/application/service/inventory_intake.rs"
+  # The converged stock-move engine (_action_confirm / _action_assign / _action_done /
+  # _action_cancel) over quant-grain reservation — the stock-convergence service layer.
+  - "src/application/service/inventory_move_engine.rs"
   - "src/presentation/http/guarded_routes.rs"
 
   # Own the hand-written inventory SQL that the valuation engine orchestrates: the Bin FOR UPDATE
@@ -34,6 +37,12 @@ user_owned:
   # skips them wholesale; this declaration is what makes editing them legitimate.
   - "src/infrastructure/persistence/bin_repository.rs"
   - "src/infrastructure/persistence/stock_ledger_entry_repository.rs"
+  # The stock-convergence engine's own SQL: the quant FOR UPDATE row-lock (reservation apex,
+  # the authoritative reserved_quantity writer), the guarded move state-machine writes, and the
+  # move-line reservation mirror + the picking-state projection recompute (T1).
+  - "src/infrastructure/persistence/quant_repository.rs"
+  - "src/infrastructure/persistence/stock_move_repository.rs"
+  - "src/infrastructure/persistence/stock_move_line_repository.rs"
   - "src/infrastructure/persistence/warehouse_repository.rs"
   - "src/infrastructure/persistence/stock_item_repository.rs"
   - "src/infrastructure/persistence/purchase_receipt_repository.rs"
@@ -51,10 +60,13 @@ user_owned:
 
   # Behavior tests (valuation golden oracle) + SLE integrity + GL seam + route probes + BDD.
   - "tests/valuation_golden_cases.rs"
+  - "tests/move_engine_cases.rs"
   - "tests/gl_posting_seam.rs"
   - "tests/integrity_probes.rs"
   - "tests/consumer_surface.rs"
   - "tests/route_surface_guard.rs"
+  # Picking-as-projection (T1) + the quant-driven adjustment door probes.
+  - "tests/stock_projection_adjustment.rs"
   - "tests/features/**"
 
   # Per-entity CRUD integration harness — frozen so hand cleanups persist across regen.
@@ -63,3 +75,52 @@ user_owned:
 
   # Hand-authored module documentation.
   - "docs/**"
+  # Hand-written cancellation service (stock move cancellation orchestration).
+  - "src/application/service/inventory_cancellation.rs"
+  # The picking-as-projection SQL (transfer/move minting, machine-gated move
+  # transitions, the T1 projection recompute) and the quant-driven adjustment SQL
+  # (count staging + apply flip). Companion repositories for the services in
+  # inventory_transfer.rs / inventory_reconciliation.rs; not schema-derived.
+  - "src/infrastructure/persistence/stock_picking_repository.rs"
+  - "src/infrastructure/persistence/stock_adjustment_repository.rs"
+  # Procurement configuration (stock.route / stock.rule / warehouse.orderpoint convergence):
+  # rule selection (_search_rule), pull/push move minting, the orderpoint computes, and the
+  # MovePipeline port the stock-move lifecycle implements for the daily scheduler.
+  - "src/application/service/procurement_service.rs"
+  # The SQL behind the procurement surface: rule search, orderpoint claims (FOR UPDATE SKIP
+  # LOCKED), the T11 forecast aggregation, move minting, quant housekeep.
+  - "src/infrastructure/persistence/procurement_repository.rs"
+  # The module's single scheduled job (the daily replenishment + reservation sweep).
+  - "src/infrastructure/jobs/**"
+  # R11 rule-company-consistency + R13-rule destination-not-a-view DB backstop (trigger);
+  # the service pre-check lives in procurement_service.rs, the declaration in
+  # schema/hooks/stock.hook.yaml.
+  - "migrations/20260826090000_rule_company_consistency.up.sql"
+  - "migrations/20260826090000_rule_company_consistency.down.sql"
+  # R1 warehouse-name-unique DB backstop (the name half of the per-company uniqueness;
+  # the code half ships with the base table migration). Declared in
+  # schema/models/warehouse.model.yaml; the generator does not rewrite the existing
+  # warehouse migration, so the index DDL is hand-owned here.
+  - "migrations/20260826100000_warehouse_name_unique.up.sql"
+  - "migrations/20260826100000_warehouse_name_unique.down.sql"
+  # Targeted behavior tests for routes/rules/orderpoints + the scheduler sweep.
+  - "tests/procurement_scheduler_cases.rs"
+  # Hand-written migrations the generator cannot re-derive from the schema: child items
+  # company fence, FIFO valuation method drop, delivery recon currency, reversal columns,
+  # and status lifecycle state machine.
+  - "migrations/20260722000000_child_items_company_id_rls.up.sql"
+  - "migrations/20260722000000_child_items_company_id_rls.down.sql"
+  - "migrations/20260729000001_drop_fifo_valuation_method.up.sql"
+  - "migrations/20260729000001_drop_fifo_valuation_method.down.sql"
+  - "migrations/20260729000002_add_currency_to_delivery_recon.up.sql"
+  - "migrations/20260729000002_add_currency_to_delivery_recon.down.sql"
+  - "migrations/20260729000003_add_reversal_columns.up.sql"
+  - "migrations/20260729000003_add_reversal_columns.down.sql"
+  - "migrations/20260821130000_status_lifecycle.up.sql"
+  - "migrations/20260821130000_status_lifecycle.down.sql"
+  # Company RLS fence for the stock-convergence tables (quant/move/transfer/route/
+  # orderpoint/location/lot/package/operation-type). The generated enable_company_rls
+  # migration predates those tables and a regen does not rewrite it, so the fence DDL
+  # is hand-owned here.
+  - "migrations/20260821130024_company_fence_stock_convergence.up.sql"
+  - "migrations/20260821130024_company_fence_stock_convergence.down.sql"

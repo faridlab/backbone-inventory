@@ -94,7 +94,11 @@ models:
       status:
         type: StockLedgerStatus
         attributes: ["@default(active)", "@immutable"]
-        description: "Lifecycle (a cancelled entry is reversed by a later correcting entry; the row itself is never edited)"
+        lifecycle:
+          shape: hand_set
+          latched: true
+          sticky: true
+        description: "Lifecycle (a cancelled entry is reversed by a later correcting entry; the row itself is never edited). hand_set + latched (ADR-0016): set once by the minting pipeline, cancelled only through the reversal service, never re-edited"
 
       metadata:
         type: Metadata
@@ -143,7 +147,7 @@ models:
       reserved_qty:
         type: decimal
         attributes: ["@default(0)", "@precision(18,4)", "@non_negative", "@immutable"]
-        description: "Soft-reserved quantity (against sales orders)"
+        description: "NON-AUTHORITATIVE warehouse-grain mirror of reservations (legacy write surface). The stock_quant.reserved_quantity row per (item x location x lot x package x owner) is the authoritative counter (T2); this column is kept for the proven Bin read model and valuation lock, never as a reservation source of truth"
 
       valuation_rate:
         type: decimal

@@ -1,0 +1,329 @@
+# =============================================================================
+# Domain: Inventory
+# Entities: OperationType (Odoo `stock.picking.type`), Transfer (Odoo `stock.picking`)
+# =============================================================================
+# OperationType is the operational configuration card: default locations,
+# reservation policy, lot behavior, backorder policy. Transfer is the
+# transfer/picking DOCUMENT that groups moves.
+#
+# CRITICAL (spec flag T1, ADR-0016): Transfer.state is a STORED COMPUTE
+# PROJECTED from its moves (_compute_state / _get_relevant_state_among_moves)
+# — it is NOT a hand-driven state machine and has NO state_machines entry
+# anywhere. The move owns the lifecycle; any move-state change reprojects
+# the transfer (trigger T1). The entity is mounted read_only over HTTP so no
+# generic write path can hand-set the projection; the only writers are the
+# move pipeline and its projection trigger.
+#
+# Company fence (ADR-0014): OperationType is configuration master data —
+# shared_blank with a nullable company (the [False] escape; global types like
+# a virtual adjustment type seed company-NULL). Transfer is a TRANSACTION —
+# strict; its company_id column mirrors the operation type's company
+# (derived at write time) and is NOT NULL whenever the type is company-owned.
+# =============================================================================
+
+models:
+  # ===========================================================================
+  # Entity: OperationType — receipt / delivery / internal transfer config
+  # ===========================================================================
+  - name: OperationType
+    collection: operation_types
+    description: "An operation type (receipt / delivery / internal transfer) — default locations, reservation policy, lot and backorder behavior"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique operation-type identifier"
+
+      name:
+        type: string
+        attributes: ["@required", "@max(150)"]
+        description: "Operation label"
+
+      sequence_code:
+        type: string
+        attributes: ["@required", "@max(10)"]
+        description: "Sequence prefix for transfer references (e.g. IN/ WH/ INT/)"
+
+      code:
+        type: PickingCode
+        attributes: ["@required", "@default(incoming)"]
+        description: "incoming (receipt) / outgoing (delivery) / internal (transfer)"
+
+      active:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Archive support"
+
+      sequence:
+        type: int
+        attributes: ["@default(10)"]
+        description: "Sort order"
+
+      company_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Owning company; NULL = global type visible to every company (shared_blank, ADR-0014) # logical FK to organization.Company.id"
+
+      warehouse_id:
+        type: uuid?
+        attributes: ["@foreign_key(Warehouse.id)"]
+        description: "The warehouse this type serves"
+
+      default_location_src_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Location.id)"]
+        description: "Default source location"
+
+      default_location_dest_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Location.id)"]
+        description: "Default destination location"
+
+      reservation_method:
+        type: ReservationMethod
+        attributes: ["@required", "@default(at_confirm)"]
+        description: "When products are reserved: at_confirm / manual / by_date"
+
+      reservation_days_before:
+        type: int?
+        description: "Days before the scheduled date to reserve (reservation_method = by_date)"
+
+      move_type:
+        type: MoveType
+        attributes: ["@required", "@default(direct)"]
+        description: "Default shipping policy: direct (partial ok) / one (all ready)"
+
+      create_backorder:
+        type: CreateBackorder
+        attributes: ["@required", "@default(ask)"]
+        description: "Backorder policy on partial validate: ask / always / never"
+
+      use_create_lots:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Allow typing new lot names at receipt"
+
+      use_existing_lots:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Allow selecting existing lots"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    indexes:
+      - type: index
+        fields: [company_id]
+      - type: index
+        fields: [warehouse_id]
+      - type: index
+        fields: [code]
+
+  # ===========================================================================
+  # Entity: Transfer — the picking DOCUMENT (a projection, NOT a machine)
+  # ===========================================================================
+  - name: Transfer
+    collection: transfers
+    read_only: true
+    description: "A stock transfer (picking) grouping moves. state is a stored compute projected from its move states (T1, ADR-0016) — never a hand-driven state machine; the move owns the lifecycle"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique transfer identifier"
+
+      name:
+        type: string
+        attributes: ["@required", "@max(40)", "@default(\"/\")"]
+        description: "Reference (sequence-filled; unique per company — guard R3)"
+
+      origin:
+        type: string?
+        attributes: ["@max(200)"]
+        description: "Source document reference (the minting voucher's number)"
+
+      note:
+        type: string?
+        attributes: ["@max(2000)"]
+        description: "Free-form notes"
+
+      priority:
+        type: Priority
+        attributes: ["@default(normal)"]
+        description: "normal / urgent"
+
+      picking_type_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(OperationType.id)"]
+        description: "Operation type (receipt / delivery / internal)"
+
+      location_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Location.id)"]
+        description: "Source location"
+
+      location_dest_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Location.id)"]
+        description: "Destination location"
+
+      partner_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Contact (supplier on receipts, customer on deliveries) # logical FK to party.Party.id"
+
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "STRICT transaction fence; mirrors the operation type's company at write time (derived, not user-set) # logical FK to organization.Company.id"
+
+      move_type:
+        type: MoveType
+        attributes: ["@required", "@default(direct)"]
+        description: "Shipping policy: direct (ship as available) / one (ship all at once)"
+
+      scheduled_date:
+        type: datetime
+        attributes: ["@default(now)"]
+        description: "Scheduled time"
+
+      date_done:
+        type: datetime?
+        description: "Processing date (stamped when the last move hits done)"
+
+      state:
+        type: TransferState
+        attributes: ["@default(draft)"]
+        lifecycle: projection
+        description: "PROJECTED from the grouped moves' states (T1, ADR-0016): done when all moves done; assigned when all assigned; confirmed/partially reserved mixes; waiting/draft from pending moves; cancelled moves excluded. NO per-transfer state machine exists — reprojected on every move-state change"
+
+      is_locked:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Locks initial-demand / done-qty editing; validation unlocks"
+
+      backorder_id:
+        type: uuid?
+        attributes: ["@foreign_key(Transfer.id)"]
+        description: "This transfer is a backorder of (self-ref)"
+
+      return_id:
+        type: uuid?
+        attributes: ["@foreign_key(Transfer.id)"]
+        description: "This transfer is a return of (self-ref)"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    relations:
+      moves:
+        type: StockMove[]
+        attributes: ["@one_to_many"]
+        description: "The grouped moves — the transfer's state projects from these (T1)"
+        inverse: picking
+      move_lines:
+        type: StockMoveLine[]
+        attributes: ["@one_to_many"]
+        description: "The detailed operation lines grouped under this transfer"
+        inverse: picking
+
+    indexes:
+      - type: unique
+        fields: [name, company_id]
+        where: "deleted_at IS NULL"
+        description: "R3 — transfer reference unique per company (_name_uniq)"
+      - type: index
+        fields: [state]
+        description: "The projected value is still indexed (hot filter)"
+      - type: index
+        fields: [picking_type_id]
+      - type: index
+        fields: [scheduled_date]
+        description: "Scheduler / ordering key"
+      - type: index
+        fields: [partner_id]
+      - type: index
+        fields: [backorder_id]
+      - type: index
+        fields: [return_id]
+      - type: index
+        fields: [company_id]
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: PickingCode
+    description: "stock.picking.type.code"
+    variants:
+      - name: incoming
+        description: "Receipt"
+        default: true
+      - name: outgoing
+        description: "Delivery"
+      - name: internal
+        description: "Internal transfer"
+
+  - name: ReservationMethod
+    description: "stock.picking.type.reservation_method — when reservation fires"
+    variants:
+      - name: at_confirm
+        description: "At confirmation"
+        default: true
+      - name: manual
+        description: "Manually"
+      - name: by_date
+        description: "Days before the scheduled date"
+
+  - name: MoveType
+    description: "Shipping policy (stock.picking.move_type)"
+    variants:
+      - name: direct
+        description: "As soon as possible (partial shipment ok)"
+        default: true
+      - name: one
+        description: "When all products are ready"
+
+  - name: CreateBackorder
+    description: "stock.picking.type.create_backorder — partial-validate policy"
+    variants:
+      - name: ask
+        description: "Ask the user"
+        default: true
+      - name: always
+        description: "Always create the backorder"
+      - name: never
+        description: "Never create a backorder"
+
+  - name: TransferState
+    description: "stock.picking.state — a STORED COMPUTE projected from the move states, never hand-set (T1, ADR-0016)"
+    variants:
+      - name: draft
+        description: "All moves draft"
+        default: true
+      - name: waiting
+        description: "Any move waiting on another operation"
+      - name: confirmed
+        description: "Waiting (confirmed, not yet fully reserved)"
+      - name: assigned
+        description: "Ready (all moves fully reserved)"
+      - name: done
+        description: "All moves done"
+      - name: cancel
+        description: "All moves cancelled"
+
+  - name: Priority
+    description: "Move / transfer urgency"
+    variants:
+      - name: normal
+        description: "Normal"
+        default: true
+      - name: urgent
+        description: "Urgent"

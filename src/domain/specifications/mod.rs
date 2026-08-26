@@ -8,14 +8,25 @@ pub use backbone_core::{Specification, AndSpecification, OrSpecification, NotSpe
 
 pub mod delivery_note_specification;
 pub mod delivery_note_item_specification;
+pub mod location_specification;
+pub mod stock_move_specification;
+pub mod stock_move_line_specification;
+pub mod operation_type_specification;
+pub mod transfer_specification;
+pub mod route_specification;
+pub mod route_rule_specification;
+pub mod reordering_rule_specification;
 pub mod purchase_receipt_specification;
 pub mod purchase_receipt_item_specification;
+pub mod quant_specification;
 pub mod stock_entry_specification;
 pub mod stock_entry_item_specification;
 pub mod stock_ledger_entry_specification;
 pub mod bin_specification;
 pub mod stock_reconciliation_specification;
 pub mod stock_reconciliation_item_specification;
+pub mod lot_specification;
+pub mod package_specification;
 pub mod warehouse_specification;
 pub mod stock_item_specification;
 

@@ -1,0 +1,375 @@
+# =============================================================================
+# Domain: Inventory
+# Entities: StockMove (Odoo `stock.move`), StockMoveLine (Odoo `stock.move.line`)
+# =============================================================================
+# THE LIFECYCLE OWNER (spec flag: 7-state move lifecycle, ADR-0016 shape
+# `hand_set` — the move pipeline drives state through guarded transitions,
+# declared in schema/hooks/stock.hook.yaml):
+#
+#   draft -> waiting -> confirmed -> partially_available -> assigned -> done
+#      \______________________________________________________-> cancel
+#
+# State values are snake_case (the generated transition verbs no-op silently
+# on PascalCase values). The reservation triangle keeps quant.reserved_quantity
+# authoritative (T2): the move-line qty mirror and move.state are projections
+# of it, never independent counters.
+#
+# StockMoveLine mirrors state from its move (shape `projection`) and carries
+# the physical detail (lot / package / owner). The verbatim partial index
+# `_free_reservation_index (state) WHERE state <> 'done'` makes the
+# un-reserved worklist scan cheap.
+#
+# `_action_done` is the single valve that mints stock ledger entries through
+# the existing AccountingPost seam and flips quants — a SERVICE METHOD, not
+# CRUD; this file declares only its data shapes.
+#
+# Company fence (ADR-0014): TRANSACTIONS, strict. company_id is required
+# (NOT NULL) on both rows.
+# =============================================================================
+
+models:
+  # ===========================================================================
+  # Entity: StockMove — the lifecycle owner
+  # ===========================================================================
+  - name: StockMove
+    collection: stock_moves
+    description: "A stock move — one item x (source -> destination) demand with the 7-state lifecycle (draft/waiting/confirmed/partially_available/assigned/done/cancel); the owner of the transfer's projected state (T1)"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique move identifier"
+
+      name:
+        type: string
+        attributes: ["@required", "@max(400)"]
+        description: "Move description"
+
+      state:
+        type: MoveState
+        attributes: ["@default(draft)"]
+        lifecycle:
+          shape: hand_set
+          sticky: false
+        description: "7-state lifecycle (snake_case values): draft / waiting / confirmed / partially_available / assigned / done / cancel. Driven only by the guarded state machine declared in schema/hooks/stock.hook.yaml — never free-hand-set over HTTP"
+
+      priority:
+        type: Priority
+        attributes: ["@default(normal)"]
+        description: "normal / urgent (raises scheduler weight)"
+
+      create_date:
+        type: datetime
+        attributes: ["@default(now)"]
+        description: "Created timestamp"
+
+      date:
+        type: datetime
+        attributes: ["@default(now)"]
+        description: "Scheduled / effective date (set to the processing instant by the pipeline on done)"
+
+      item_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "The moved item # logical FK to catalog.Item.id"
+
+      demand_qty:
+        type: decimal
+        attributes: ["@required", "@default(0)", "@precision(18,4)", "@non_negative"]
+        description: "Initial demand (Odoo product_uom_qty) — the ordered quantity"
+
+      quantity:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,4)", "@non_negative"]
+        description: "Done quantity (Odoo quantity); on done moves the quantity actually moved, which the SLE mint reads"
+
+      price_unit:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,6)"]
+        description: "Unit valuation price the SLE mint uses (moving-average keeps the proven engine as valuation owner)"
+
+      procure_method:
+        type: ProcureMethod
+        attributes: ["@required", "@default(make_to_stock)"]
+        description: "make_to_stock (serve from stock) / make_to_order (chain a supply move)"
+
+      picking_id:
+        type: uuid?
+        attributes: ["@foreign_key(Transfer.id)"]
+        description: "The grouping transfer (picking projection surface, T1)"
+
+      origin:
+        type: string?
+        attributes: ["@max(200)"]
+        description: "Source document reference (the minting voucher's number)"
+
+      location_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Location.id)"]
+        description: "Source location"
+
+      location_dest_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Location.id)"]
+        description: "Destination location"
+
+      partner_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Contact (supplier on receipts, customer on deliveries) # logical FK to party.Party.id"
+
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "STRICT transaction fence # logical FK to organization.Company.id"
+
+      rule_id:
+        type: uuid?
+        attributes: ["@foreign_key(RouteRule.id)"]
+        description: "The procurement rule that minted this move (chained moves cite their rule)"
+
+      warehouse_id:
+        type: uuid?
+        attributes: ["@foreign_key(Warehouse.id)"]
+        description: "Warehouse resolving the move's route"
+
+      orderpoint_id:
+        type: uuid?
+        attributes: ["@foreign_key(ReorderingRule.id)"]
+        description: "The reordering rule whose scheduler run minted this move (T11)"
+
+      move_orig_ids:
+        type: uuid[]
+        description: "Upstream moves this one is chained after (MTO chains / backorders) # logical FK to StockMove.id"
+
+      move_dest_ids:
+        type: uuid[]
+        description: "Downstream moves chained from this one; cancelling a done upstream move must propagate through (guard R19) # logical FK to StockMove.id"
+
+      is_inventory:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "True for the adjustment move minted by the quant-driven inventory application (T4) — GL legs land on the adjustment accounts, never COGS"
+
+      scrapped:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "True for scrap moves (dest location usage = inventory)"
+
+      propagate_cancel:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Cancelling this move propagates to its chain"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    relations:
+      picking:
+        type: Transfer
+        attributes: ["@one", "@foreign_key(picking_id)"]
+        description: "The grouping transfer"
+        inverse: moves
+      move_lines:
+        type: StockMoveLine[]
+        attributes: ["@one_to_many"]
+        description: "The physical execution lines (lot / package / owner detail)"
+        inverse: move
+
+    indexes:
+      - type: index
+        name: _product_location_index
+        fields: [item_id, location_id, location_dest_id, company_id, state]
+        description: "Verbatim _product_location_index — the hot reservation/forecast scan (spec: product_id -> item_id vocabulary mapping; column list preserved in spirit, name preserved verbatim)"
+      - type: index
+        fields: [state]
+        description: "State worklist filtering"
+      - type: index
+        fields: [picking_id]
+        description: "Transfer projection gather (T1)"
+      - type: index
+        fields: [item_id]
+      - type: index
+        fields: [location_id]
+      - type: index
+        fields: [location_dest_id]
+      - type: index
+        fields: [procure_method]
+        description: "Scheduler MTO sweep"
+      - type: index
+        fields: [rule_id]
+      - type: index
+        fields: [orderpoint_id]
+        description: "Orderpoint traceability (T11)"
+      - type: index
+        fields: [warehouse_id]
+      - type: index
+        fields: [company_id]
+
+  # ===========================================================================
+  # Entity: StockMoveLine — the physical detail row
+  # ===========================================================================
+  - name: StockMoveLine
+    collection: stock_move_lines
+    description: "A detailed stock operation line — the physical execution row (lot / package / owner) under a move; qty mirrors the quant reservation (T2 mirror arm, never authoritative)"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique move-line identifier"
+
+      quantity:
+        type: decimal
+        attributes: ["@default(0)", "@precision(18,4)", "@non_negative"]
+        description: "Reserved/done quantity on this line — the MIRROR arm of the reservation triangle (quant.reserved_quantity stays authoritative, T2)"
+
+      quantity_product_uom_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Unit of measure for UI display only # logical FK to catalog.UnitOfMeasure.id"
+
+      picked:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Barcode-picked flag"
+
+      lot_id:
+        type: uuid?
+        attributes: ["@foreign_key(Lot.id)"]
+        description: "The tracked lot / serial"
+
+      package_id:
+        type: uuid?
+        attributes: ["@foreign_key(Package.id)"]
+        description: "Source package"
+
+      result_package_id:
+        type: uuid?
+        attributes: ["@foreign_key(Package.id)"]
+        description: "Destination package (packing)"
+
+      owner_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Consignment owner # logical FK to party.Party.id"
+
+      state:
+        type: MoveState
+        attributes: ["@default(draft)"]
+        lifecycle: projection
+        description: "Mirrored from the parent move's state (projection shape, ADR-0016) — never hand-set; the free-reservation partial index rides this column"
+
+      date:
+        type: datetime
+        attributes: ["@default(now)"]
+        description: "Scheduled / effective date"
+
+      move_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(StockMove.id)"]
+        description: "Parent move (the lifecycle owner)"
+
+      picking_id:
+        type: uuid?
+        attributes: ["@foreign_key(Transfer.id)"]
+        description: "Denormalized transfer reference (same as move.picking_id) for the transfer's line gather"
+
+      location_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Location.id)"]
+        description: "Source location"
+
+      location_dest_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Location.id)"]
+        description: "Destination location"
+
+      item_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "The moved item (denormalized from the move for quant gathering) # logical FK to catalog.Item.id"
+
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "STRICT transaction fence (denormalized from the move) # logical FK to organization.Company.id"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    relations:
+      move:
+        type: StockMove
+        attributes: ["@one", "@foreign_key(move_id)"]
+        description: "Parent move"
+        inverse: move_lines
+      picking:
+        type: Transfer
+        attributes: ["@one", "@foreign_key(picking_id)"]
+        description: "The grouping transfer"
+        inverse: move_lines
+
+    indexes:
+      - type: index
+        name: _free_reservation_index
+        fields: [state]
+        where: "state <> 'done'"
+        description: "Verbatim _free_reservation_index (state) WHERE state <> 'done' — the un-reserved worklist scan"
+      - type: index
+        fields: [move_id]
+      - type: index
+        fields: [picking_id]
+      - type: index
+        fields: [item_id]
+      - type: index
+        fields: [lot_id]
+        description: "Serial/lot trace (T5 serial uniqueness, T9 lot traceability)"
+      - type: index
+        fields: [package_id]
+      - type: index
+        fields: [location_id]
+      - type: index
+        fields: [location_dest_id]
+      - type: index
+        fields: [company_id]
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: MoveState
+    description: "stock.move.state — the 7-state lifecycle (snake_case values; generated transition verbs no-op on PascalCase)"
+    variants:
+      - name: draft
+        description: "New (not yet confirmed)"
+        default: true
+      - name: waiting
+        description: "Waiting on another operation (chained move not ready)"
+      - name: confirmed
+        description: "Waiting (confirmed, nothing reserved)"
+      - name: partially_available
+        description: "Partially available (some quantity reserved)"
+      - name: assigned
+        description: "Available (fully reserved)"
+      - name: done
+        description: "Done (quant flips applied, SLE minted through the AccountingPost seam)"
+      - name: cancel
+        description: "Cancelled (reservation released)"
+
+  - name: ProcureMethod
+    description: "stock.move.procure_method — how the move is supplied"
+    variants:
+      - name: make_to_stock
+        description: "From stock (reserve existing quants)"
+        default: true
+      - name: make_to_order
+        description: "Trigger a supply rule (chain a new move)"
+      - name: mts_else_mto
+        description: "From stock if available, else trigger a supply rule (kept for completeness — added by other modules upstream)"
