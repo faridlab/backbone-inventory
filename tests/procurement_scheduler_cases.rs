@@ -30,10 +30,15 @@ use uuid::Uuid;
 use backbone_inventory::application::service::inventory_events::{
     InventoryEvent, InventoryEventSink,
 };
+use backbone_inventory::application::service::inventory_gl::{
+    AccountingPostEnvelope, GlPostAck, GlPostRejected, GlPostSink,
+};
+use backbone_inventory::application::service::inventory_move_engine::MoveGlDirective;
 use backbone_inventory::application::service::procurement_service::{
     MovePipeline, MovePipelineError, NewOrderpoint, NewRoute, NewRouteRule, ProcurementRequest,
     ProcurementService,
 };
+use backbone_inventory::application::service::inventory_write_service::InventoryWriteService;
 use backbone_inventory::domain::entity::{GlPostingState, MoveState, Priority, ProcureMethod, StockMove};
 use backbone_inventory::infrastructure::jobs::{run_scheduler_with, SchedulerBatching};
 use backbone_inventory::infrastructure::persistence::procurement_repository::OrderpointRow;
@@ -909,4 +914,193 @@ async fn scheduler_claim_excludes_manual_and_snoozed_orderpoints() {
     .unwrap();
     let ids: Vec<Uuid> = claimed.iter().map(|o: &OrderpointRow| o.id).collect();
     assert_eq!(ids, vec![auto], "only the active auto-trigger orderpoint is claimed");
+}
+
+// --- picking assignment: rule-launched moves join the transfer surface (§2 T1) -------------
+
+// A no-op GL sink: these cases validate with an empty directive (no accounts → no envelope),
+// so nothing posts; the double exists because `validate_picking` requires a sink.
+struct NullGlSink;
+#[async_trait]
+impl GlPostSink for NullGlSink {
+    async fn post(&self, _e: &AccountingPostEnvelope) -> Result<GlPostAck, GlPostRejected> {
+        Err(GlPostRejected { code: "no_gl_expected".into(), message: "no envelope expected".into() })
+    }
+}
+
+/// The sale-shape fixture: an internal stock location, the Customers-root-style demand
+/// location, an operation type over the pair, and one active pull rule sourcing from stock
+/// into the demand location (the make-to-stock delivery leg). Returns
+/// `(company, stock location, demand location, operation type, rule, procurement service)`.
+async fn sale_shape(pool: &PgPool) -> (Uuid, Uuid, Uuid, Uuid, Uuid, ProcurementService) {
+    let mut conn = pool.acquire().await.unwrap();
+    let co = Uuid::new_v4();
+    let stock = loc(&mut conn, "STK", "internal", None, co).await;
+    let cust = loc(&mut conn, "CUST", "customer", None, co).await;
+    let pt = op_type(&mut conn, co, stock, cust).await;
+    drop(conn);
+
+    let svc = ProcurementService::new(pool.clone());
+    let route = svc
+        .create_route(NewRoute { name: uq("RT"), active: true, sequence: 10, company_id: Some(co) })
+        .await
+        .unwrap();
+    let rule_id = svc
+        .create_rule(NewRouteRule {
+            location_src_id: Some(stock),
+            ..rule("deliver", 10, cust, pt, route, Some(co), 0)
+        })
+        .await
+        .unwrap();
+    (co, stock, cust, pt, rule_id, svc)
+}
+
+// Moves launched for ONE source document (the origin is the procurement-group stand-in) join
+// the SAME open transfer; a different document mints its own. This is the hop that carries
+// rule-launched demand onto the picking surface an operator validates.
+#[tokio::test]
+async fn assign_picking_groups_rule_launched_moves_by_origin() {
+    let pool = pool().await;
+    let (co, _stock, cust, pt, _rule, svc) = sale_shape(&pool).await;
+    let w = InventoryWriteService::new(pool.clone());
+
+    let order_a = uq("SO");
+    let order_b = uq("SO");
+    let req = |item: Uuid, origin: String| ProcurementRequest {
+        item_id: item,
+        quantity: d("4"),
+        location_id: cust,
+        warehouse_id: None,
+        company_id: co,
+        route_ids: None,
+        origin,
+        orderpoint_id: None,
+    };
+    let mut c = pool.acquire().await.unwrap();
+    let a1 = svc.run_procurement(&mut c, &req(Uuid::new_v4(), order_a.clone())).await.unwrap();
+    let a2 = svc.run_procurement(&mut c, &req(Uuid::new_v4(), order_a.clone())).await.unwrap();
+    let b1 = svc.run_procurement(&mut c, &req(Uuid::new_v4(), order_b.clone())).await.unwrap();
+    drop(c);
+
+    let first = w.assign_picking(co, a1).await.unwrap();
+    assert!(first.minted, "the first move of a document mints the transfer");
+    let second = w.assign_picking(co, a2).await.unwrap();
+    assert_eq!(second.transfer_id, first.transfer_id);
+    assert!(!second.minted, "a sibling line of the same document JOINS the open transfer");
+    let other = w.assign_picking(co, b1).await.unwrap();
+    assert!(other.minted, "a different document gets its own transfer");
+    assert_ne!(other.transfer_id, first.transfer_id);
+
+    let (header, moves) = w.fetch_picking(co, first.transfer_id).await.unwrap();
+    assert_eq!(header.origin.as_deref(), Some(order_a.as_str()));
+    assert_eq!(header.picking_type_id, pt);
+    assert_eq!(moves.len(), 2, "both lines of the document sit on its transfer");
+    assert_eq!(header.state, "draft", "the projection derives from the draft member moves");
+
+    let (other_header, other_moves) = w.fetch_picking(co, other.transfer_id).await.unwrap();
+    assert_eq!(other_header.origin.as_deref(), Some(order_b.as_str()));
+    assert_eq!(other_moves.len(), 1);
+}
+
+// Assignment is idempotent (a move already on a transfer returns it), fail-closed on a move
+// with no procurement rule (voucher-door moves keep their voucher identity), and refuses
+// terminal states.
+#[tokio::test]
+async fn assign_picking_is_idempotent_and_fails_closed() {
+    let pool = pool().await;
+    let (co, stock, cust, _pt, _rule, svc) = sale_shape(&pool).await;
+    let item = Uuid::new_v4();
+    let mut c = pool.acquire().await.unwrap();
+    let mv = svc
+        .run_procurement(&mut c, &ProcurementRequest {
+            item_id: item,
+            quantity: d("2"),
+            location_id: cust,
+            warehouse_id: None,
+            company_id: co,
+            route_ids: None,
+            origin: uq("SO"),
+            orderpoint_id: None,
+        })
+        .await
+        .unwrap();
+    drop(c);
+    // A hand-minted move with NO rule and a DONE move, for the fail-closed arms.
+    let mut conn = pool.acquire().await.unwrap();
+    let ruleless = raw_move(&mut conn, "confirmed", item, stock, cust, d("1"), d("0"), co).await;
+    let finished = raw_move(&mut conn, "done", item, stock, cust, d("1"), d("1"), co).await;
+    drop(conn);
+
+    let w = InventoryWriteService::new(pool.clone());
+    let first = w.assign_picking(co, mv).await.unwrap();
+    let again = w.assign_picking(co, mv).await.unwrap();
+    assert_eq!(again.transfer_id, first.transfer_id);
+    assert!(!again.minted, "the second call joins the transfer the first minted");
+
+    let err = w.assign_picking(co, ruleless).await.unwrap_err();
+    assert_eq!(err.code(), "move_has_no_rule");
+    let err = w.assign_picking(co, finished).await.unwrap_err();
+    assert_eq!(err.code(), "wrong_move_state");
+}
+
+// The full rule → move → picking → validate chain: what a confirmed order's demand goes
+// through, proving the warehouse's button_validate surface now reaches rule-launched moves
+// and that the moves-by-origin read reconstructs the delivered quantity afterwards.
+#[tokio::test]
+async fn validate_picking_drives_rule_launched_demand() {
+    let pool = pool().await;
+    let (co, stock, cust, _pt, _rule, svc) = sale_shape(&pool).await;
+    let item = Uuid::new_v4();
+    let mut conn = pool.acquire().await.unwrap();
+    quant(&mut conn, item, stock, d("10"), d("0"), co).await;
+    drop(conn);
+
+    let origin = uq("SO");
+    let mut c = pool.acquire().await.unwrap();
+    let mv = svc
+        .run_procurement(&mut c, &ProcurementRequest {
+            item_id: item,
+            quantity: d("6"),
+            location_id: cust,
+            warehouse_id: None,
+            company_id: co,
+            route_ids: None,
+            origin: origin.clone(),
+            orderpoint_id: None,
+        })
+        .await
+        .unwrap();
+    drop(c);
+
+    let w = InventoryWriteService::new(pool.clone());
+    let assignment = w.assign_picking(co, mv).await.unwrap();
+    assert!(assignment.minted);
+    let state = w.action_confirm(mv).await.unwrap();
+    assert_eq!(state, "confirmed");
+
+    let validated = w
+        .validate_picking(co, assignment.transfer_id, &MoveGlDirective::default(), &NullGlSink)
+        .await
+        .unwrap();
+    assert_eq!(validated.projected_state, "done", "the projection derives from the done move");
+
+    // The delivered-quantity reconstruction read: moves by origin, done state, done qty.
+    let moves_repo = backbone_inventory::infrastructure::persistence::StockMoveRepository::new(pool.clone());
+    let mut c = pool.acquire().await.unwrap();
+    let done = moves_repo.fetch_moves_by_origin(&mut c, co, &origin).await.unwrap();
+    drop(c);
+    assert_eq!(done.len(), 1);
+    assert_eq!(done[0].state, "done");
+    assert_eq!(done[0].quantity, d("6"));
+
+    let on_hand: Decimal = sqlx::query_scalar(
+        "SELECT quantity FROM inventory.stock_quants WHERE company_id = $1 AND item_id = $2 AND location_id = $3",
+    )
+    .bind(co)
+    .bind(item)
+    .bind(stock)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(on_hand, d("4"), "the validated picking drew the physical stock");
 }

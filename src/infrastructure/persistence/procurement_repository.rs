@@ -496,6 +496,26 @@ impl ProcurementRepository {
         Ok(row.map(|r| r.get::<i32, _>("delay")).unwrap_or(0))
     }
 
+    /// The operation type a rule fulfills through (its `picking_type_id`) — the vocabulary the
+    /// picking-assignment step derives a rule-launched move's grouping transfer from. `None`
+    /// when the rule does not exist or is soft-deleted.
+    pub async fn rule_picking_type<'e, E>(
+        executor: E,
+        rule_id: Uuid,
+    ) -> Result<Option<Uuid>, sqlx::Error>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
+        let row = sqlx::query_scalar::<_, Uuid>(
+            r#"SELECT picking_type_id FROM inventory.route_rules
+               WHERE id = $1 AND (metadata->>'deleted_at') IS NULL"#,
+        )
+        .bind(rule_id)
+        .fetch_optional(executor)
+        .await?;
+        Ok(row)
+    }
+
     /// Bind `app.company_id` on a connection from the ambient scope (set by the scheduler's
     /// `with_company_scope` wrapper — the write-verb pattern: the RLS fence is what scopes a
     /// non-bypassing role; the explicit predicates above are defense-in-depth).

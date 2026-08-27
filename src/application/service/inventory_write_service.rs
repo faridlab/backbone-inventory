@@ -213,6 +213,10 @@ pub enum InventoryError {
     /// The move is not in the state this action requires (the guarded state machine rejected the
     /// transition — e.g. `_action_assign` on a draft move, or `_action_done` on a cancelled one).
     WrongMoveState { move_id: Uuid, action: &'static str, current: String },
+    /// Picking assignment is rule-driven: a move carries no procurement rule to derive its
+    /// operation type from, so no grouping transfer can be resolved for it (voucher-door moves
+    /// keep their voucher identity and mint through their own door instead).
+    MoveHasNoRule { move_id: Uuid },
     /// A move whose source and destination location are the same row (a physical no-op — rejected,
     /// stock.hook.yaml R9).
     SameLocation { move_id: Uuid, location_id: Uuid },
@@ -293,6 +297,7 @@ impl InventoryError {
             InventoryError::SameWarehouse => "same_warehouse".into(),
             InventoryError::GlRejected { code, .. } => code.clone(),
             InventoryError::WrongMoveState { .. } => "wrong_move_state".into(),
+            InventoryError::MoveHasNoRule { .. } => "move_has_no_rule".into(),
             InventoryError::SameLocation { .. } => "same_location".into(),
             InventoryError::MoveLinesRequired { .. } => "move_lines_required".into(),
             InventoryError::ViewLocationHoldsNoStock { .. } => "quant_on_view_location".into(),

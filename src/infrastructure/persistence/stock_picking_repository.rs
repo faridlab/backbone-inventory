@@ -51,7 +51,8 @@ pub struct TransferHeaderRow {
 }
 
 /// Facts of an operation type the picking mint/validate needs: the picking code (which GL leg
-/// shape its moves post), the reservation posture, and the partial-validate backorder policy.
+/// shape its moves post), the reservation posture, the partial-validate backorder policy, the
+/// reference prefix its transfer names mint from, and its default shipping policy.
 pub struct OperationTypeFacts {
     pub id: Uuid,
     /// incoming / outgoing / internal (as text).
@@ -60,6 +61,12 @@ pub struct OperationTypeFacts {
     pub reservation_method: String,
     /// ask / always / never (as text).
     pub create_backorder: String,
+    /// Reference prefix for transfer names (e.g. `IN/`, `WH/OUT/`) — the vocabulary a minted
+    /// picking's name starts from.
+    pub sequence_code: String,
+    /// direct (ship as available) / one (ship all at once) — the shipping policy a minted
+    /// picking inherits from its operation type.
+    pub move_type: String,
 }
 
 /// An existing `is_inventory` move addressing a quant grain, as the adjustment door's
@@ -210,7 +217,8 @@ impl StockPickingRepository {
     ) -> Result<Option<OperationTypeFacts>, sqlx::Error> {
         let row = sqlx::query(
             r#"SELECT id, code::text AS code, reservation_method::text AS reservation_method,
-                      create_backorder::text AS create_backorder
+                      create_backorder::text AS create_backorder, sequence_code,
+                      move_type::text AS move_type
                FROM inventory.operation_types
                WHERE id = $1 AND active AND (metadata->>'deleted_at') IS NULL
                  AND (company_id = $2 OR company_id IS NULL)"#,
@@ -224,7 +232,49 @@ impl StockPickingRepository {
             code: r.get("code"),
             reservation_method: r.get("reservation_method"),
             create_backorder: r.get("create_backorder"),
+            sequence_code: r.get("sequence_code"),
+            move_type: r.get("move_type"),
         }))
+    }
+
+    /// The OPEN transfer a move would join when it is grouped for fulfillment: the most
+    /// recently scheduled transfer of the same company whose operation type, source,
+    /// destination, partner, and origin (the procurement-group stand-in — moves launched for
+    /// one source document share it) all match, and whose projection has not reached a
+    /// terminal state (`done` picks nothing more up; a `cancel` never reopens). `None` when no
+    /// open transfer matches — the caller mints one.
+    pub async fn find_open_group_picking(
+        &self,
+        conn: &mut PgConnection,
+        company_id: Uuid,
+        picking_type_id: Uuid,
+        location_id: Uuid,
+        location_dest_id: Uuid,
+        partner_id: Option<Uuid>,
+        origin: Option<&str>,
+    ) -> Result<Option<Uuid>, sqlx::Error> {
+        let row = sqlx::query_scalar::<_, Uuid>(
+            r#"SELECT id FROM inventory.transfers
+               WHERE company_id = $1
+                 AND picking_type_id = $2
+                 AND location_id = $3
+                 AND location_dest_id = $4
+                 AND partner_id IS NOT DISTINCT FROM $5
+                 AND origin IS NOT DISTINCT FROM $6
+                 AND state NOT IN ('done'::transfer_state, 'cancel'::transfer_state)
+                 AND (metadata->>'deleted_at') IS NULL
+               ORDER BY scheduled_date DESC, id
+               LIMIT 1"#,
+        )
+        .bind(company_id)
+        .bind(picking_type_id)
+        .bind(location_id)
+        .bind(location_dest_id)
+        .bind(partner_id)
+        .bind(origin)
+        .fetch_optional(conn)
+        .await?;
+        Ok(row)
     }
 
     /// The warehouse's stock location: the internal location the warehouse tree resolves to

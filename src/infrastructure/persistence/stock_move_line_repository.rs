@@ -94,6 +94,28 @@ impl StockMoveLineRepository {
         Ok(())
     }
 
+    /// Retarget every line of one move onto its grouping transfer (the picking-assignment
+    /// write's line half — lines minted before the move joined a picking carry a NULL
+    /// `picking_id`, and the transfer's line gather reads this column). Runs inside the
+    /// caller's transaction; no-op when the move has no lines yet.
+    pub async fn retarget_picking(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        move_id: Uuid,
+        picking_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"UPDATE inventory.stock_move_lines
+               SET picking_id = $2
+               WHERE move_id = $1 AND (metadata->>'deleted_at') IS NULL"#,
+        )
+        .bind(move_id)
+        .bind(picking_id)
+        .execute(&mut *conn)
+        .await?;
+        Ok(())
+    }
+
     /// All live lines of one move (execution order: mint order).
     pub async fn fetch_lines_for_move(
         &self,

@@ -92,6 +92,9 @@ pub struct MoveRow {
     pub procure_method: String,
     pub picking_id: Option<Uuid>,
     pub origin: Option<String>,
+    /// The procurement rule that minted this move (the `_run_pull` / `_run_push` provenance —
+    /// moves minted through a rule carry it, door-minted and hand-minted moves do not).
+    pub rule_id: Option<Uuid>,
     pub location_id: Uuid,
     pub location_dest_id: Uuid,
     pub partner_id: Option<Uuid>,
@@ -146,7 +149,7 @@ impl StockMoveRepository {
     ) -> Result<Option<MoveRow>, sqlx::Error> {
         let row = sqlx::query(
             r#"SELECT id, name, state::text AS state, posting_state::text AS posting_state, date, item_id, demand_qty, quantity,
-                      price_unit, procure_method::text AS procure_method, picking_id, origin,
+                      price_unit, procure_method::text AS procure_method, picking_id, origin, rule_id,
                       location_id, location_dest_id, partner_id, company_id, warehouse_id,
                       orderpoint_id, move_orig_ids, move_dest_ids, is_inventory, scrapped,
                       propagate_cancel, forced_value
@@ -167,7 +170,7 @@ impl StockMoveRepository {
     ) -> Result<Vec<MoveRow>, sqlx::Error> {
         let rows = sqlx::query(
             r#"SELECT id, name, state::text AS state, posting_state::text AS posting_state, date, item_id, demand_qty, quantity,
-                      price_unit, procure_method::text AS procure_method, picking_id, origin,
+                      price_unit, procure_method::text AS procure_method, picking_id, origin, rule_id,
                       location_id, location_dest_id, partner_id, company_id, warehouse_id,
                       orderpoint_id, move_orig_ids, move_dest_ids, is_inventory, scrapped,
                       propagate_cancel, forced_value
@@ -190,7 +193,7 @@ impl StockMoveRepository {
     ) -> Result<Vec<MoveRow>, sqlx::Error> {
         let rows = sqlx::query(
             r#"SELECT id, name, state::text AS state, posting_state::text AS posting_state, date, item_id, demand_qty, quantity,
-                      price_unit, procure_method::text AS procure_method, picking_id, origin,
+                      price_unit, procure_method::text AS procure_method, picking_id, origin, rule_id,
                       location_id, location_dest_id, partner_id, company_id, warehouse_id,
                       orderpoint_id, move_orig_ids, move_dest_ids, is_inventory, scrapped,
                       propagate_cancel, forced_value
@@ -248,6 +251,28 @@ impl StockMoveRepository {
         .execute(&mut *conn)
         .await?;
         Ok(res.rows_affected() == 1)
+    }
+
+    /// Attach a move to its grouping transfer (the picking-assignment write: the move's
+    /// `picking_id` is set, and the projection re-derives on the caller's next reproject —
+    /// this write only moves the pointer). Runs inside the caller's transaction; the company
+    /// scope is already bound by the service that resolved the group.
+    pub async fn set_picking(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        move_id: Uuid,
+        picking_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"UPDATE inventory.stock_moves
+               SET picking_id = $2
+               WHERE id = $1 AND (metadata->>'deleted_at') IS NULL"#,
+        )
+        .bind(move_id)
+        .bind(picking_id)
+        .execute(&mut *conn)
+        .await?;
+        Ok(())
     }
 
     /// Link a backorder child to its parent: the parent's `move_dest_ids` gains the child, the
@@ -490,6 +515,7 @@ fn move_row_of(r: sqlx::postgres::PgRow) -> MoveRow {
         procure_method: r.get("procure_method"),
         picking_id: r.get("picking_id"),
         origin: r.get("origin"),
+        rule_id: r.get("rule_id"),
         location_id: r.get("location_id"),
         location_dest_id: r.get("location_dest_id"),
         partner_id: r.get("partner_id"),

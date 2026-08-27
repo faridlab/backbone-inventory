@@ -30,7 +30,7 @@ use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use crate::infrastructure::persistence::{
-    NewMoveLineRow, NewPickingRow, NewStockEntryItemRow, NewTransferRow,
+    NewMoveLineRow, NewPickingRow, NewStockEntryItemRow, NewTransferRow, ProcurementRepository,
 };
 
 use super::inventory_events::{InventoryEvent, StockMoved};
@@ -96,6 +96,14 @@ pub struct PickingValidated {
     pub transfer_id: Uuid,
     pub projected_state: String,
     pub validated_moves: Vec<super::inventory_move_engine::MoveDoneOutcome>,
+}
+
+/// The picking-assignment outcome: the transfer the move now belongs to, and whether this
+/// call MINTED that transfer or JOINED an already-open one.
+#[derive(Debug, Clone)]
+pub struct PickingAssignment {
+    pub transfer_id: Uuid,
+    pub minted: bool,
 }
 
 impl InventoryWriteService {
@@ -218,6 +226,91 @@ impl InventoryWriteService {
         let moves = self.pickings.fetch_moves_of_transfer(&mut tx, transfer_id).await?;
         tx.commit().await?;
         Ok((header, moves))
+    }
+
+    /// `_assign_picking`: attach a rule-launched move to its grouping transfer — the hop that
+    /// carries a demand launched through the procurement engine (`run_procurement` / `_run_pull`
+    /// mint moves with no transfer) onto the picking surface an operator validates. The move's
+    /// RULE names the operation type; the group key is (operation type, source, destination,
+    /// partner, origin) with `origin` standing in for the procurement group — every move
+    /// launched for one source document joins ONE transfer, and a transfer stays open for
+    /// later lines of the same document. An open transfer that matches is joined; otherwise a
+    /// header is minted (name from the operation type's reference prefix, unique per company;
+    /// shipping policy inherited from the operation type). The projection then re-derives
+    /// from the member move states, exactly as it does on every move change.
+    ///
+    /// Idempotent: a move that already belongs to a transfer returns it (`minted: false`).
+    /// Fail-closed on a move with no procurement rule (voucher-door moves keep their voucher
+    /// identity — their door mints the moves and owns the GL, and no picking is derived for
+    /// them here) and on terminal states (`done` / `cancel` never re-group).
+    pub async fn assign_picking(
+        &self,
+        company_id: Uuid,
+        move_id: Uuid,
+    ) -> Result<PickingAssignment, InventoryError> {
+        let mut tx = self.db_pool.begin().await?;
+        // RLS scope (ADR-0008), and the fence's fail-closed posture: the company is a
+        // caller-supplied fact, bound before the move read — an unfenced read would see every
+        // move as absent, and a wrong-company move reads as NotFound below.
+        company_scope::bind_company_on(&mut tx, company_id).await?;
+        let mv = self.moves.fetch_move(&mut tx, move_id).await?
+            .ok_or(InventoryError::NotFound(move_id))?;
+        if mv.company_id != company_id {
+            return Err(InventoryError::NotFound(move_id));
+        }
+        match mv.state.as_str() {
+            "draft" | "waiting" | "confirmed" | "partially_available" | "assigned" => {}
+            other => return Err(InventoryError::WrongMoveState {
+                move_id, action: "assign_picking", current: other.into(),
+            }),
+        }
+        if let Some(existing) = mv.picking_id {
+            tx.commit().await?;
+            return Ok(PickingAssignment { transfer_id: existing, minted: false });
+        }
+        // The rule names the operation type; without one there is nothing to derive a
+        // grouping transfer from (refuse rather than guess a type).
+        let rule_id = mv.rule_id.ok_or(InventoryError::MoveHasNoRule { move_id })?;
+        let picking_type_id = ProcurementRepository::rule_picking_type(&mut *tx, rule_id).await?
+            .ok_or(InventoryError::NotFound(rule_id))?;
+        let op = self.pickings.fetch_operation_type(&mut tx, picking_type_id, company_id).await?
+            .ok_or(InventoryError::NotFound(picking_type_id))?;
+
+        let (transfer_id, minted) = match self.pickings.find_open_group_picking(
+            &mut tx, company_id, picking_type_id,
+            mv.location_id, mv.location_dest_id, mv.partner_id, mv.origin.as_deref(),
+        ).await? {
+            Some(open) => (open, false),
+            None => {
+                let id = Uuid::new_v4();
+                // The operation type's reference prefix (e.g. `IN/`, `WH/OUT/`) plus a short
+                // unique suffix — (name, company) is unique; a collision is the typed
+                // duplicate error the caller can retry.
+                let prefix = op.sequence_code.trim_end_matches('/');
+                let prefix = if prefix.is_empty() { "PICK" } else { prefix };
+                let name = format!("{}/{}", prefix, &Uuid::new_v4().simple().to_string()[..8].to_uppercase());
+                let ins = self.pickings.insert_transfer(&mut tx, &NewPickingRow {
+                    id,
+                    name: &name,
+                    origin: mv.origin.as_deref(),
+                    picking_type_id,
+                    location_id: mv.location_id,
+                    location_dest_id: mv.location_dest_id,
+                    partner_id: mv.partner_id,
+                    company_id,
+                    move_type: &op.move_type,
+                }).await;
+                if let Err(e) = ins {
+                    return Err(if is_dup(&e) { InventoryError::DuplicateNumber(name) } else { e.into() });
+                }
+                (id, true)
+            }
+        };
+        self.moves.set_picking(&mut tx, move_id, transfer_id).await?;
+        self.move_lines.retarget_picking(&mut tx, move_id, transfer_id).await?;
+        self.moves.reproject_picking(&mut tx, transfer_id).await?;
+        tx.commit().await?;
+        Ok(PickingAssignment { transfer_id, minted })
     }
 
     /// `button_validate` (spec §2): `_action_done` over the transfer's moves — nothing else.
