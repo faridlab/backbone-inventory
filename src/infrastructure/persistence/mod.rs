@@ -4,8 +4,13 @@
 //!
 //! Uses backbone-orm's `DatabaseOperations<T>` trait.
 
+mod picking_batch_repository;
 mod delivery_note_repository;
 mod delivery_note_item_repository;
+mod inventory_company_setting_repository;
+mod landed_cost_repository;
+mod landed_cost_line_repository;
+mod landed_cost_adjustment_line_repository;
 mod location_repository;
 mod stock_move_repository;
 mod stock_move_line_repository;
@@ -17,20 +22,22 @@ mod reordering_rule_repository;
 mod purchase_receipt_repository;
 mod purchase_receipt_item_repository;
 mod quant_repository;
+mod scrap_repository;
+mod scrap_reason_tag_repository;
 mod stock_entry_repository;
 mod stock_entry_item_repository;
 mod stock_ledger_entry_repository;
 mod bin_repository;
 mod stock_reconciliation_repository;
 mod stock_reconciliation_item_repository;
+mod package_type_repository;
+mod storage_category_repository;
+mod storage_category_capacity_repository;
+mod putaway_rule_repository;
 mod lot_repository;
 mod package_repository;
 mod warehouse_repository;
 mod stock_item_repository;
-mod inventory_company_setting_repository;
-mod landed_cost_repository;
-mod landed_cost_line_repository;
-mod landed_cost_adjustment_line_repository;
 
 // Custom persistence modules
 // <<< CUSTOM
@@ -44,6 +51,13 @@ mod stock_picking_repository;
 // Quant-driven adjustment SQL (count staging on the quant, staging consume, pending-count
 // worklist). Declared `user_owned`.
 mod stock_adjustment_repository;
+// Picking-batch (SB-1) projection SQL: header mint, membership writes, the stored-compute
+// reproject, and the probe reads. Distinct from the generated `picking_batch_repository`
+// newtype the read routes use. Declared `user_owned`.
+mod picking_batch_projection_repository;
+// Scrap-door SQL: header mint, probe, the terminal done-stamp. Distinct from the generated
+// `scrap_repository` newtype. Declared `user_owned`.
+mod scrap_door_repository;
 // Procurement SQL (routes/rules/orderpoints): rule search, orderpoint claims, T11 forecast
 // aggregation, move minting, quant housekeep. Declared `user_owned` in metaphor.codegen.yaml.
 // `pub mod` (not `mod` + re-export like the others): the minted-move input type is imported
@@ -53,8 +67,13 @@ pub mod procurement_repository;
 // END CUSTOM
 
 // Re-exports
+pub use picking_batch_repository::PickingBatchRepository;
 pub use delivery_note_repository::DeliveryNoteRepository;
 pub use delivery_note_item_repository::DeliveryNoteItemRepository;
+pub use inventory_company_setting_repository::InventoryCompanySettingRepository;
+pub use landed_cost_repository::LandedCostRepository;
+pub use landed_cost_line_repository::LandedCostLineRepository;
+pub use landed_cost_adjustment_line_repository::LandedCostAdjustmentLineRepository;
 pub use location_repository::LocationRepository;
 pub use stock_move_repository::StockMoveRepository;
 pub use stock_move_line_repository::StockMoveLineRepository;
@@ -66,20 +85,22 @@ pub use reordering_rule_repository::ReorderingRuleRepository;
 pub use purchase_receipt_repository::PurchaseReceiptRepository;
 pub use purchase_receipt_item_repository::PurchaseReceiptItemRepository;
 pub use quant_repository::QuantRepository;
+pub use scrap_repository::ScrapRepository;
+pub use scrap_reason_tag_repository::ScrapReasonTagRepository;
 pub use stock_entry_repository::StockEntryRepository;
 pub use stock_entry_item_repository::StockEntryItemRepository;
 pub use stock_ledger_entry_repository::StockLedgerEntryRepository;
 pub use bin_repository::BinRepository;
 pub use stock_reconciliation_repository::StockReconciliationRepository;
 pub use stock_reconciliation_item_repository::StockReconciliationItemRepository;
+pub use package_type_repository::PackageTypeRepository;
+pub use storage_category_repository::StorageCategoryRepository;
+pub use storage_category_capacity_repository::StorageCategoryCapacityRepository;
+pub use putaway_rule_repository::PutawayRuleRepository;
 pub use lot_repository::LotRepository;
 pub use package_repository::PackageRepository;
 pub use warehouse_repository::WarehouseRepository;
 pub use stock_item_repository::StockItemRepository;
-pub use inventory_company_setting_repository::InventoryCompanySettingRepository;
-pub use landed_cost_repository::LandedCostRepository;
-pub use landed_cost_line_repository::LandedCostLineRepository;
-pub use landed_cost_adjustment_line_repository::LandedCostAdjustmentLineRepository;
 
 // Re-export backbone-orm types
 pub use backbone_orm::repository::{
@@ -131,4 +152,10 @@ pub use stock_picking_repository::{
 pub use stock_adjustment_repository::{
     QuantCountRow, QuantSelector, StagedCountRow, StockAdjustmentRepository,
 };
+// Picking-batch (SB-1) surface types (repository declared `user_owned` above).
+pub use picking_batch_projection_repository::{
+    BatchHeaderRow, BatchMemberRow, NewBatchRow, PickingBatchProjectionRepository,
+};
+// Scrap-door surface types (repository declared `user_owned` above).
+pub use scrap_door_repository::{NewScrapRow, ScrapDoorRepository, ScrapRow};
 // END CUSTOM

@@ -36,7 +36,7 @@ impl Seeder for SeedStockReconciliationItemSeeder {
     }
 
     fn order(&self) -> i32 {
-        19
+        26
     }
 
     async fn should_run(&self, pool: &PgPool) -> Result<bool> {

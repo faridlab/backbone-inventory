@@ -161,13 +161,13 @@ impl InventoryWriteService {
                 Some(mid) => mid,
                 None => continue, // the line already reversed in a prior (crashed) attempt
             };
-            let state = self.advance_move_to_assigned(mid).await?;
+            let state = self.advance_move_to_assigned(h.company_id, mid).await?;
             if state != "assigned" {
                 // The stock quant's free availability cannot cover the WHOLE reversal — the
                 // received goods are (partly) reserved for someone else. Release whatever the
                 // partial assign took; no stock moved, no reservation held, the voucher stays
                 // submitted (retryable once the reservation clears).
-                self.unreserve_move(mid).await?;
+                self.unreserve_move(h.company_id, mid).await?;
                 let on_hand = self.quants.fetch_on_hand(&self.db_pool, h.company_id, it.item_id, stock_loc).await?;
                 return Err(InventoryError::InsufficientStockToReverse {
                     item_id: it.item_id, warehouse_id: h.warehouse_id,
@@ -175,7 +175,7 @@ impl InventoryWriteService {
                     requested: it.quantity,
                 });
             }
-            self.action_done(mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
+            self.action_done(h.company_id, mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
         }
         {
             let mut tx = self.db_pool.begin().await?;
@@ -190,7 +190,7 @@ impl InventoryWriteService {
         // reverses nothing on the way out.
         // The inventory leg resolves the SAME location valuation-account override the submit
         // used, so the compensation mirrors the original post exactly (posture symmetry).
-        let inv_acct = self.inventory_leg_account(stock_loc, h.inventory_account_id).await?;
+        let inv_acct = self.inventory_leg_account(h.company_id, stock_loc, h.inventory_account_id).await?;
         let total: Decimal = items.iter()
             .filter(|l| !l.is_landed_costs_line)
             .map(|l| money(l.quantity * l.rate))
@@ -269,7 +269,7 @@ impl InventoryWriteService {
                 Some(mid) => mid,
                 None => continue, // the line already reversed in a prior (crashed) attempt
             };
-            let state = self.advance_move_to_assigned(mid).await?;
+            let state = self.advance_move_to_assigned(h.company_id, mid).await?;
             if state != "assigned" {
                 // Unreachable in practice (an external source's supply is unconditionally
                 // available, so assign always covers the full demand) — but a delivery cancel
@@ -279,7 +279,7 @@ impl InventoryWriteService {
                     move_id: mid, action: "cancel", current: state,
                 });
             }
-            self.action_done(mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
+            self.action_done(h.company_id, mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
         }
         {
             let mut tx = self.db_pool.begin().await?;
@@ -295,7 +295,7 @@ impl InventoryWriteService {
         // and the inventory leg resolves the same location valuation-account override.
         let posture = self.posting_posture(h.company_id).await?;
         let credit_acct = self.delivery_debit_account(h.company_id, &posture, h.cogs_account_id)?;
-        let inv_acct = self.inventory_leg_account(stock_loc, h.inventory_account_id).await?;
+        let inv_acct = self.inventory_leg_account(h.company_id, stock_loc, h.inventory_account_id).await?;
         let total: Decimal = items.iter().map(|l| l.cogs_amount).sum();
         let env = AccountingPostEnvelope {
             idempotency_key: format!("{id}-reversal"), company_id: h.company_id, branch_id: h.branch_id,
@@ -347,7 +347,7 @@ impl InventoryWriteService {
         // Same posture + location-override resolution as the forward cancellation, so the
         // recovered reversal mirrors the original post exactly.
         let (_, stock_loc) = self.door_move_endpoints(h.company_id, h.warehouse_id, "supplier").await?;
-        let inv_acct = self.inventory_leg_account(stock_loc, h.inventory_account_id).await?;
+        let inv_acct = self.inventory_leg_account(h.company_id, stock_loc, h.inventory_account_id).await?;
         let amt = h.total_value;
         let env = AccountingPostEnvelope {
             idempotency_key: format!("{id}-reversal"), company_id: h.company_id, branch_id: h.branch_id,
@@ -378,7 +378,7 @@ impl InventoryWriteService {
         let posture = self.posting_posture(h.company_id).await?;
         let credit_acct = self.delivery_debit_account(h.company_id, &posture, h.cogs_account_id)?;
         let (_, stock_loc) = self.door_move_endpoints(h.company_id, h.warehouse_id, "customer").await?;
-        let inv_acct = self.inventory_leg_account(stock_loc, h.inventory_account_id).await?;
+        let inv_acct = self.inventory_leg_account(h.company_id, stock_loc, h.inventory_account_id).await?;
         let amt = h.total_cogs;
         let env = AccountingPostEnvelope {
             idempotency_key: format!("{id}-reversal"), company_id: h.company_id, branch_id: h.branch_id,

@@ -1,0 +1,27 @@
+-- Down: drop the master-data guards in reverse order.
+DROP POLICY IF EXISTS scrap_reason_tags_company_isolation ON inventory.scrap_reason_tags;
+ALTER TABLE inventory.scrap_reason_tags DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS putaway_rules_company_isolation ON inventory.putaway_rules;
+ALTER TABLE inventory.putaway_rules DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS storage_category_capacities_company_isolation ON inventory.storage_category_capacities;
+ALTER TABLE inventory.storage_category_capacities DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS storage_categories_company_isolation ON inventory.storage_categories;
+ALTER TABLE inventory.storage_categories DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS package_types_company_isolation ON inventory.package_types;
+ALTER TABLE inventory.package_types DISABLE ROW LEVEL SECURITY;
+DROP TRIGGER IF EXISTS putaway_rule_derive_storage_category ON inventory.putaway_rules;
+DROP FUNCTION IF EXISTS inventory.putaway_rule_derive_storage_category();
+ALTER TABLE inventory.putaway_rules DROP CONSTRAINT IF EXISTS fk_putaway_rules_storage_category_id;
+ALTER TABLE inventory.putaway_rules DROP CONSTRAINT IF EXISTS fk_putaway_rules_package_type_id;
+ALTER TABLE inventory.putaway_rules DROP CONSTRAINT IF EXISTS fk_putaway_rules_location_out_id;
+ALTER TABLE inventory.putaway_rules DROP CONSTRAINT IF EXISTS fk_putaway_rules_location_in_id;
+ALTER TABLE inventory.storage_category_capacities DROP CONSTRAINT IF EXISTS fk_storage_capacity_package_type_id;
+ALTER TABLE inventory.storage_category_capacities DROP CONSTRAINT IF EXISTS fk_storage_capacity_category_id;
+ALTER TABLE inventory.locations DROP CONSTRAINT IF EXISTS fk_locations_storage_category_id;
+ALTER TABLE inventory.packages DROP CONSTRAINT IF EXISTS fk_packages_package_type_id;
+ALTER TABLE inventory.locations DROP COLUMN IF EXISTS storage_category_id;
+ALTER TABLE inventory.packages DROP COLUMN IF EXISTS package_type_id;
+ALTER TABLE inventory.storage_category_capacities DROP CONSTRAINT IF EXISTS storage_capacity_target_xor;
+ALTER TABLE inventory.storage_category_capacities DROP CONSTRAINT IF EXISTS storage_capacity_positive_quantity;
+ALTER TABLE inventory.storage_categories DROP CONSTRAINT IF EXISTS storage_categories_non_negative_weight;
+ALTER TABLE inventory.package_types DROP CONSTRAINT IF EXISTS package_types_non_negative_dims;

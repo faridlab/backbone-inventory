@@ -127,6 +127,11 @@ models:
         type: date?
         description: "Date the package was packed"
 
+      package_type_id:
+        type: uuid?
+        attributes: ["@foreign_key(PackageType.id)"]
+        description: "The package's archetype (box / tote) — the join key a storage category's package-type capacity rows (R9) match on"
+
       metadata:
         type: Metadata
         attributes: ["@audit_metadata"]
@@ -138,6 +143,9 @@ models:
         description: "Package-tree hierarchy walks (parent_store pattern)"
       - type: index
         fields: [parent_package_id]
+      - type: index
+        fields: [package_type_id]
+        description: "Package-type joins (the R9 capacity match key)"
       - type: index
         fields: [location_id]
       - type: index

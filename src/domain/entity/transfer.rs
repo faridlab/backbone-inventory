@@ -68,6 +68,7 @@ pub struct Transfer {
     pub is_locked: bool,
     pub backorder_id: Option<Uuid>,
     pub return_id: Option<Uuid>,
+    pub batch_id: Option<Uuid>,
     #[serde(default)]
     #[sqlx(json)]
     pub metadata: AuditMetadata,
@@ -99,6 +100,7 @@ impl Transfer {
             is_locked,
             backorder_id: None,
             return_id: None,
+            batch_id: None,
             metadata: AuditMetadata::default(),
         }
     }
@@ -194,6 +196,12 @@ impl Transfer {
         self
     }
 
+    /// Set the batch_id field (chainable)
+    pub fn with_batch_id(mut self, value: Uuid) -> Self {
+        self.batch_id = Some(value);
+        self
+    }
+
     // ==========================================================
     // Partial Update
     // ==========================================================
@@ -249,6 +257,9 @@ impl Transfer {
                 }
                 "return_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.return_id = v; }
+                }
+                "batch_id" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.batch_id = v; }
                 }
                 _ => {} // ignore unknown fields
             }
@@ -311,6 +322,7 @@ impl backbone_orm::EntityRepoMeta for Transfer {
         m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("backorder_id".to_string(), "uuid".to_string());
         m.insert("return_id".to_string(), "uuid".to_string());
+        m.insert("batch_id".to_string(), "uuid".to_string());
         m.insert("priority".to_string(), "priority".to_string());
         m.insert("move_type".to_string(), "move_type".to_string());
         m.insert("state".to_string(), "transfer_state".to_string());
@@ -346,6 +358,7 @@ pub struct TransferBuilder {
     is_locked: Option<bool>,
     backorder_id: Option<Uuid>,
     return_id: Option<Uuid>,
+    batch_id: Option<Uuid>,
 }
 
 impl TransferBuilder {
@@ -445,6 +458,12 @@ impl TransferBuilder {
         self
     }
 
+    /// Set the batch_id field (optional)
+    pub fn batch_id(mut self, value: Uuid) -> Self {
+        self.batch_id = Some(value);
+        self
+    }
+
     /// Build the Transfer entity
     ///
     /// Returns Err if any required field without a default is missing.
@@ -472,6 +491,7 @@ impl TransferBuilder {
             is_locked: self.is_locked.unwrap_or(true),
             backorder_id: self.backorder_id,
             return_id: self.return_id,
+            batch_id: self.batch_id,
             metadata: AuditMetadata::default(),
         })
     }

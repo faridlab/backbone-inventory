@@ -534,7 +534,7 @@ async fn t11_forecast_and_to_order_computes() {
         .await
         .unwrap();
 
-    let computes = svc.recompute_orderpoint(op).await.unwrap();
+    let computes = svc.recompute_orderpoint(co, op).await.unwrap();
     assert_eq!(computes.qty_on_hand, d("5"), "on hand nets out reservations, over the subtree");
     assert_eq!(computes.qty_forecast, d("10"), "on hand 5 + incoming 8 - outgoing 3");
     assert_eq!(computes.qty_to_order, d("10"), "to order = max(20, forecast 10) - 10, floored at zero");
@@ -1075,7 +1075,7 @@ async fn validate_picking_drives_rule_launched_demand() {
     let w = InventoryWriteService::new(pool.clone());
     let assignment = w.assign_picking(co, mv).await.unwrap();
     assert!(assignment.minted);
-    let state = w.action_confirm(mv).await.unwrap();
+    let state = w.action_confirm(co, mv).await.unwrap();
     assert_eq!(state, "confirmed");
 
     let validated = w

@@ -11,6 +11,33 @@ use chrono::{DateTime, Utc};
 use super::types::*;
 
 // ============================================================================
+// PICKINGBATCH EVENTS
+// ============================================================================
+
+/// Event published when a PickingBatch is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PickingBatchCreatedEvent {
+    pub id: PickingBatchId,
+    pub data: PickingBatchDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a PickingBatch is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PickingBatchUpdatedEvent {
+    pub id: PickingBatchId,
+    pub data: PickingBatchDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a PickingBatch is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PickingBatchDeletedEvent {
+    pub id: PickingBatchId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
 // DELIVERYNOTE EVENTS
 // ============================================================================
 
@@ -61,6 +88,114 @@ pub struct DeliveryNoteItemUpdatedEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeliveryNoteItemDeletedEvent {
     pub id: DeliveryNoteItemId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// INVENTORYCOMPANYSETTING EVENTS
+// ============================================================================
+
+/// Event published when a InventoryCompanySetting is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryCompanySettingCreatedEvent {
+    pub id: InventoryCompanySettingId,
+    pub data: InventoryCompanySettingDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a InventoryCompanySetting is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryCompanySettingUpdatedEvent {
+    pub id: InventoryCompanySettingId,
+    pub data: InventoryCompanySettingDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a InventoryCompanySetting is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InventoryCompanySettingDeletedEvent {
+    pub id: InventoryCompanySettingId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// LANDEDCOST EVENTS
+// ============================================================================
+
+/// Event published when a LandedCost is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LandedCostCreatedEvent {
+    pub id: LandedCostId,
+    pub data: LandedCostDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a LandedCost is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LandedCostUpdatedEvent {
+    pub id: LandedCostId,
+    pub data: LandedCostDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a LandedCost is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LandedCostDeletedEvent {
+    pub id: LandedCostId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// LANDEDCOSTLINE EVENTS
+// ============================================================================
+
+/// Event published when a LandedCostLine is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LandedCostLineCreatedEvent {
+    pub id: LandedCostLineId,
+    pub data: LandedCostLineDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a LandedCostLine is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LandedCostLineUpdatedEvent {
+    pub id: LandedCostLineId,
+    pub data: LandedCostLineDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a LandedCostLine is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LandedCostLineDeletedEvent {
+    pub id: LandedCostLineId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// LANDEDCOSTADJUSTMENTLINE EVENTS
+// ============================================================================
+
+/// Event published when a LandedCostAdjustmentLine is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LandedCostAdjustmentLineCreatedEvent {
+    pub id: LandedCostAdjustmentLineId,
+    pub data: LandedCostAdjustmentLineDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a LandedCostAdjustmentLine is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LandedCostAdjustmentLineUpdatedEvent {
+    pub id: LandedCostAdjustmentLineId,
+    pub data: LandedCostAdjustmentLineDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a LandedCostAdjustmentLine is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LandedCostAdjustmentLineDeletedEvent {
+    pub id: LandedCostAdjustmentLineId,
     pub occurred_at: DateTime<Utc>,
 }
 
@@ -362,6 +497,60 @@ pub struct QuantDeletedEvent {
 }
 
 // ============================================================================
+// SCRAP EVENTS
+// ============================================================================
+
+/// Event published when a Scrap is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrapCreatedEvent {
+    pub id: ScrapId,
+    pub data: ScrapDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a Scrap is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrapUpdatedEvent {
+    pub id: ScrapId,
+    pub data: ScrapDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a Scrap is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrapDeletedEvent {
+    pub id: ScrapId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// SCRAPREASONTAG EVENTS
+// ============================================================================
+
+/// Event published when a ScrapReasonTag is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrapReasonTagCreatedEvent {
+    pub id: ScrapReasonTagId,
+    pub data: ScrapReasonTagDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a ScrapReasonTag is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrapReasonTagUpdatedEvent {
+    pub id: ScrapReasonTagId,
+    pub data: ScrapReasonTagDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a ScrapReasonTag is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrapReasonTagDeletedEvent {
+    pub id: ScrapReasonTagId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
 // STOCKENTRY EVENTS
 // ============================================================================
 
@@ -524,6 +713,114 @@ pub struct StockReconciliationItemDeletedEvent {
 }
 
 // ============================================================================
+// PACKAGETYPE EVENTS
+// ============================================================================
+
+/// Event published when a PackageType is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageTypeCreatedEvent {
+    pub id: PackageTypeId,
+    pub data: PackageTypeDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a PackageType is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageTypeUpdatedEvent {
+    pub id: PackageTypeId,
+    pub data: PackageTypeDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a PackageType is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageTypeDeletedEvent {
+    pub id: PackageTypeId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// STORAGECATEGORY EVENTS
+// ============================================================================
+
+/// Event published when a StorageCategory is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageCategoryCreatedEvent {
+    pub id: StorageCategoryId,
+    pub data: StorageCategoryDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a StorageCategory is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageCategoryUpdatedEvent {
+    pub id: StorageCategoryId,
+    pub data: StorageCategoryDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a StorageCategory is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageCategoryDeletedEvent {
+    pub id: StorageCategoryId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// STORAGECATEGORYCAPACITY EVENTS
+// ============================================================================
+
+/// Event published when a StorageCategoryCapacity is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageCategoryCapacityCreatedEvent {
+    pub id: StorageCategoryCapacityId,
+    pub data: StorageCategoryCapacityDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a StorageCategoryCapacity is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageCategoryCapacityUpdatedEvent {
+    pub id: StorageCategoryCapacityId,
+    pub data: StorageCategoryCapacityDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a StorageCategoryCapacity is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageCategoryCapacityDeletedEvent {
+    pub id: StorageCategoryCapacityId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// PUTAWAYRULE EVENTS
+// ============================================================================
+
+/// Event published when a PutawayRule is created
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PutawayRuleCreatedEvent {
+    pub id: PutawayRuleId,
+    pub data: PutawayRuleDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a PutawayRule is updated
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PutawayRuleUpdatedEvent {
+    pub id: PutawayRuleId,
+    pub data: PutawayRuleDto,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Event published when a PutawayRule is deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PutawayRuleDeletedEvent {
+    pub id: PutawayRuleId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+// ============================================================================
 // LOT EVENTS
 // ============================================================================
 
@@ -639,12 +936,27 @@ pub struct StockItemDeletedEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum InventoryEvent {
+    PickingBatchCreated(PickingBatchCreatedEvent),
+    PickingBatchUpdated(PickingBatchUpdatedEvent),
+    PickingBatchDeleted(PickingBatchDeletedEvent),
     DeliveryNoteCreated(DeliveryNoteCreatedEvent),
     DeliveryNoteUpdated(DeliveryNoteUpdatedEvent),
     DeliveryNoteDeleted(DeliveryNoteDeletedEvent),
     DeliveryNoteItemCreated(DeliveryNoteItemCreatedEvent),
     DeliveryNoteItemUpdated(DeliveryNoteItemUpdatedEvent),
     DeliveryNoteItemDeleted(DeliveryNoteItemDeletedEvent),
+    InventoryCompanySettingCreated(InventoryCompanySettingCreatedEvent),
+    InventoryCompanySettingUpdated(InventoryCompanySettingUpdatedEvent),
+    InventoryCompanySettingDeleted(InventoryCompanySettingDeletedEvent),
+    LandedCostCreated(LandedCostCreatedEvent),
+    LandedCostUpdated(LandedCostUpdatedEvent),
+    LandedCostDeleted(LandedCostDeletedEvent),
+    LandedCostLineCreated(LandedCostLineCreatedEvent),
+    LandedCostLineUpdated(LandedCostLineUpdatedEvent),
+    LandedCostLineDeleted(LandedCostLineDeletedEvent),
+    LandedCostAdjustmentLineCreated(LandedCostAdjustmentLineCreatedEvent),
+    LandedCostAdjustmentLineUpdated(LandedCostAdjustmentLineUpdatedEvent),
+    LandedCostAdjustmentLineDeleted(LandedCostAdjustmentLineDeletedEvent),
     LocationCreated(LocationCreatedEvent),
     LocationUpdated(LocationUpdatedEvent),
     LocationDeleted(LocationDeletedEvent),
@@ -678,6 +990,12 @@ pub enum InventoryEvent {
     QuantCreated(QuantCreatedEvent),
     QuantUpdated(QuantUpdatedEvent),
     QuantDeleted(QuantDeletedEvent),
+    ScrapCreated(ScrapCreatedEvent),
+    ScrapUpdated(ScrapUpdatedEvent),
+    ScrapDeleted(ScrapDeletedEvent),
+    ScrapReasonTagCreated(ScrapReasonTagCreatedEvent),
+    ScrapReasonTagUpdated(ScrapReasonTagUpdatedEvent),
+    ScrapReasonTagDeleted(ScrapReasonTagDeletedEvent),
     StockEntryCreated(StockEntryCreatedEvent),
     StockEntryUpdated(StockEntryUpdatedEvent),
     StockEntryDeleted(StockEntryDeletedEvent),
@@ -696,6 +1014,18 @@ pub enum InventoryEvent {
     StockReconciliationItemCreated(StockReconciliationItemCreatedEvent),
     StockReconciliationItemUpdated(StockReconciliationItemUpdatedEvent),
     StockReconciliationItemDeleted(StockReconciliationItemDeletedEvent),
+    PackageTypeCreated(PackageTypeCreatedEvent),
+    PackageTypeUpdated(PackageTypeUpdatedEvent),
+    PackageTypeDeleted(PackageTypeDeletedEvent),
+    StorageCategoryCreated(StorageCategoryCreatedEvent),
+    StorageCategoryUpdated(StorageCategoryUpdatedEvent),
+    StorageCategoryDeleted(StorageCategoryDeletedEvent),
+    StorageCategoryCapacityCreated(StorageCategoryCapacityCreatedEvent),
+    StorageCategoryCapacityUpdated(StorageCategoryCapacityUpdatedEvent),
+    StorageCategoryCapacityDeleted(StorageCategoryCapacityDeletedEvent),
+    PutawayRuleCreated(PutawayRuleCreatedEvent),
+    PutawayRuleUpdated(PutawayRuleUpdatedEvent),
+    PutawayRuleDeleted(PutawayRuleDeletedEvent),
     LotCreated(LotCreatedEvent),
     LotUpdated(LotUpdatedEvent),
     LotDeleted(LotDeletedEvent),

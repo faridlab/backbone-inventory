@@ -1,0 +1,186 @@
+# =============================================================================
+# Domain: Inventory
+# Entities: Scrap (Odoo `stock.scrap`), ScrapReasonTag (stock.scrap.reason.tag)
+# =============================================================================
+# The disposal family. Scrap is the record of a quantity moved OUT of stock to
+# a scrap location; unlike the picking, its lifecycle is trivial draft → done
+# with no cancel (`_action_done` mints or reuses an is_scrap stock move from
+# location_id to scrap_location_id and validates it — the move is the
+# load-bearing artifact, stored back on `move_id`). The actual stock mutation
+# rides the ONE move engine: no second estate, no direct quant/SLE writes.
+# scrap_qty must be > 0 (spec stock-business-logic.md §8).
+#
+# ScrapReasonTag is a flat unique-named tag set — guard R7 (name unique).
+#
+# Company fence (ADR-0014): Scrap is a TRANSACTION — strict (NOT NULL
+# company_id). ScrapReasonTag is MASTER DATA — shared_blank (nullable company;
+# NULL rows are first-class shared rows).
+# =============================================================================
+
+models:
+  # ===========================================================================
+  # Entity: Scrap — a disposal record (draft → done, no cancel)
+  # ===========================================================================
+  - name: Scrap
+    collection: scraps
+    read_only: true
+    description: "A scrap (disposal) record — moves a quantity to a scrap location via a scrapped stock move minted and validated through the ONE move engine (the move is the load-bearing artifact, stored on move_id)"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique scrap identifier"
+
+      name:
+        type: string
+        attributes: ["@required", "@max(40)", "@default(\"/\")"]
+        description: "Reference (sequence-filled; unique per company)"
+
+      state:
+        type: ScrapState
+        attributes: ["@default(draft)"]
+        lifecycle: hand_set
+        description: "draft / done — flipped to done by the scrap door's action_done; no cancel state (a wrong scrap is corrected by scrapping back / a return move, never by editing the row)"
+
+      origin:
+        type: string?
+        attributes: ["@max(200)"]
+        description: "Origin document reference"
+
+      date_expected:
+        type: datetime
+        attributes: ["@required", "@default(now)"]
+        description: "Expected processing date"
+
+      item_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "The item being scrapped # logical FK to catalog.Item.id"
+
+      scrap_qty:
+        type: decimal
+        attributes: ["@required", "@default(1)", "@precision(18,4)"]
+        description: "Quantity to scrap (> 0 — the §8 positivity guard; the door refuses a non-positive quantity)"
+
+      location_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Location.id)"]
+        description: "Source location (usage ≠ view; same company — R9-location posture)"
+
+      scrap_location_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Location.id)"]
+        description: "Scrap destination (an inventory-loss / scrap usage location)"
+
+      lot_id:
+        type: uuid?
+        attributes: ["@foreign_key(Lot.id)"]
+        description: "Lot / serial of the scrapped stock"
+
+      package_id:
+        type: uuid?
+        attributes: ["@foreign_key(Package.id)"]
+        description: "Source package"
+
+      owner_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Consignment owner # logical FK to party.Party.id"
+
+      picking_id:
+        type: uuid?
+        attributes: ["@foreign_key(Transfer.id)"]
+        description: "Optional linked picking"
+
+      move_id:
+        type: uuid?
+        attributes: ["@foreign_key(StockMove.id)"]
+        description: "The scrapped stock move minted and validated by the door (the actual mutation; set when state flips to done)"
+
+      scrap_reason_tag_ids:
+        type: uuid[]
+        description: "Reason tags # logical m2m to ScrapReasonTag.id (R7 keeps the labels unique)"
+
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "STRICT transaction fence # logical FK to organization.Company.id"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    indexes:
+      - type: unique
+        fields: [name, company_id]
+        where: "deleted_at IS NULL"
+        description: "Scrap reference unique per company"
+      - type: index
+        fields: [state]
+      - type: index
+        fields: [item_id]
+      - type: index
+        fields: [picking_id]
+      - type: index
+        fields: [company_id]
+
+  # ===========================================================================
+  # Entity: ScrapReasonTag — a flat unique-named reason tag (guard R7)
+  # ===========================================================================
+  - name: ScrapReasonTag
+    collection: scrap_reason_tags
+    description: "A reason tag for scrap records (unique label — guard R7, _name_uniq)"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique tag identifier"
+
+      name:
+        type: string
+        attributes: ["@required", "@max(150)"]
+        description: "Tag label (unique — guard R7, _name_uniq)"
+
+      active:
+        type: bool
+        attributes: ["@default(true)"]
+        description: "Archive support"
+
+      company_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "Owning company; NULL = shared tag visible to every company (shared_blank, ADR-0014) # logical FK to organization.Company.id"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    indexes:
+      - type: unique
+        fields: [name]
+        where: "deleted_at IS NULL AND company_id IS NULL"
+        description: "R7 — shared tag labels stay unique (the _name_uniq band; company-owned tags scope their own namespace below)"
+      - type: unique
+        fields: [name, company_id]
+        where: "deleted_at IS NULL AND company_id IS NOT NULL"
+        description: "R7 — one tag label per owning company"
+      - type: index
+        fields: [company_id]
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: ScrapState
+    description: "stock.scrap.state — a trivial hand-set document lifecycle (draft → done, no cancel; ADR-0016 hand_set)"
+    variants:
+      - name: draft
+        description: "Recorded, not yet processed"
+        default: true
+      - name: done
+        description: "The scrapped move is validated (terminal — corrections are reversal moves)"

@@ -63,6 +63,10 @@ pub struct CreateLocationDto {
     pub last_inventory_date: Option<NaiveDate>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "next_inventory_date")]
     pub next_inventory_date: Option<NaiveDate>,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "valuation_account_id")]
+    pub valuation_account_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "storage_category_id")]
+    pub storage_category_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -108,6 +112,10 @@ pub struct UpdateLocationDto {
     pub last_inventory_date: Option<NaiveDate>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "next_inventory_date")]
     pub next_inventory_date: Option<NaiveDate>,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "valuation_account_id")]
+    pub valuation_account_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "storage_category_id")]
+    pub storage_category_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -156,12 +164,16 @@ pub struct PatchLocationDto {
     pub last_inventory_date: Option<NaiveDate>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "next_inventory_date")]
     pub next_inventory_date: Option<NaiveDate>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "valuation_account_id")]
+    pub valuation_account_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "storage_category_id")]
+    pub storage_category_id: Option<Uuid>,
 }
 
 impl PatchLocationDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.name.is_some() || self.complete_name.is_some() || self.active.is_some() || self.usage.is_some() || self.location_id.is_some() || self.parent_path.is_some() || self.barcode.is_some() || self.company_id.is_some() || self.warehouse_id.is_some() || self.cyclic_inventory_frequency.is_some() || self.last_inventory_date.is_some() || self.next_inventory_date.is_some()
+        self.name.is_some() || self.complete_name.is_some() || self.active.is_some() || self.usage.is_some() || self.location_id.is_some() || self.parent_path.is_some() || self.barcode.is_some() || self.company_id.is_some() || self.warehouse_id.is_some() || self.cyclic_inventory_frequency.is_some() || self.last_inventory_date.is_some() || self.next_inventory_date.is_some() || self.valuation_account_id.is_some() || self.storage_category_id.is_some()
     }
 }
 
@@ -196,6 +208,8 @@ pub struct LocationResponseDto {
     pub cyclic_inventory_frequency: i32,
     pub last_inventory_date: Option<NaiveDate>,
     pub next_inventory_date: Option<NaiveDate>,
+    pub valuation_account_id: Option<Uuid>,
+    pub storage_category_id: Option<Uuid>,
     pub metadata: AuditMetadata,
 }
 
@@ -279,6 +293,8 @@ impl From<Location> for LocationResponseDto {
             cyclic_inventory_frequency: entity.cyclic_inventory_frequency,
             last_inventory_date: entity.last_inventory_date,
             next_inventory_date: entity.next_inventory_date,
+            valuation_account_id: entity.valuation_account_id,
+            storage_category_id: entity.storage_category_id,
             metadata: entity.metadata,
         }
     }
@@ -313,6 +329,8 @@ impl From<CreateLocationDto> for Location {
             cyclic_inventory_frequency: dto.cyclic_inventory_frequency,
             last_inventory_date: dto.last_inventory_date,
             next_inventory_date: dto.next_inventory_date,
+            valuation_account_id: dto.valuation_account_id,
+            storage_category_id: dto.storage_category_id,
             metadata: AuditMetadata::default(),
         }
     }
@@ -334,6 +352,8 @@ impl From<&Location> for LocationResponseDto {
             cyclic_inventory_frequency: entity.cyclic_inventory_frequency.clone(),
             last_inventory_date: entity.last_inventory_date.clone(),
             next_inventory_date: entity.next_inventory_date.clone(),
+            valuation_account_id: entity.valuation_account_id.clone(),
+            storage_category_id: entity.storage_category_id.clone(),
             metadata: entity.metadata.clone(),
         }
     }
@@ -359,6 +379,8 @@ impl backbone_core::ApplyUpdateDto<UpdateLocationDto> for Location {
         self.cyclic_inventory_frequency = dto.cyclic_inventory_frequency;
         self.last_inventory_date = dto.last_inventory_date;
         self.next_inventory_date = dto.next_inventory_date;
+        self.valuation_account_id = dto.valuation_account_id;
+        self.storage_category_id = dto.storage_category_id;
         Ok(self)
     }
 }

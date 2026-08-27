@@ -47,12 +47,13 @@ pub struct PurchaseReceiptItemFilter {
     pub receipt_id: Option<Uuid>,
     pub company_id: Option<Uuid>,
     pub item_id: Option<Uuid>,
+    pub is_landed_costs_line: Option<bool>,
 }
 
 impl PurchaseReceiptItemFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.receipt_id.is_some() || self.company_id.is_some() || self.item_id.is_some()
+        self.receipt_id.is_some() || self.company_id.is_some() || self.item_id.is_some() || self.is_landed_costs_line.is_some()
     }
 }
 

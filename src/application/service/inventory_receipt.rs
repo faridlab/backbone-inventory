@@ -122,7 +122,7 @@ impl InventoryWriteService {
         // consults the location valuation-account override. `periodic` suppresses the
         // real-time post below (the voucher retires to `not_applicable`).
         let posture = self.posting_posture(company).await?;
-        let inv_acct = self.inventory_leg_account(stock_loc, inv_acct).await?;
+        let inv_acct = self.inventory_leg_account(company, stock_loc, inv_acct).await?;
 
         // ---- physical movement: one minted move per line, engine-driven ----
         // The enumerate index is the deterministic name grain (`{voucher}/{idx+1}`): a skipped
@@ -158,8 +158,8 @@ impl InventoryWriteService {
                 Some(mid) => mid,
                 None => continue, // the line already landed in a prior (crashed) attempt
             };
-            self.advance_move_to_assigned(mid).await?;
-            self.action_done(mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
+            self.advance_move_to_assigned(company, mid).await?;
+            self.action_done(company, mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
         }
         // The GL amount is the voucher's own arithmetic (Σ money(qty·rate) over the STOCK
         // lines) — identical to the Σ of the moves' IN-leg carries by construction. A landed
@@ -252,7 +252,7 @@ impl InventoryWriteService {
             });
         }
         let (_, stock_loc) = self.door_move_endpoints(h.company_id, h.warehouse_id, "supplier").await?;
-        let inv_acct = self.inventory_leg_account(stock_loc, h.inventory_account_id).await?;
+        let inv_acct = self.inventory_leg_account(h.company_id, stock_loc, h.inventory_account_id).await?;
         let amt = h.total_value;
         let env = AccountingPostEnvelope {
             idempotency_key: id.to_string(), company_id: h.company_id, branch_id: h.branch_id,

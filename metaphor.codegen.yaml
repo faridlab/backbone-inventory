@@ -208,3 +208,50 @@ user_owned:
   # remove an enum member).
   - "migrations/20260826150200_landed_cost_sle_voucher_type.up.sql"
   - "migrations/20260826150200_landed_cost_sle_voucher_type.down.sql"
+  # Picking-batch membership (SB-1): the transfers.batch_id column + FK the schema declares
+  # on Transfer, the batch-member company-consistency trigger (the DB half of the fence),
+  # the strict fences for picking_batches/scraps, the scrap intra-module FKs, and the
+  # scrap positivity CHECK. Hand-written because the generator does not rewrite existing
+  # table migrations.
+  - "migrations/20260827140000_picking_batch_membership.up.sql"
+  - "migrations/20260827140000_picking_batch_membership.down.sql"
+  # Satellite master-data guards: package/storage/putaway positivity CHECKs (R15/16/17),
+  # the capacity target XOR, the intra-module FKs the generator does not emit across
+  # schema files, the T12 putaway storage-category derivation trigger, and the
+  # shared_blank fences for the five master-data tables.
+  - "migrations/20260827140100_satellite_master_guards.up.sql"
+  - "migrations/20260827140100_satellite_master_guards.down.sql"
+  # The picking-batch satellite's SQL: header mint, membership writes, the SB-1 stored-
+  # compute reproject, and the probe reads. Distinct from the generated
+  # picking_batch_repository.rs newtype (same reason gl_voucher_repository.rs is
+  # hand-owned).
+  - "src/infrastructure/persistence/picking_batch_projection_repository.rs"
+  # The scrap door's SQL: header mint, probe, the terminal done-stamp. Distinct from the
+  # generated scrap_repository.rs newtype.
+  - "src/infrastructure/persistence/scrap_door_repository.rs"
+  # The picking-batch satellite service: header mint, membership verbs, projection probes.
+  # The batch state is a stored compute over its member pickings — never written here.
+  - "src/application/service/inventory_batch.rs"
+  # The scrap satellite door: draft mint, process through the ONE move engine (a scrapped
+  # move to the loss sink), the deferred-GL form for the HTTP surface.
+  - "src/application/service/inventory_scrap.rs"
+  # SB-1 picking-batch cases: state derives from members (mixed bands, least-advanced),
+  # engine cascade, auto-cancel on empty, membership guards.
+  - "tests/picking_batch_cases.rs"
+  # Scrap-door cases (rides the engine once, GL exactly once, mint guards) + the satellite
+  # master-data guard family at the DB level (R7/R8/R9/R10, R15/16/17, XOR, T12).
+  - "tests/scrap_door_cases.rs"
+  # Router-level route-match probes: build the real guarded router and assert every
+  # parameterized route family (picking probe GET, batch-member add/remove, scrap GET +
+  # process, landed-cost validate/cancel) matches a real-UUID path with its real status —
+  # the behavior suites drive services and cannot see a route that never registers as a
+  # match. Plus a source-level guard against brace-style path segments (axum 0.7 treats
+  # them as literals).
+  - "tests/route_match_probes.rs"
+  # Armed-fence probes: drive the real engine/procurement/receipt surfaces as a
+  # restricted non-superuser role on a database whose row-level-security fence is
+  # ENABLE+FORCE (the composing service's posture). The behavior suites run as the
+  # migration owner, which bypasses RLS, so they cannot see the unbound-read
+  # defect class. Gated on INVENTORY_FENCE_DSN; skips with a printed reason when
+  # the fence DSN is absent.
+  - "tests/engine_fence_probes.rs"

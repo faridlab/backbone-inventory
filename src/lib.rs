@@ -12,6 +12,7 @@
 //! - RBAC middleware
 //! - Trigger execution system
 //! - Computed fields
+//! - Workflow orchestrator
 
 #![recursion_limit = "1024"]
 #![allow(unused_imports)]
@@ -31,8 +32,13 @@ pub use domain::entity::*;
 pub use infrastructure::persistence::*;
 
 // Re-exports - Application services
+pub use application::service::PickingBatchService;
 pub use application::service::DeliveryNoteService;
 pub use application::service::DeliveryNoteItemService;
+pub use application::service::InventoryCompanySettingService;
+pub use application::service::LandedCostService;
+pub use application::service::LandedCostLineService;
+pub use application::service::LandedCostAdjustmentLineService;
 pub use application::service::LocationService;
 pub use application::service::StockMoveService;
 pub use application::service::StockMoveLineService;
@@ -44,20 +50,22 @@ pub use application::service::ReorderingRuleService;
 pub use application::service::PurchaseReceiptService;
 pub use application::service::PurchaseReceiptItemService;
 pub use application::service::QuantService;
+pub use application::service::ScrapService;
+pub use application::service::ScrapReasonTagService;
 pub use application::service::StockEntryService;
 pub use application::service::StockEntryItemService;
 pub use application::service::StockLedgerEntryService;
 pub use application::service::BinService;
 pub use application::service::StockReconciliationService;
 pub use application::service::StockReconciliationItemService;
+pub use application::service::PackageTypeService;
+pub use application::service::StorageCategoryService;
+pub use application::service::StorageCategoryCapacityService;
+pub use application::service::PutawayRuleService;
 pub use application::service::LotService;
 pub use application::service::PackageService;
 pub use application::service::WarehouseService;
 pub use application::service::StockItemService;
-pub use application::service::InventoryCompanySettingService;
-pub use application::service::LandedCostService;
-pub use application::service::LandedCostLineService;
-pub use application::service::LandedCostAdjustmentLineService;
 
 use std::sync::Arc;
 use axum::Router;
@@ -76,8 +84,13 @@ use sqlx::PgPool;
 /// let router = inventory.all_crud_routes();
 /// ```
 pub struct InventoryModule {
+    pub(crate) picking_batch_service: Arc<PickingBatchService>,
     pub(crate) delivery_note_service: Arc<DeliveryNoteService>,
     pub(crate) delivery_note_item_service: Arc<DeliveryNoteItemService>,
+    pub(crate) inventory_company_setting_service: Arc<InventoryCompanySettingService>,
+    pub(crate) landed_cost_service: Arc<LandedCostService>,
+    pub(crate) landed_cost_line_service: Arc<LandedCostLineService>,
+    pub(crate) landed_cost_adjustment_line_service: Arc<LandedCostAdjustmentLineService>,
     pub(crate) location_service: Arc<LocationService>,
     pub(crate) stock_move_service: Arc<StockMoveService>,
     pub(crate) stock_move_line_service: Arc<StockMoveLineService>,
@@ -89,20 +102,22 @@ pub struct InventoryModule {
     pub(crate) purchase_receipt_service: Arc<PurchaseReceiptService>,
     pub(crate) purchase_receipt_item_service: Arc<PurchaseReceiptItemService>,
     pub(crate) quant_service: Arc<QuantService>,
+    pub(crate) scrap_service: Arc<ScrapService>,
+    pub(crate) scrap_reason_tag_service: Arc<ScrapReasonTagService>,
     pub(crate) stock_entry_service: Arc<StockEntryService>,
     pub(crate) stock_entry_item_service: Arc<StockEntryItemService>,
     pub(crate) stock_ledger_entry_service: Arc<StockLedgerEntryService>,
     pub(crate) bin_service: Arc<BinService>,
     pub(crate) stock_reconciliation_service: Arc<StockReconciliationService>,
     pub(crate) stock_reconciliation_item_service: Arc<StockReconciliationItemService>,
+    pub(crate) package_type_service: Arc<PackageTypeService>,
+    pub(crate) storage_category_service: Arc<StorageCategoryService>,
+    pub(crate) storage_category_capacity_service: Arc<StorageCategoryCapacityService>,
+    pub(crate) putaway_rule_service: Arc<PutawayRuleService>,
     pub(crate) lot_service: Arc<LotService>,
     pub(crate) package_service: Arc<PackageService>,
     pub(crate) warehouse_service: Arc<WarehouseService>,
     pub(crate) stock_item_service: Arc<StockItemService>,
-    pub(crate) inventory_company_setting_service: Arc<InventoryCompanySettingService>,
-    pub(crate) landed_cost_service: Arc<LandedCostService>,
-    pub(crate) landed_cost_line_service: Arc<LandedCostLineService>,
-    pub(crate) landed_cost_adjustment_line_service: Arc<LandedCostAdjustmentLineService>,
     // <<< CUSTOM FIELDS
     // END CUSTOM
 }
@@ -120,7 +135,10 @@ impl InventoryModule {
     /// real deployment; use this only in trusted/admin/seeding contexts.
     pub fn all_crud_routes(&self) -> Router {
         use presentation::http::{
+            create_picking_batch_read_routes,
             create_delivery_note_routes,
+            create_inventory_company_setting_routes,
+            create_landed_cost_routes,
             create_location_routes,
             create_operation_type_routes,
             create_transfer_read_routes,
@@ -128,13 +146,17 @@ impl InventoryModule {
             create_route_rule_routes,
             create_reordering_rule_routes,
             create_purchase_receipt_routes,
+            create_scrap_read_routes,
+            create_scrap_reason_tag_routes,
             create_stock_entry_routes,
+            create_package_type_routes,
+            create_storage_category_routes,
+            create_storage_category_capacity_routes,
+            create_putaway_rule_routes,
             create_lot_routes,
             create_package_routes,
             create_warehouse_routes,
             create_stock_item_routes,
-            create_inventory_company_setting_routes,
-            create_landed_cost_routes,
         };
 
         // Engine-owned tables are deliberately NOT mounted here — see
@@ -150,7 +172,10 @@ impl InventoryModule {
         // the SLE is the append-only ledger the move engine mints, and reconciliations
         // are the GL-posting adjustments — both must write only through the engine.
         Router::new()
+            .merge(create_picking_batch_read_routes(self.picking_batch_service.clone()))
             .merge(create_delivery_note_routes(self.delivery_note_service.clone()))
+            .merge(create_inventory_company_setting_routes(self.inventory_company_setting_service.clone()))
+            .merge(create_landed_cost_routes(self.landed_cost_service.clone()))
             .merge(create_location_routes(self.location_service.clone()))
             .merge(create_operation_type_routes(self.operation_type_service.clone()))
             .merge(create_transfer_read_routes(self.transfer_service.clone()))
@@ -158,13 +183,17 @@ impl InventoryModule {
             .merge(create_route_rule_routes(self.route_rule_service.clone()))
             .merge(create_reordering_rule_routes(self.reordering_rule_service.clone()))
             .merge(create_purchase_receipt_routes(self.purchase_receipt_service.clone()))
+            .merge(create_scrap_read_routes(self.scrap_service.clone()))
+            .merge(create_scrap_reason_tag_routes(self.scrap_reason_tag_service.clone()))
             .merge(create_stock_entry_routes(self.stock_entry_service.clone()))
+            .merge(create_package_type_routes(self.package_type_service.clone()))
+            .merge(create_storage_category_routes(self.storage_category_service.clone()))
+            .merge(create_storage_category_capacity_routes(self.storage_category_capacity_service.clone()))
+            .merge(create_putaway_rule_routes(self.putaway_rule_service.clone()))
             .merge(create_lot_routes(self.lot_service.clone()))
             .merge(create_package_routes(self.package_service.clone()))
             .merge(create_warehouse_routes(self.warehouse_service.clone()))
             .merge(create_stock_item_routes(self.stock_item_service.clone()))
-            .merge(create_inventory_company_setting_routes(self.inventory_company_setting_service.clone()))
-            .merge(create_landed_cost_routes(self.landed_cost_service.clone()))
     }
 
     /// Deprecated alias for [`Self::all_crud_routes`]. `routes()` reads like
@@ -184,8 +213,13 @@ impl InventoryModule {
     /// merge validated write routes (or a write service's HTTP layer) onto it.
     pub fn readonly_routes(&self) -> Router {
         use presentation::http::{
+            create_picking_batch_read_routes,
             create_delivery_note_read_routes,
             create_delivery_note_item_read_routes,
+            create_inventory_company_setting_read_routes,
+            create_landed_cost_read_routes,
+            create_landed_cost_line_read_routes,
+            create_landed_cost_adjustment_line_read_routes,
             create_location_read_routes,
             create_stock_move_read_routes,
             create_stock_move_line_read_routes,
@@ -197,25 +231,32 @@ impl InventoryModule {
             create_purchase_receipt_read_routes,
             create_purchase_receipt_item_read_routes,
             create_quant_read_routes,
+            create_scrap_read_routes,
+            create_scrap_reason_tag_read_routes,
             create_stock_entry_read_routes,
             create_stock_entry_item_read_routes,
             create_stock_ledger_entry_read_routes,
             create_bin_read_routes,
             create_stock_reconciliation_read_routes,
             create_stock_reconciliation_item_read_routes,
+            create_package_type_read_routes,
+            create_storage_category_read_routes,
+            create_storage_category_capacity_read_routes,
+            create_putaway_rule_read_routes,
             create_lot_read_routes,
             create_package_read_routes,
             create_warehouse_read_routes,
             create_stock_item_read_routes,
-            create_inventory_company_setting_read_routes,
-            create_landed_cost_read_routes,
-            create_landed_cost_line_read_routes,
-            create_landed_cost_adjustment_line_read_routes,
         };
 
         Router::new()
+            .merge(create_picking_batch_read_routes(self.picking_batch_service.clone()))
             .merge(create_delivery_note_read_routes(self.delivery_note_service.clone()))
             .merge(create_delivery_note_item_read_routes(self.delivery_note_item_service.clone()))
+            .merge(create_inventory_company_setting_read_routes(self.inventory_company_setting_service.clone()))
+            .merge(create_landed_cost_read_routes(self.landed_cost_service.clone()))
+            .merge(create_landed_cost_line_read_routes(self.landed_cost_line_service.clone()))
+            .merge(create_landed_cost_adjustment_line_read_routes(self.landed_cost_adjustment_line_service.clone()))
             .merge(create_location_read_routes(self.location_service.clone()))
             .merge(create_stock_move_read_routes(self.stock_move_service.clone()))
             .merge(create_stock_move_line_read_routes(self.stock_move_line_service.clone()))
@@ -227,20 +268,22 @@ impl InventoryModule {
             .merge(create_purchase_receipt_read_routes(self.purchase_receipt_service.clone()))
             .merge(create_purchase_receipt_item_read_routes(self.purchase_receipt_item_service.clone()))
             .merge(create_quant_read_routes(self.quant_service.clone()))
+            .merge(create_scrap_read_routes(self.scrap_service.clone()))
+            .merge(create_scrap_reason_tag_read_routes(self.scrap_reason_tag_service.clone()))
             .merge(create_stock_entry_read_routes(self.stock_entry_service.clone()))
             .merge(create_stock_entry_item_read_routes(self.stock_entry_item_service.clone()))
             .merge(create_stock_ledger_entry_read_routes(self.stock_ledger_entry_service.clone()))
             .merge(create_bin_read_routes(self.bin_service.clone()))
             .merge(create_stock_reconciliation_read_routes(self.stock_reconciliation_service.clone()))
             .merge(create_stock_reconciliation_item_read_routes(self.stock_reconciliation_item_service.clone()))
+            .merge(create_package_type_read_routes(self.package_type_service.clone()))
+            .merge(create_storage_category_read_routes(self.storage_category_service.clone()))
+            .merge(create_storage_category_capacity_read_routes(self.storage_category_capacity_service.clone()))
+            .merge(create_putaway_rule_read_routes(self.putaway_rule_service.clone()))
             .merge(create_lot_read_routes(self.lot_service.clone()))
             .merge(create_package_read_routes(self.package_service.clone()))
             .merge(create_warehouse_read_routes(self.warehouse_service.clone()))
             .merge(create_stock_item_read_routes(self.stock_item_service.clone()))
-            .merge(create_inventory_company_setting_read_routes(self.inventory_company_setting_service.clone()))
-            .merge(create_landed_cost_read_routes(self.landed_cost_service.clone()))
-            .merge(create_landed_cost_line_read_routes(self.landed_cost_line_service.clone()))
-            .merge(create_landed_cost_adjustment_line_read_routes(self.landed_cost_adjustment_line_service.clone()))
     }
 
     // <<< CUSTOM METHODS
@@ -274,6 +317,10 @@ impl InventoryModuleBuilder {
         let db_pool = self.db_pool
             .ok_or_else(|| anyhow::anyhow!("Database pool not configured"))?;
 
+        // PickingBatch service
+        let picking_batch_repository = Arc::new(PickingBatchRepository::new(db_pool.clone()));
+        let picking_batch_service = Arc::new(PickingBatchService::with_repository(picking_batch_repository.clone()));
+
         // DeliveryNote service
         let delivery_note_repository = Arc::new(DeliveryNoteRepository::new(db_pool.clone()));
         let delivery_note_service = Arc::new(DeliveryNoteService::with_repository(delivery_note_repository.clone()));
@@ -281,6 +328,22 @@ impl InventoryModuleBuilder {
         // DeliveryNoteItem service
         let delivery_note_item_repository = Arc::new(DeliveryNoteItemRepository::new(db_pool.clone()));
         let delivery_note_item_service = Arc::new(DeliveryNoteItemService::with_repository(delivery_note_item_repository.clone()));
+
+        // InventoryCompanySetting service
+        let inventory_company_setting_repository = Arc::new(InventoryCompanySettingRepository::new(db_pool.clone()));
+        let inventory_company_setting_service = Arc::new(InventoryCompanySettingService::with_repository(inventory_company_setting_repository.clone()));
+
+        // LandedCost service
+        let landed_cost_repository = Arc::new(LandedCostRepository::new(db_pool.clone()));
+        let landed_cost_service = Arc::new(LandedCostService::with_repository(landed_cost_repository.clone()));
+
+        // LandedCostLine service
+        let landed_cost_line_repository = Arc::new(LandedCostLineRepository::new(db_pool.clone()));
+        let landed_cost_line_service = Arc::new(LandedCostLineService::with_repository(landed_cost_line_repository.clone()));
+
+        // LandedCostAdjustmentLine service
+        let landed_cost_adjustment_line_repository = Arc::new(LandedCostAdjustmentLineRepository::new(db_pool.clone()));
+        let landed_cost_adjustment_line_service = Arc::new(LandedCostAdjustmentLineService::with_repository(landed_cost_adjustment_line_repository.clone()));
 
         // Location service
         let location_repository = Arc::new(LocationRepository::new(db_pool.clone()));
@@ -326,6 +389,14 @@ impl InventoryModuleBuilder {
         let quant_repository = Arc::new(QuantRepository::new(db_pool.clone()));
         let quant_service = Arc::new(QuantService::with_repository(quant_repository.clone()));
 
+        // Scrap service
+        let scrap_repository = Arc::new(ScrapRepository::new(db_pool.clone()));
+        let scrap_service = Arc::new(ScrapService::with_repository(scrap_repository.clone()));
+
+        // ScrapReasonTag service
+        let scrap_reason_tag_repository = Arc::new(ScrapReasonTagRepository::new(db_pool.clone()));
+        let scrap_reason_tag_service = Arc::new(ScrapReasonTagService::with_repository(scrap_reason_tag_repository.clone()));
+
         // StockEntry service
         let stock_entry_repository = Arc::new(StockEntryRepository::new(db_pool.clone()));
         let stock_entry_service = Arc::new(StockEntryService::with_repository(stock_entry_repository.clone()));
@@ -350,6 +421,22 @@ impl InventoryModuleBuilder {
         let stock_reconciliation_item_repository = Arc::new(StockReconciliationItemRepository::new(db_pool.clone()));
         let stock_reconciliation_item_service = Arc::new(StockReconciliationItemService::with_repository(stock_reconciliation_item_repository.clone()));
 
+        // PackageType service
+        let package_type_repository = Arc::new(PackageTypeRepository::new(db_pool.clone()));
+        let package_type_service = Arc::new(PackageTypeService::with_repository(package_type_repository.clone()));
+
+        // StorageCategory service
+        let storage_category_repository = Arc::new(StorageCategoryRepository::new(db_pool.clone()));
+        let storage_category_service = Arc::new(StorageCategoryService::with_repository(storage_category_repository.clone()));
+
+        // StorageCategoryCapacity service
+        let storage_category_capacity_repository = Arc::new(StorageCategoryCapacityRepository::new(db_pool.clone()));
+        let storage_category_capacity_service = Arc::new(StorageCategoryCapacityService::with_repository(storage_category_capacity_repository.clone()));
+
+        // PutawayRule service
+        let putaway_rule_repository = Arc::new(PutawayRuleRepository::new(db_pool.clone()));
+        let putaway_rule_service = Arc::new(PutawayRuleService::with_repository(putaway_rule_repository.clone()));
+
         // Lot service
         let lot_repository = Arc::new(LotRepository::new(db_pool.clone()));
         let lot_service = Arc::new(LotService::with_repository(lot_repository.clone()));
@@ -366,27 +453,17 @@ impl InventoryModuleBuilder {
         let stock_item_repository = Arc::new(StockItemRepository::new(db_pool.clone()));
         let stock_item_service = Arc::new(StockItemService::with_repository(stock_item_repository.clone()));
 
-        // InventoryCompanySetting service (the valuation-overlay settings surface)
-        let inventory_company_setting_repository = Arc::new(InventoryCompanySettingRepository::new(db_pool.clone()));
-        let inventory_company_setting_service = Arc::new(InventoryCompanySettingService::with_repository(inventory_company_setting_repository.clone()));
-
-        // LandedCost services (the document + its two child tables; children reach the HTTP
-        // surface read-only — writes ride the document's validate/cancel verbs)
-        let landed_cost_repository = Arc::new(LandedCostRepository::new(db_pool.clone()));
-        let landed_cost_service = Arc::new(LandedCostService::with_repository(landed_cost_repository.clone()));
-
-        let landed_cost_line_repository = Arc::new(LandedCostLineRepository::new(db_pool.clone()));
-        let landed_cost_line_service = Arc::new(LandedCostLineService::with_repository(landed_cost_line_repository.clone()));
-
-        let landed_cost_adjustment_line_repository = Arc::new(LandedCostAdjustmentLineRepository::new(db_pool.clone()));
-        let landed_cost_adjustment_line_service = Arc::new(LandedCostAdjustmentLineService::with_repository(landed_cost_adjustment_line_repository.clone()));
-
         // <<< CUSTOM
         // END CUSTOM
 
         Ok(InventoryModule {
+            picking_batch_service,
             delivery_note_service,
             delivery_note_item_service,
+            inventory_company_setting_service,
+            landed_cost_service,
+            landed_cost_line_service,
+            landed_cost_adjustment_line_service,
             location_service,
             stock_move_service,
             stock_move_line_service,
@@ -398,20 +475,22 @@ impl InventoryModuleBuilder {
             purchase_receipt_service,
             purchase_receipt_item_service,
             quant_service,
+            scrap_service,
+            scrap_reason_tag_service,
             stock_entry_service,
             stock_entry_item_service,
             stock_ledger_entry_service,
             bin_service,
             stock_reconciliation_service,
             stock_reconciliation_item_service,
+            package_type_service,
+            storage_category_service,
+            storage_category_capacity_service,
+            putaway_rule_service,
             lot_service,
             package_service,
             warehouse_service,
             stock_item_service,
-            inventory_company_setting_service,
-            landed_cost_service,
-            landed_cost_line_service,
-            landed_cost_adjustment_line_service,
             // <<< CUSTOM
             // END CUSTOM
         })

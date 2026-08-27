@@ -51,6 +51,8 @@ pub struct CreatePackageDto {
     pub parent_path: String,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "pack_date")]
     pub pack_date: Option<NaiveDate>,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "package_type_id")]
+    pub package_type_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -85,6 +87,8 @@ pub struct UpdatePackageDto {
     pub parent_path: String,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "pack_date")]
     pub pack_date: Option<NaiveDate>,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "package_type_id")]
+    pub package_type_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -120,12 +124,14 @@ pub struct PatchPackageDto {
     pub parent_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "pack_date")]
     pub pack_date: Option<NaiveDate>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "package_type_id")]
+    pub package_type_id: Option<Uuid>,
 }
 
 impl PatchPackageDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.name.is_some() || self.complete_name.is_some() || self.location_id.is_some() || self.company_id.is_some() || self.parent_package_id.is_some() || self.parent_path.is_some() || self.pack_date.is_some()
+        self.name.is_some() || self.complete_name.is_some() || self.location_id.is_some() || self.company_id.is_some() || self.parent_package_id.is_some() || self.parent_path.is_some() || self.pack_date.is_some() || self.package_type_id.is_some()
     }
 }
 
@@ -153,6 +159,7 @@ pub struct PackageResponseDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub parent_path: String,
     pub pack_date: Option<NaiveDate>,
+    pub package_type_id: Option<Uuid>,
     pub metadata: AuditMetadata,
 }
 
@@ -231,6 +238,7 @@ impl From<Package> for PackageResponseDto {
             parent_package_id: entity.parent_package_id,
             parent_path: entity.parent_path,
             pack_date: entity.pack_date,
+            package_type_id: entity.package_type_id,
             metadata: entity.metadata,
         }
     }
@@ -260,6 +268,7 @@ impl From<CreatePackageDto> for Package {
             parent_package_id: dto.parent_package_id,
             parent_path: dto.parent_path,
             pack_date: dto.pack_date,
+            package_type_id: dto.package_type_id,
             metadata: AuditMetadata::default(),
         }
     }
@@ -276,6 +285,7 @@ impl From<&Package> for PackageResponseDto {
             parent_package_id: entity.parent_package_id.clone(),
             parent_path: entity.parent_path.clone(),
             pack_date: entity.pack_date.clone(),
+            package_type_id: entity.package_type_id.clone(),
             metadata: entity.metadata.clone(),
         }
     }
@@ -296,6 +306,7 @@ impl backbone_core::ApplyUpdateDto<UpdatePackageDto> for Package {
         self.parent_package_id = dto.parent_package_id;
         self.parent_path = dto.parent_path;
         self.pack_date = dto.pack_date;
+        self.package_type_id = dto.package_type_id;
         Ok(self)
     }
 }

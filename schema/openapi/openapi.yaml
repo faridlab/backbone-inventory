@@ -11,10 +11,20 @@ servers:
     description: Development server
 
 tags:
+  - name: PickingBatches
+    description: PickingBatch management endpoints
   - name: DeliveryNotes
     description: DeliveryNote management endpoints
   - name: DeliveryNoteItems
     description: DeliveryNoteItem management endpoints
+  - name: InventoryCompanySettings
+    description: InventoryCompanySetting management endpoints
+  - name: LandedCosts
+    description: LandedCost management endpoints
+  - name: LandedCostLines
+    description: LandedCostLine management endpoints
+  - name: LandedCostAdjustmentLines
+    description: LandedCostAdjustmentLine management endpoints
   - name: Locations
     description: Location management endpoints
   - name: StockMoves
@@ -37,6 +47,10 @@ tags:
     description: PurchaseReceiptItem management endpoints
   - name: Quants
     description: Quant management endpoints
+  - name: Scraps
+    description: Scrap management endpoints
+  - name: ScrapReasonTags
+    description: ScrapReasonTag management endpoints
   - name: StockEntries
     description: StockEntry management endpoints
   - name: StockEntryItems
@@ -49,6 +63,14 @@ tags:
     description: StockReconciliation management endpoints
   - name: StockReconciliationItems
     description: StockReconciliationItem management endpoints
+  - name: PackageTypes
+    description: PackageType management endpoints
+  - name: StorageCategories
+    description: StorageCategory management endpoints
+  - name: StorageCategoryCapacities
+    description: StorageCategoryCapacity management endpoints
+  - name: PutawayRules
+    description: PutawayRule management endpoints
   - name: Lots
     description: Lot management endpoints
   - name: Packages
@@ -59,6 +81,372 @@ tags:
     description: StockItem management endpoints
 
 paths:
+  /api/v1/picking_batches:
+    get:
+      tags:
+        - PickingBatches
+      summary: List PickingBatches
+      description: Get a paginated list of PickingBatches with optional filtering and sorting
+      operationId: listPickingBatches
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PickingBatchList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - PickingBatches
+      summary: Create PickingBatch
+      description: Create a new PickingBatch
+      operationId: createPickingBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePickingBatchRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PickingBatch'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/picking_batches/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - PickingBatches
+      summary: Get PickingBatch by ID
+      operationId: getPickingBatch
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PickingBatch'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - PickingBatches
+      summary: Update PickingBatch (full)
+      operationId: updatePickingBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePickingBatchRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PickingBatch'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - PickingBatches
+      summary: Update PickingBatch (partial)
+      operationId: patchPickingBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchPickingBatchRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PickingBatch'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - PickingBatches
+      summary: Delete PickingBatch (soft)
+      operationId: deletePickingBatch
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/picking_batches/bulk:
+    post:
+      tags:
+        - PickingBatches
+      summary: Bulk create PickingBatches
+      operationId: bulkCreatePickingBatches
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreatePickingBatchRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PickingBatch'
+    put:
+      tags:
+        - PickingBatches
+      summary: Bulk update PickingBatches (full, atomic)
+      operationId: bulkUpdatePickingBatches
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdatePickingBatchRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PickingBatchBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - PickingBatches
+      summary: Bulk partial-update PickingBatches (atomic)
+      operationId: bulkPatchPickingBatches
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PickingBatchBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/picking_batches/upsert:
+    post:
+      tags:
+        - PickingBatches
+      summary: Upsert PickingBatch
+      operationId: upsertPickingBatch
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePickingBatchRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PickingBatch'
+
+  /api/v1/picking_batches/trash:
+    get:
+      tags:
+        - PickingBatches
+      summary: List deleted PickingBatches
+      operationId: listDeletedPickingBatches
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PickingBatchList'
+
+  /api/v1/picking_batches/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - PickingBatches
+      summary: Restore deleted PickingBatch
+      operationId: restorePickingBatch
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PickingBatch'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/picking_batches/empty:
+    delete:
+      tags:
+        - PickingBatches
+      summary: Empty trash for PickingBatches
+      operationId: emptyTrashPickingBatches
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/picking_batches/delete/bulk:
+    post:
+      tags:
+        - PickingBatches
+      summary: Bulk soft-delete PickingBatches by ids (atomic)
+      operationId: bulkDeletePickingBatches
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/picking_batches/restore/bulk:
+    post:
+      tags:
+        - PickingBatches
+      summary: Bulk restore PickingBatches by ids (atomic)
+      operationId: bulkRestorePickingBatches
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PickingBatchBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/picking_batches/restore/all:
+    post:
+      tags:
+        - PickingBatches
+      summary: Restore all soft-deleted PickingBatches
+      operationId: restoreAllPickingBatches
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/picking_batches/trash/bulk:
+    delete:
+      tags:
+        - PickingBatches
+      summary: Bulk permanently-delete PickingBatches from trash by ids (atomic)
+      operationId: bulkPermanentDeletePickingBatches
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /api/v1/delivery_notes:
     get:
       tags:
@@ -777,6 +1165,1470 @@ paths:
         - DeliveryNoteItems
       summary: Bulk permanently-delete DeliveryNoteItems from trash by ids (atomic)
       operationId: bulkPermanentDeleteDeliveryNoteItems
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/inventory_company_settings:
+    get:
+      tags:
+        - InventoryCompanySettings
+      summary: List InventoryCompanySettings
+      description: Get a paginated list of InventoryCompanySettings with optional filtering and sorting
+      operationId: listInventoryCompanySettings
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryCompanySettingList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - InventoryCompanySettings
+      summary: Create InventoryCompanySetting
+      description: Create a new InventoryCompanySetting
+      operationId: createInventoryCompanySetting
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInventoryCompanySettingRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryCompanySetting'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/inventory_company_settings/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - InventoryCompanySettings
+      summary: Get InventoryCompanySetting by ID
+      operationId: getInventoryCompanySetting
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryCompanySetting'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - InventoryCompanySettings
+      summary: Update InventoryCompanySetting (full)
+      operationId: updateInventoryCompanySetting
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateInventoryCompanySettingRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryCompanySetting'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - InventoryCompanySettings
+      summary: Update InventoryCompanySetting (partial)
+      operationId: patchInventoryCompanySetting
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchInventoryCompanySettingRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryCompanySetting'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - InventoryCompanySettings
+      summary: Delete InventoryCompanySetting (soft)
+      operationId: deleteInventoryCompanySetting
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/inventory_company_settings/bulk:
+    post:
+      tags:
+        - InventoryCompanySettings
+      summary: Bulk create InventoryCompanySettings
+      operationId: bulkCreateInventoryCompanySettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateInventoryCompanySettingRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InventoryCompanySetting'
+    put:
+      tags:
+        - InventoryCompanySettings
+      summary: Bulk update InventoryCompanySettings (full, atomic)
+      operationId: bulkUpdateInventoryCompanySettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdateInventoryCompanySettingRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryCompanySettingBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - InventoryCompanySettings
+      summary: Bulk partial-update InventoryCompanySettings (atomic)
+      operationId: bulkPatchInventoryCompanySettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryCompanySettingBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/inventory_company_settings/upsert:
+    post:
+      tags:
+        - InventoryCompanySettings
+      summary: Upsert InventoryCompanySetting
+      operationId: upsertInventoryCompanySetting
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateInventoryCompanySettingRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryCompanySetting'
+
+  /api/v1/inventory_company_settings/trash:
+    get:
+      tags:
+        - InventoryCompanySettings
+      summary: List deleted InventoryCompanySettings
+      operationId: listDeletedInventoryCompanySettings
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryCompanySettingList'
+
+  /api/v1/inventory_company_settings/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - InventoryCompanySettings
+      summary: Restore deleted InventoryCompanySetting
+      operationId: restoreInventoryCompanySetting
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryCompanySetting'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/inventory_company_settings/empty:
+    delete:
+      tags:
+        - InventoryCompanySettings
+      summary: Empty trash for InventoryCompanySettings
+      operationId: emptyTrashInventoryCompanySettings
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/inventory_company_settings/delete/bulk:
+    post:
+      tags:
+        - InventoryCompanySettings
+      summary: Bulk soft-delete InventoryCompanySettings by ids (atomic)
+      operationId: bulkDeleteInventoryCompanySettings
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/inventory_company_settings/restore/bulk:
+    post:
+      tags:
+        - InventoryCompanySettings
+      summary: Bulk restore InventoryCompanySettings by ids (atomic)
+      operationId: bulkRestoreInventoryCompanySettings
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryCompanySettingBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/inventory_company_settings/restore/all:
+    post:
+      tags:
+        - InventoryCompanySettings
+      summary: Restore all soft-deleted InventoryCompanySettings
+      operationId: restoreAllInventoryCompanySettings
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/inventory_company_settings/trash/bulk:
+    delete:
+      tags:
+        - InventoryCompanySettings
+      summary: Bulk permanently-delete InventoryCompanySettings from trash by ids (atomic)
+      operationId: bulkPermanentDeleteInventoryCompanySettings
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/landed_costs:
+    get:
+      tags:
+        - LandedCosts
+      summary: List LandedCosts
+      description: Get a paginated list of LandedCosts with optional filtering and sorting
+      operationId: listLandedCosts
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - LandedCosts
+      summary: Create LandedCost
+      description: Create a new LandedCost
+      operationId: createLandedCost
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLandedCostRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCost'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/landed_costs/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - LandedCosts
+      summary: Get LandedCost by ID
+      operationId: getLandedCost
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCost'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - LandedCosts
+      summary: Update LandedCost (full)
+      operationId: updateLandedCost
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLandedCostRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCost'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - LandedCosts
+      summary: Update LandedCost (partial)
+      operationId: patchLandedCost
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchLandedCostRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCost'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - LandedCosts
+      summary: Delete LandedCost (soft)
+      operationId: deleteLandedCost
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/landed_costs/bulk:
+    post:
+      tags:
+        - LandedCosts
+      summary: Bulk create LandedCosts
+      operationId: bulkCreateLandedCosts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateLandedCostRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LandedCost'
+    put:
+      tags:
+        - LandedCosts
+      summary: Bulk update LandedCosts (full, atomic)
+      operationId: bulkUpdateLandedCosts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdateLandedCostRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - LandedCosts
+      summary: Bulk partial-update LandedCosts (atomic)
+      operationId: bulkPatchLandedCosts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/landed_costs/upsert:
+    post:
+      tags:
+        - LandedCosts
+      summary: Upsert LandedCost
+      operationId: upsertLandedCost
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLandedCostRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCost'
+
+  /api/v1/landed_costs/trash:
+    get:
+      tags:
+        - LandedCosts
+      summary: List deleted LandedCosts
+      operationId: listDeletedLandedCosts
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostList'
+
+  /api/v1/landed_costs/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - LandedCosts
+      summary: Restore deleted LandedCost
+      operationId: restoreLandedCost
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCost'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/landed_costs/empty:
+    delete:
+      tags:
+        - LandedCosts
+      summary: Empty trash for LandedCosts
+      operationId: emptyTrashLandedCosts
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/landed_costs/delete/bulk:
+    post:
+      tags:
+        - LandedCosts
+      summary: Bulk soft-delete LandedCosts by ids (atomic)
+      operationId: bulkDeleteLandedCosts
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/landed_costs/restore/bulk:
+    post:
+      tags:
+        - LandedCosts
+      summary: Bulk restore LandedCosts by ids (atomic)
+      operationId: bulkRestoreLandedCosts
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/landed_costs/restore/all:
+    post:
+      tags:
+        - LandedCosts
+      summary: Restore all soft-deleted LandedCosts
+      operationId: restoreAllLandedCosts
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/landed_costs/trash/bulk:
+    delete:
+      tags:
+        - LandedCosts
+      summary: Bulk permanently-delete LandedCosts from trash by ids (atomic)
+      operationId: bulkPermanentDeleteLandedCosts
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/landed_cost_lines:
+    get:
+      tags:
+        - LandedCostLines
+      summary: List LandedCostLines
+      description: Get a paginated list of LandedCostLines with optional filtering and sorting
+      operationId: listLandedCostLines
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostLineList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - LandedCostLines
+      summary: Create LandedCostLine
+      description: Create a new LandedCostLine
+      operationId: createLandedCostLine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLandedCostLineRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostLine'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/landed_cost_lines/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - LandedCostLines
+      summary: Get LandedCostLine by ID
+      operationId: getLandedCostLine
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostLine'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - LandedCostLines
+      summary: Update LandedCostLine (full)
+      operationId: updateLandedCostLine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLandedCostLineRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostLine'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - LandedCostLines
+      summary: Update LandedCostLine (partial)
+      operationId: patchLandedCostLine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchLandedCostLineRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostLine'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - LandedCostLines
+      summary: Delete LandedCostLine (soft)
+      operationId: deleteLandedCostLine
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/landed_cost_lines/bulk:
+    post:
+      tags:
+        - LandedCostLines
+      summary: Bulk create LandedCostLines
+      operationId: bulkCreateLandedCostLines
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateLandedCostLineRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LandedCostLine'
+    put:
+      tags:
+        - LandedCostLines
+      summary: Bulk update LandedCostLines (full, atomic)
+      operationId: bulkUpdateLandedCostLines
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdateLandedCostLineRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostLineBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - LandedCostLines
+      summary: Bulk partial-update LandedCostLines (atomic)
+      operationId: bulkPatchLandedCostLines
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostLineBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/landed_cost_lines/upsert:
+    post:
+      tags:
+        - LandedCostLines
+      summary: Upsert LandedCostLine
+      operationId: upsertLandedCostLine
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLandedCostLineRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostLine'
+
+  /api/v1/landed_cost_lines/trash:
+    get:
+      tags:
+        - LandedCostLines
+      summary: List deleted LandedCostLines
+      operationId: listDeletedLandedCostLines
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostLineList'
+
+  /api/v1/landed_cost_lines/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - LandedCostLines
+      summary: Restore deleted LandedCostLine
+      operationId: restoreLandedCostLine
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostLine'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/landed_cost_lines/empty:
+    delete:
+      tags:
+        - LandedCostLines
+      summary: Empty trash for LandedCostLines
+      operationId: emptyTrashLandedCostLines
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/landed_cost_lines/delete/bulk:
+    post:
+      tags:
+        - LandedCostLines
+      summary: Bulk soft-delete LandedCostLines by ids (atomic)
+      operationId: bulkDeleteLandedCostLines
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/landed_cost_lines/restore/bulk:
+    post:
+      tags:
+        - LandedCostLines
+      summary: Bulk restore LandedCostLines by ids (atomic)
+      operationId: bulkRestoreLandedCostLines
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostLineBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/landed_cost_lines/restore/all:
+    post:
+      tags:
+        - LandedCostLines
+      summary: Restore all soft-deleted LandedCostLines
+      operationId: restoreAllLandedCostLines
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/landed_cost_lines/trash/bulk:
+    delete:
+      tags:
+        - LandedCostLines
+      summary: Bulk permanently-delete LandedCostLines from trash by ids (atomic)
+      operationId: bulkPermanentDeleteLandedCostLines
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/landed_cost_adjustment_lines:
+    get:
+      tags:
+        - LandedCostAdjustmentLines
+      summary: List LandedCostAdjustmentLines
+      description: Get a paginated list of LandedCostAdjustmentLines with optional filtering and sorting
+      operationId: listLandedCostAdjustmentLines
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostAdjustmentLineList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - LandedCostAdjustmentLines
+      summary: Create LandedCostAdjustmentLine
+      description: Create a new LandedCostAdjustmentLine
+      operationId: createLandedCostAdjustmentLine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLandedCostAdjustmentLineRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostAdjustmentLine'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/landed_cost_adjustment_lines/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - LandedCostAdjustmentLines
+      summary: Get LandedCostAdjustmentLine by ID
+      operationId: getLandedCostAdjustmentLine
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostAdjustmentLine'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - LandedCostAdjustmentLines
+      summary: Update LandedCostAdjustmentLine (full)
+      operationId: updateLandedCostAdjustmentLine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLandedCostAdjustmentLineRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostAdjustmentLine'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - LandedCostAdjustmentLines
+      summary: Update LandedCostAdjustmentLine (partial)
+      operationId: patchLandedCostAdjustmentLine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchLandedCostAdjustmentLineRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostAdjustmentLine'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - LandedCostAdjustmentLines
+      summary: Delete LandedCostAdjustmentLine (soft)
+      operationId: deleteLandedCostAdjustmentLine
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/landed_cost_adjustment_lines/bulk:
+    post:
+      tags:
+        - LandedCostAdjustmentLines
+      summary: Bulk create LandedCostAdjustmentLines
+      operationId: bulkCreateLandedCostAdjustmentLines
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateLandedCostAdjustmentLineRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LandedCostAdjustmentLine'
+    put:
+      tags:
+        - LandedCostAdjustmentLines
+      summary: Bulk update LandedCostAdjustmentLines (full, atomic)
+      operationId: bulkUpdateLandedCostAdjustmentLines
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdateLandedCostAdjustmentLineRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostAdjustmentLineBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - LandedCostAdjustmentLines
+      summary: Bulk partial-update LandedCostAdjustmentLines (atomic)
+      operationId: bulkPatchLandedCostAdjustmentLines
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostAdjustmentLineBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/landed_cost_adjustment_lines/upsert:
+    post:
+      tags:
+        - LandedCostAdjustmentLines
+      summary: Upsert LandedCostAdjustmentLine
+      operationId: upsertLandedCostAdjustmentLine
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLandedCostAdjustmentLineRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostAdjustmentLine'
+
+  /api/v1/landed_cost_adjustment_lines/trash:
+    get:
+      tags:
+        - LandedCostAdjustmentLines
+      summary: List deleted LandedCostAdjustmentLines
+      operationId: listDeletedLandedCostAdjustmentLines
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostAdjustmentLineList'
+
+  /api/v1/landed_cost_adjustment_lines/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - LandedCostAdjustmentLines
+      summary: Restore deleted LandedCostAdjustmentLine
+      operationId: restoreLandedCostAdjustmentLine
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostAdjustmentLine'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/landed_cost_adjustment_lines/empty:
+    delete:
+      tags:
+        - LandedCostAdjustmentLines
+      summary: Empty trash for LandedCostAdjustmentLines
+      operationId: emptyTrashLandedCostAdjustmentLines
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/landed_cost_adjustment_lines/delete/bulk:
+    post:
+      tags:
+        - LandedCostAdjustmentLines
+      summary: Bulk soft-delete LandedCostAdjustmentLines by ids (atomic)
+      operationId: bulkDeleteLandedCostAdjustmentLines
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/landed_cost_adjustment_lines/restore/bulk:
+    post:
+      tags:
+        - LandedCostAdjustmentLines
+      summary: Bulk restore LandedCostAdjustmentLines by ids (atomic)
+      operationId: bulkRestoreLandedCostAdjustmentLines
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandedCostAdjustmentLineBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/landed_cost_adjustment_lines/restore/all:
+    post:
+      tags:
+        - LandedCostAdjustmentLines
+      summary: Restore all soft-deleted LandedCostAdjustmentLines
+      operationId: restoreAllLandedCostAdjustmentLines
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/landed_cost_adjustment_lines/trash/bulk:
+    delete:
+      tags:
+        - LandedCostAdjustmentLines
+      summary: Bulk permanently-delete LandedCostAdjustmentLines from trash by ids (atomic)
+      operationId: bulkPermanentDeleteLandedCostAdjustmentLines
       requestBody:
         $ref: '#/components/requestBodies/BatchIds'
       responses:
@@ -4817,6 +6669,738 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /api/v1/scraps:
+    get:
+      tags:
+        - Scraps
+      summary: List Scraps
+      description: Get a paginated list of Scraps with optional filtering and sorting
+      operationId: listScraps
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Scraps
+      summary: Create Scrap
+      description: Create a new Scrap
+      operationId: createScrap
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateScrapRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scrap'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/scraps/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - Scraps
+      summary: Get Scrap by ID
+      operationId: getScrap
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scrap'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Scraps
+      summary: Update Scrap (full)
+      operationId: updateScrap
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateScrapRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scrap'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Scraps
+      summary: Update Scrap (partial)
+      operationId: patchScrap
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchScrapRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scrap'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Scraps
+      summary: Delete Scrap (soft)
+      operationId: deleteScrap
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/scraps/bulk:
+    post:
+      tags:
+        - Scraps
+      summary: Bulk create Scraps
+      operationId: bulkCreateScraps
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateScrapRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Scrap'
+    put:
+      tags:
+        - Scraps
+      summary: Bulk update Scraps (full, atomic)
+      operationId: bulkUpdateScraps
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdateScrapRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - Scraps
+      summary: Bulk partial-update Scraps (atomic)
+      operationId: bulkPatchScraps
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/scraps/upsert:
+    post:
+      tags:
+        - Scraps
+      summary: Upsert Scrap
+      operationId: upsertScrap
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateScrapRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scrap'
+
+  /api/v1/scraps/trash:
+    get:
+      tags:
+        - Scraps
+      summary: List deleted Scraps
+      operationId: listDeletedScraps
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapList'
+
+  /api/v1/scraps/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - Scraps
+      summary: Restore deleted Scrap
+      operationId: restoreScrap
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scrap'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/scraps/empty:
+    delete:
+      tags:
+        - Scraps
+      summary: Empty trash for Scraps
+      operationId: emptyTrashScraps
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/scraps/delete/bulk:
+    post:
+      tags:
+        - Scraps
+      summary: Bulk soft-delete Scraps by ids (atomic)
+      operationId: bulkDeleteScraps
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/scraps/restore/bulk:
+    post:
+      tags:
+        - Scraps
+      summary: Bulk restore Scraps by ids (atomic)
+      operationId: bulkRestoreScraps
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/scraps/restore/all:
+    post:
+      tags:
+        - Scraps
+      summary: Restore all soft-deleted Scraps
+      operationId: restoreAllScraps
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/scraps/trash/bulk:
+    delete:
+      tags:
+        - Scraps
+      summary: Bulk permanently-delete Scraps from trash by ids (atomic)
+      operationId: bulkPermanentDeleteScraps
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/scrap_reason_tags:
+    get:
+      tags:
+        - ScrapReasonTags
+      summary: List ScrapReasonTags
+      description: Get a paginated list of ScrapReasonTags with optional filtering and sorting
+      operationId: listScrapReasonTags
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapReasonTagList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - ScrapReasonTags
+      summary: Create ScrapReasonTag
+      description: Create a new ScrapReasonTag
+      operationId: createScrapReasonTag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateScrapReasonTagRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapReasonTag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/scrap_reason_tags/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - ScrapReasonTags
+      summary: Get ScrapReasonTag by ID
+      operationId: getScrapReasonTag
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapReasonTag'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - ScrapReasonTags
+      summary: Update ScrapReasonTag (full)
+      operationId: updateScrapReasonTag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateScrapReasonTagRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapReasonTag'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - ScrapReasonTags
+      summary: Update ScrapReasonTag (partial)
+      operationId: patchScrapReasonTag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchScrapReasonTagRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapReasonTag'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - ScrapReasonTags
+      summary: Delete ScrapReasonTag (soft)
+      operationId: deleteScrapReasonTag
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/scrap_reason_tags/bulk:
+    post:
+      tags:
+        - ScrapReasonTags
+      summary: Bulk create ScrapReasonTags
+      operationId: bulkCreateScrapReasonTags
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateScrapReasonTagRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ScrapReasonTag'
+    put:
+      tags:
+        - ScrapReasonTags
+      summary: Bulk update ScrapReasonTags (full, atomic)
+      operationId: bulkUpdateScrapReasonTags
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdateScrapReasonTagRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapReasonTagBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - ScrapReasonTags
+      summary: Bulk partial-update ScrapReasonTags (atomic)
+      operationId: bulkPatchScrapReasonTags
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapReasonTagBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/scrap_reason_tags/upsert:
+    post:
+      tags:
+        - ScrapReasonTags
+      summary: Upsert ScrapReasonTag
+      operationId: upsertScrapReasonTag
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateScrapReasonTagRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapReasonTag'
+
+  /api/v1/scrap_reason_tags/trash:
+    get:
+      tags:
+        - ScrapReasonTags
+      summary: List deleted ScrapReasonTags
+      operationId: listDeletedScrapReasonTags
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapReasonTagList'
+
+  /api/v1/scrap_reason_tags/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - ScrapReasonTags
+      summary: Restore deleted ScrapReasonTag
+      operationId: restoreScrapReasonTag
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapReasonTag'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/scrap_reason_tags/empty:
+    delete:
+      tags:
+        - ScrapReasonTags
+      summary: Empty trash for ScrapReasonTags
+      operationId: emptyTrashScrapReasonTags
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/scrap_reason_tags/delete/bulk:
+    post:
+      tags:
+        - ScrapReasonTags
+      summary: Bulk soft-delete ScrapReasonTags by ids (atomic)
+      operationId: bulkDeleteScrapReasonTags
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/scrap_reason_tags/restore/bulk:
+    post:
+      tags:
+        - ScrapReasonTags
+      summary: Bulk restore ScrapReasonTags by ids (atomic)
+      operationId: bulkRestoreScrapReasonTags
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrapReasonTagBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/scrap_reason_tags/restore/all:
+    post:
+      tags:
+        - ScrapReasonTags
+      summary: Restore all soft-deleted ScrapReasonTags
+      operationId: restoreAllScrapReasonTags
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/scrap_reason_tags/trash/bulk:
+    delete:
+      tags:
+        - ScrapReasonTags
+      summary: Bulk permanently-delete ScrapReasonTags from trash by ids (atomic)
+      operationId: bulkPermanentDeleteScrapReasonTags
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /api/v1/stock_entries:
     get:
       tags:
@@ -7013,6 +9597,1470 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /api/v1/package_types:
+    get:
+      tags:
+        - PackageTypes
+      summary: List PackageTypes
+      description: Get a paginated list of PackageTypes with optional filtering and sorting
+      operationId: listPackageTypes
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageTypeList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - PackageTypes
+      summary: Create PackageType
+      description: Create a new PackageType
+      operationId: createPackageType
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePackageTypeRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageType'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/package_types/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - PackageTypes
+      summary: Get PackageType by ID
+      operationId: getPackageType
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageType'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - PackageTypes
+      summary: Update PackageType (full)
+      operationId: updatePackageType
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePackageTypeRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageType'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - PackageTypes
+      summary: Update PackageType (partial)
+      operationId: patchPackageType
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchPackageTypeRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageType'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - PackageTypes
+      summary: Delete PackageType (soft)
+      operationId: deletePackageType
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/package_types/bulk:
+    post:
+      tags:
+        - PackageTypes
+      summary: Bulk create PackageTypes
+      operationId: bulkCreatePackageTypes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreatePackageTypeRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PackageType'
+    put:
+      tags:
+        - PackageTypes
+      summary: Bulk update PackageTypes (full, atomic)
+      operationId: bulkUpdatePackageTypes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdatePackageTypeRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageTypeBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - PackageTypes
+      summary: Bulk partial-update PackageTypes (atomic)
+      operationId: bulkPatchPackageTypes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageTypeBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/package_types/upsert:
+    post:
+      tags:
+        - PackageTypes
+      summary: Upsert PackageType
+      operationId: upsertPackageType
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePackageTypeRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageType'
+
+  /api/v1/package_types/trash:
+    get:
+      tags:
+        - PackageTypes
+      summary: List deleted PackageTypes
+      operationId: listDeletedPackageTypes
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageTypeList'
+
+  /api/v1/package_types/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - PackageTypes
+      summary: Restore deleted PackageType
+      operationId: restorePackageType
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageType'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/package_types/empty:
+    delete:
+      tags:
+        - PackageTypes
+      summary: Empty trash for PackageTypes
+      operationId: emptyTrashPackageTypes
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/package_types/delete/bulk:
+    post:
+      tags:
+        - PackageTypes
+      summary: Bulk soft-delete PackageTypes by ids (atomic)
+      operationId: bulkDeletePackageTypes
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/package_types/restore/bulk:
+    post:
+      tags:
+        - PackageTypes
+      summary: Bulk restore PackageTypes by ids (atomic)
+      operationId: bulkRestorePackageTypes
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageTypeBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/package_types/restore/all:
+    post:
+      tags:
+        - PackageTypes
+      summary: Restore all soft-deleted PackageTypes
+      operationId: restoreAllPackageTypes
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/package_types/trash/bulk:
+    delete:
+      tags:
+        - PackageTypes
+      summary: Bulk permanently-delete PackageTypes from trash by ids (atomic)
+      operationId: bulkPermanentDeletePackageTypes
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/storage_categories:
+    get:
+      tags:
+        - StorageCategories
+      summary: List StorageCategories
+      description: Get a paginated list of StorageCategories with optional filtering and sorting
+      operationId: listStorageCategories
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategoryList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - StorageCategories
+      summary: Create StorageCategory
+      description: Create a new StorageCategory
+      operationId: createStorageCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStorageCategoryRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategory'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/storage_categories/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - StorageCategories
+      summary: Get StorageCategory by ID
+      operationId: getStorageCategory
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategory'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - StorageCategories
+      summary: Update StorageCategory (full)
+      operationId: updateStorageCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStorageCategoryRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategory'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - StorageCategories
+      summary: Update StorageCategory (partial)
+      operationId: patchStorageCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchStorageCategoryRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategory'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - StorageCategories
+      summary: Delete StorageCategory (soft)
+      operationId: deleteStorageCategory
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/storage_categories/bulk:
+    post:
+      tags:
+        - StorageCategories
+      summary: Bulk create StorageCategories
+      operationId: bulkCreateStorageCategories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateStorageCategoryRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StorageCategory'
+    put:
+      tags:
+        - StorageCategories
+      summary: Bulk update StorageCategories (full, atomic)
+      operationId: bulkUpdateStorageCategories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdateStorageCategoryRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategoryBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - StorageCategories
+      summary: Bulk partial-update StorageCategories (atomic)
+      operationId: bulkPatchStorageCategories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategoryBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/storage_categories/upsert:
+    post:
+      tags:
+        - StorageCategories
+      summary: Upsert StorageCategory
+      operationId: upsertStorageCategory
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStorageCategoryRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategory'
+
+  /api/v1/storage_categories/trash:
+    get:
+      tags:
+        - StorageCategories
+      summary: List deleted StorageCategories
+      operationId: listDeletedStorageCategories
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategoryList'
+
+  /api/v1/storage_categories/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - StorageCategories
+      summary: Restore deleted StorageCategory
+      operationId: restoreStorageCategory
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategory'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/storage_categories/empty:
+    delete:
+      tags:
+        - StorageCategories
+      summary: Empty trash for StorageCategories
+      operationId: emptyTrashStorageCategories
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/storage_categories/delete/bulk:
+    post:
+      tags:
+        - StorageCategories
+      summary: Bulk soft-delete StorageCategories by ids (atomic)
+      operationId: bulkDeleteStorageCategories
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/storage_categories/restore/bulk:
+    post:
+      tags:
+        - StorageCategories
+      summary: Bulk restore StorageCategories by ids (atomic)
+      operationId: bulkRestoreStorageCategories
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategoryBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/storage_categories/restore/all:
+    post:
+      tags:
+        - StorageCategories
+      summary: Restore all soft-deleted StorageCategories
+      operationId: restoreAllStorageCategories
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/storage_categories/trash/bulk:
+    delete:
+      tags:
+        - StorageCategories
+      summary: Bulk permanently-delete StorageCategories from trash by ids (atomic)
+      operationId: bulkPermanentDeleteStorageCategories
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/storage_category_capacities:
+    get:
+      tags:
+        - StorageCategoryCapacities
+      summary: List StorageCategoryCapacities
+      description: Get a paginated list of StorageCategoryCapacities with optional filtering and sorting
+      operationId: listStorageCategoryCapacities
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategoryCapacityList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - StorageCategoryCapacities
+      summary: Create StorageCategoryCapacity
+      description: Create a new StorageCategoryCapacity
+      operationId: createStorageCategoryCapacity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStorageCategoryCapacityRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategoryCapacity'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/storage_category_capacities/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - StorageCategoryCapacities
+      summary: Get StorageCategoryCapacity by ID
+      operationId: getStorageCategoryCapacity
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategoryCapacity'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - StorageCategoryCapacities
+      summary: Update StorageCategoryCapacity (full)
+      operationId: updateStorageCategoryCapacity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStorageCategoryCapacityRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategoryCapacity'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - StorageCategoryCapacities
+      summary: Update StorageCategoryCapacity (partial)
+      operationId: patchStorageCategoryCapacity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchStorageCategoryCapacityRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategoryCapacity'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - StorageCategoryCapacities
+      summary: Delete StorageCategoryCapacity (soft)
+      operationId: deleteStorageCategoryCapacity
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/storage_category_capacities/bulk:
+    post:
+      tags:
+        - StorageCategoryCapacities
+      summary: Bulk create StorageCategoryCapacities
+      operationId: bulkCreateStorageCategoryCapacities
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreateStorageCategoryCapacityRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StorageCategoryCapacity'
+    put:
+      tags:
+        - StorageCategoryCapacities
+      summary: Bulk update StorageCategoryCapacities (full, atomic)
+      operationId: bulkUpdateStorageCategoryCapacities
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdateStorageCategoryCapacityRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategoryCapacityBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - StorageCategoryCapacities
+      summary: Bulk partial-update StorageCategoryCapacities (atomic)
+      operationId: bulkPatchStorageCategoryCapacities
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategoryCapacityBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/storage_category_capacities/upsert:
+    post:
+      tags:
+        - StorageCategoryCapacities
+      summary: Upsert StorageCategoryCapacity
+      operationId: upsertStorageCategoryCapacity
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStorageCategoryCapacityRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategoryCapacity'
+
+  /api/v1/storage_category_capacities/trash:
+    get:
+      tags:
+        - StorageCategoryCapacities
+      summary: List deleted StorageCategoryCapacities
+      operationId: listDeletedStorageCategoryCapacities
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategoryCapacityList'
+
+  /api/v1/storage_category_capacities/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - StorageCategoryCapacities
+      summary: Restore deleted StorageCategoryCapacity
+      operationId: restoreStorageCategoryCapacity
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategoryCapacity'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/storage_category_capacities/empty:
+    delete:
+      tags:
+        - StorageCategoryCapacities
+      summary: Empty trash for StorageCategoryCapacities
+      operationId: emptyTrashStorageCategoryCapacities
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/storage_category_capacities/delete/bulk:
+    post:
+      tags:
+        - StorageCategoryCapacities
+      summary: Bulk soft-delete StorageCategoryCapacities by ids (atomic)
+      operationId: bulkDeleteStorageCategoryCapacities
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/storage_category_capacities/restore/bulk:
+    post:
+      tags:
+        - StorageCategoryCapacities
+      summary: Bulk restore StorageCategoryCapacities by ids (atomic)
+      operationId: bulkRestoreStorageCategoryCapacities
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorageCategoryCapacityBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/storage_category_capacities/restore/all:
+    post:
+      tags:
+        - StorageCategoryCapacities
+      summary: Restore all soft-deleted StorageCategoryCapacities
+      operationId: restoreAllStorageCategoryCapacities
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/storage_category_capacities/trash/bulk:
+    delete:
+      tags:
+        - StorageCategoryCapacities
+      summary: Bulk permanently-delete StorageCategoryCapacities from trash by ids (atomic)
+      operationId: bulkPermanentDeleteStorageCategoryCapacities
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/putaway_rules:
+    get:
+      tags:
+        - PutawayRules
+      summary: List PutawayRules
+      description: Get a paginated list of PutawayRules with optional filtering and sorting
+      operationId: listPutawayRules
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SortByParam'
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PutawayRuleList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - PutawayRules
+      summary: Create PutawayRule
+      description: Create a new PutawayRule
+      operationId: createPutawayRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePutawayRuleRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PutawayRule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/putaway_rules/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+
+    get:
+      tags:
+        - PutawayRules
+      summary: Get PutawayRule by ID
+      operationId: getPutawayRule
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PutawayRule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - PutawayRules
+      summary: Update PutawayRule (full)
+      operationId: updatePutawayRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePutawayRuleRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PutawayRule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - PutawayRules
+      summary: Update PutawayRule (partial)
+      operationId: patchPutawayRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchPutawayRuleRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PutawayRule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - PutawayRules
+      summary: Delete PutawayRule (soft)
+      operationId: deletePutawayRule
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/putaway_rules/bulk:
+    post:
+      tags:
+        - PutawayRules
+      summary: Bulk create PutawayRules
+      operationId: bulkCreatePutawayRules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/CreatePutawayRuleRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PutawayRule'
+    put:
+      tags:
+        - PutawayRules
+      summary: Bulk update PutawayRules (full, atomic)
+      operationId: bulkUpdatePutawayRules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                allOf:
+                  - type: object
+                    required: [id]
+                    properties:
+                      id:
+                        type: string
+                  - $ref: '#/components/schemas/UpdatePutawayRuleRequest'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PutawayRuleBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    patch:
+      tags:
+        - PutawayRules
+      summary: Bulk partial-update PutawayRules (atomic)
+      operationId: bulkPatchPutawayRules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [ids, patch]
+                  properties:
+                    ids:
+                      type: array
+                      items: { type: string }
+                    patch:
+                      type: object
+                      additionalProperties: true
+                - type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, patch]
+                        properties:
+                          id: { type: string }
+                          patch: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PutawayRuleBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/putaway_rules/upsert:
+    post:
+      tags:
+        - PutawayRules
+      summary: Upsert PutawayRule
+      operationId: upsertPutawayRule
+      parameters:
+        - name: key_field
+          in: query
+          schema:
+            type: string
+        - name: key_value
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePutawayRuleRequest'
+      responses:
+        '200':
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PutawayRule'
+
+  /api/v1/putaway_rules/trash:
+    get:
+      tags:
+        - PutawayRules
+      summary: List deleted PutawayRules
+      operationId: listDeletedPutawayRules
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PutawayRuleList'
+
+  /api/v1/putaway_rules/{id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/IdParam'
+    post:
+      tags:
+        - PutawayRules
+      summary: Restore deleted PutawayRule
+      operationId: restorePutawayRule
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PutawayRule'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/putaway_rules/empty:
+    delete:
+      tags:
+        - PutawayRules
+      summary: Empty trash for PutawayRules
+      operationId: emptyTrashPutawayRules
+      responses:
+        '200':
+          description: Trash emptied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count:
+                    type: integer
+
+  /api/v1/putaway_rules/delete/bulk:
+    post:
+      tags:
+        - PutawayRules
+      summary: Bulk soft-delete PutawayRules by ids (atomic)
+      operationId: bulkDeletePutawayRules
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Soft-deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  soft_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/putaway_rules/restore/bulk:
+    post:
+      tags:
+        - PutawayRules
+      summary: Bulk restore PutawayRules by ids (atomic)
+      operationId: bulkRestorePutawayRules
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PutawayRuleBulkResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/putaway_rules/restore/all:
+    post:
+      tags:
+        - PutawayRules
+      summary: Restore all soft-deleted PutawayRules
+      operationId: restoreAllPutawayRules
+      responses:
+        '200':
+          description: Restored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored: { type: integer }
+
+  /api/v1/putaway_rules/trash/bulk:
+    delete:
+      tags:
+        - PutawayRules
+      summary: Bulk permanently-delete PutawayRules from trash by ids (atomic)
+      operationId: bulkPermanentDeletePutawayRules
+      requestBody:
+        $ref: '#/components/requestBodies/BatchIds'
+      responses:
+        '200':
+          description: Permanently deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permanently_deleted: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /api/v1/lots:
     get:
       tags:
@@ -8479,6 +12527,173 @@ paths:
 
 components:
   schemas:
+    PickingBatch:
+      type: object
+      required:
+        - id
+        - name
+        - state
+        - is_wave
+        - scheduled_date
+        - had_members
+        - company_id
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 40
+        note:
+          nullable: true
+          type: string
+          maxLength: 2000
+        state:
+          type: string
+        is_wave:
+          type: boolean
+        user_id:
+          nullable: true
+          type: string
+          format: uuid
+        scheduled_date:
+          type: string
+          format: date-time
+        had_members:
+          type: boolean
+        company_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    PickingBatchBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PickingBatch'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreatePickingBatchRequest:
+      type: object
+      required:
+        - name
+        - state
+        - is_wave
+        - scheduled_date
+        - had_members
+        - company_id
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 40
+        note:
+          nullable: true
+          type: string
+          maxLength: 2000
+        state:
+          type: string
+        is_wave:
+          type: boolean
+        user_id:
+          nullable: true
+          type: string
+          format: uuid
+        scheduled_date:
+          type: string
+          format: date-time
+        had_members:
+          type: boolean
+        company_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    UpdatePickingBatchRequest:
+      type: object
+      required:
+        - name
+        - state
+        - is_wave
+        - scheduled_date
+        - had_members
+        - company_id
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 40
+        note:
+          nullable: true
+          type: string
+          maxLength: 2000
+        state:
+          type: string
+        is_wave:
+          type: boolean
+        user_id:
+          nullable: true
+          type: string
+          format: uuid
+        scheduled_date:
+          type: string
+          format: date-time
+        had_members:
+          type: boolean
+        company_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    PatchPickingBatchRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 40
+        note:
+          nullable: true
+          type: string
+          maxLength: 2000
+        state:
+          type: string
+        is_wave:
+          type: boolean
+        user_id:
+          nullable: true
+          type: string
+          format: uuid
+        scheduled_date:
+          type: string
+          format: date-time
+        had_members:
+          type: boolean
+        company_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    PickingBatchList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PickingBatch'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
     DeliveryNote:
       type: object
       required:
@@ -8921,6 +13136,677 @@ components:
         meta:
           $ref: '#/components/schemas/PaginationMeta'
 
+    InventoryCompanySetting:
+      type: object
+      required:
+        - id
+        - company_id
+        - cost_method
+        - valuation_policy
+        - anglo_saxon_accounting
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        cost_method:
+          type: string
+        valuation_policy:
+          type: string
+        anglo_saxon_accounting:
+          type: boolean
+        stock_interim_delivered_account_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    InventoryCompanySettingBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryCompanySetting'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreateInventoryCompanySettingRequest:
+      type: object
+      required:
+        - company_id
+        - cost_method
+        - valuation_policy
+        - anglo_saxon_accounting
+        - metadata
+      properties:
+        company_id:
+          type: string
+          format: uuid
+        cost_method:
+          type: string
+        valuation_policy:
+          type: string
+        anglo_saxon_accounting:
+          type: boolean
+        stock_interim_delivered_account_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    UpdateInventoryCompanySettingRequest:
+      type: object
+      required:
+        - company_id
+        - cost_method
+        - valuation_policy
+        - anglo_saxon_accounting
+        - metadata
+      properties:
+        company_id:
+          type: string
+          format: uuid
+        cost_method:
+          type: string
+        valuation_policy:
+          type: string
+        anglo_saxon_accounting:
+          type: boolean
+        stock_interim_delivered_account_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    PatchInventoryCompanySettingRequest:
+      type: object
+      properties:
+        company_id:
+          type: string
+          format: uuid
+        cost_method:
+          type: string
+        valuation_policy:
+          type: string
+        anglo_saxon_accounting:
+          type: boolean
+        stock_interim_delivered_account_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    InventoryCompanySettingList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryCompanySetting'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    LandedCost:
+      type: object
+      required:
+        - id
+        - lc_number
+        - company_id
+        - target_receipt_id
+        - currency
+        - posting_date
+        - state
+        - amount_total
+        - posting_state
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        lc_number:
+          type: string
+          maxLength: 40
+        company_id:
+          type: string
+          format: uuid
+        branch_id:
+          nullable: true
+          type: string
+          format: uuid
+        target_receipt_id:
+          type: string
+          format: uuid
+        transfer_id:
+          nullable: true
+          type: string
+          format: uuid
+        currency:
+          type: string
+          maxLength: 3
+        posting_date:
+          type: string
+          format: date
+        state:
+          type: string
+        amount_total:
+          type: string
+        posting_state:
+          type: string
+        journal_id:
+          nullable: true
+          type: string
+          format: uuid
+        accounting_post_id:
+          nullable: true
+          type: string
+          format: uuid
+        posted_at:
+          nullable: true
+          type: string
+          format: date-time
+        notes:
+          nullable: true
+          type: string
+          maxLength: 1000
+        metadata:
+          type: object
+
+    LandedCostBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LandedCost'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreateLandedCostRequest:
+      type: object
+      required:
+        - lc_number
+        - company_id
+        - target_receipt_id
+        - currency
+        - posting_date
+        - state
+        - amount_total
+        - posting_state
+        - metadata
+      properties:
+        lc_number:
+          type: string
+          maxLength: 40
+        company_id:
+          type: string
+          format: uuid
+        branch_id:
+          nullable: true
+          type: string
+          format: uuid
+        target_receipt_id:
+          type: string
+          format: uuid
+        transfer_id:
+          nullable: true
+          type: string
+          format: uuid
+        currency:
+          type: string
+          maxLength: 3
+        posting_date:
+          type: string
+          format: date
+        state:
+          type: string
+        amount_total:
+          type: string
+        posting_state:
+          type: string
+        journal_id:
+          nullable: true
+          type: string
+          format: uuid
+        accounting_post_id:
+          nullable: true
+          type: string
+          format: uuid
+        posted_at:
+          nullable: true
+          type: string
+          format: date-time
+        notes:
+          nullable: true
+          type: string
+          maxLength: 1000
+        metadata:
+          type: object
+
+    UpdateLandedCostRequest:
+      type: object
+      required:
+        - lc_number
+        - company_id
+        - target_receipt_id
+        - currency
+        - posting_date
+        - state
+        - amount_total
+        - posting_state
+        - metadata
+      properties:
+        lc_number:
+          type: string
+          maxLength: 40
+        company_id:
+          type: string
+          format: uuid
+        branch_id:
+          nullable: true
+          type: string
+          format: uuid
+        target_receipt_id:
+          type: string
+          format: uuid
+        transfer_id:
+          nullable: true
+          type: string
+          format: uuid
+        currency:
+          type: string
+          maxLength: 3
+        posting_date:
+          type: string
+          format: date
+        state:
+          type: string
+        amount_total:
+          type: string
+        posting_state:
+          type: string
+        journal_id:
+          nullable: true
+          type: string
+          format: uuid
+        accounting_post_id:
+          nullable: true
+          type: string
+          format: uuid
+        posted_at:
+          nullable: true
+          type: string
+          format: date-time
+        notes:
+          nullable: true
+          type: string
+          maxLength: 1000
+        metadata:
+          type: object
+
+    PatchLandedCostRequest:
+      type: object
+      properties:
+        lc_number:
+          type: string
+          maxLength: 40
+        company_id:
+          type: string
+          format: uuid
+        branch_id:
+          nullable: true
+          type: string
+          format: uuid
+        target_receipt_id:
+          type: string
+          format: uuid
+        transfer_id:
+          nullable: true
+          type: string
+          format: uuid
+        currency:
+          type: string
+          maxLength: 3
+        posting_date:
+          type: string
+          format: date
+        state:
+          type: string
+        amount_total:
+          type: string
+        posting_state:
+          type: string
+        journal_id:
+          nullable: true
+          type: string
+          format: uuid
+        accounting_post_id:
+          nullable: true
+          type: string
+          format: uuid
+        posted_at:
+          nullable: true
+          type: string
+          format: date-time
+        notes:
+          nullable: true
+          type: string
+          maxLength: 1000
+        metadata:
+          type: object
+
+    LandedCostList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LandedCost'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    LandedCostLine:
+      type: object
+      required:
+        - id
+        - lc_id
+        - company_id
+        - name
+        - account_id
+        - split_method
+        - amount
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        lc_id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 150
+        account_id:
+          type: string
+          format: uuid
+        split_method:
+          type: string
+        amount:
+          type: string
+        metadata:
+          type: object
+
+    LandedCostLineBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LandedCostLine'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreateLandedCostLineRequest:
+      type: object
+      required:
+        - lc_id
+        - company_id
+        - name
+        - account_id
+        - split_method
+        - amount
+        - metadata
+      properties:
+        lc_id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 150
+        account_id:
+          type: string
+          format: uuid
+        split_method:
+          type: string
+        amount:
+          type: string
+        metadata:
+          type: object
+
+    UpdateLandedCostLineRequest:
+      type: object
+      required:
+        - lc_id
+        - company_id
+        - name
+        - account_id
+        - split_method
+        - amount
+        - metadata
+      properties:
+        lc_id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 150
+        account_id:
+          type: string
+          format: uuid
+        split_method:
+          type: string
+        amount:
+          type: string
+        metadata:
+          type: object
+
+    PatchLandedCostLineRequest:
+      type: object
+      properties:
+        lc_id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 150
+        account_id:
+          type: string
+          format: uuid
+        split_method:
+          type: string
+        amount:
+          type: string
+        metadata:
+          type: object
+
+    LandedCostLineList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LandedCostLine'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    LandedCostAdjustmentLine:
+      type: object
+      required:
+        - id
+        - lc_id
+        - company_id
+        - move_line_id
+        - cost_line_id
+        - share
+        - additional_landed_cost
+        - remaining_qty
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        lc_id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        move_line_id:
+          type: string
+          format: uuid
+        cost_line_id:
+          type: string
+          format: uuid
+        share:
+          type: string
+        additional_landed_cost:
+          type: string
+        remaining_qty:
+          type: string
+        metadata:
+          type: object
+
+    LandedCostAdjustmentLineBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LandedCostAdjustmentLine'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreateLandedCostAdjustmentLineRequest:
+      type: object
+      required:
+        - lc_id
+        - company_id
+        - move_line_id
+        - cost_line_id
+        - share
+        - additional_landed_cost
+        - remaining_qty
+        - metadata
+      properties:
+        lc_id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        move_line_id:
+          type: string
+          format: uuid
+        cost_line_id:
+          type: string
+          format: uuid
+        share:
+          type: string
+        additional_landed_cost:
+          type: string
+        remaining_qty:
+          type: string
+        metadata:
+          type: object
+
+    UpdateLandedCostAdjustmentLineRequest:
+      type: object
+      required:
+        - lc_id
+        - company_id
+        - move_line_id
+        - cost_line_id
+        - share
+        - additional_landed_cost
+        - remaining_qty
+        - metadata
+      properties:
+        lc_id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        move_line_id:
+          type: string
+          format: uuid
+        cost_line_id:
+          type: string
+          format: uuid
+        share:
+          type: string
+        additional_landed_cost:
+          type: string
+        remaining_qty:
+          type: string
+        metadata:
+          type: object
+
+    PatchLandedCostAdjustmentLineRequest:
+      type: object
+      properties:
+        lc_id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        move_line_id:
+          type: string
+          format: uuid
+        cost_line_id:
+          type: string
+          format: uuid
+        share:
+          type: string
+        additional_landed_cost:
+          type: string
+        remaining_qty:
+          type: string
+        metadata:
+          type: object
+
+    LandedCostAdjustmentLineList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LandedCostAdjustmentLine'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
     Location:
       type: object
       required:
@@ -8976,6 +13862,14 @@ components:
           nullable: true
           type: string
           format: date
+        valuation_account_id:
+          nullable: true
+          type: string
+          format: uuid
+        storage_category_id:
+          nullable: true
+          type: string
+          format: uuid
         metadata:
           type: object
 
@@ -9043,6 +13937,14 @@ components:
           nullable: true
           type: string
           format: date
+        valuation_account_id:
+          nullable: true
+          type: string
+          format: uuid
+        storage_category_id:
+          nullable: true
+          type: string
+          format: uuid
         metadata:
           type: object
 
@@ -9097,6 +13999,14 @@ components:
           nullable: true
           type: string
           format: date
+        valuation_account_id:
+          nullable: true
+          type: string
+          format: uuid
+        storage_category_id:
+          nullable: true
+          type: string
+          format: uuid
         metadata:
           type: object
 
@@ -9143,6 +14053,14 @@ components:
           nullable: true
           type: string
           format: date
+        valuation_account_id:
+          nullable: true
+          type: string
+          format: uuid
+        storage_category_id:
+          nullable: true
+          type: string
+          format: uuid
         metadata:
           type: object
 
@@ -10160,6 +15078,10 @@ components:
           nullable: true
           type: string
           format: uuid
+        batch_id:
+          nullable: true
+          type: string
+          format: uuid
         metadata:
           type: object
 
@@ -10241,6 +15163,10 @@ components:
           nullable: true
           type: string
           format: uuid
+        batch_id:
+          nullable: true
+          type: string
+          format: uuid
         metadata:
           type: object
 
@@ -10309,6 +15235,10 @@ components:
           nullable: true
           type: string
           format: uuid
+        batch_id:
+          nullable: true
+          type: string
+          format: uuid
         metadata:
           type: object
 
@@ -10362,6 +15292,10 @@ components:
           type: string
           format: uuid
         return_id:
+          nullable: true
+          type: string
+          format: uuid
+        batch_id:
           nullable: true
           type: string
           format: uuid
@@ -11386,6 +16320,7 @@ components:
         - quantity
         - rate
         - amount
+        - is_landed_costs_line
         - metadata
       properties:
         id:
@@ -11406,6 +16341,8 @@ components:
           type: string
         amount:
           type: string
+        is_landed_costs_line:
+          type: boolean
         metadata:
           type: object
 
@@ -11431,6 +16368,7 @@ components:
         - quantity
         - rate
         - amount
+        - is_landed_costs_line
         - metadata
       properties:
         receipt_id:
@@ -11448,6 +16386,8 @@ components:
           type: string
         amount:
           type: string
+        is_landed_costs_line:
+          type: boolean
         metadata:
           type: object
 
@@ -11460,6 +16400,7 @@ components:
         - quantity
         - rate
         - amount
+        - is_landed_costs_line
         - metadata
       properties:
         receipt_id:
@@ -11477,6 +16418,8 @@ components:
           type: string
         amount:
           type: string
+        is_landed_costs_line:
+          type: boolean
         metadata:
           type: object
 
@@ -11498,6 +16441,8 @@ components:
           type: string
         amount:
           type: string
+        is_landed_costs_line:
+          type: boolean
         metadata:
           type: object
 
@@ -11769,6 +16714,381 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Quant'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    Scrap:
+      type: object
+      required:
+        - id
+        - name
+        - state
+        - date_expected
+        - item_id
+        - scrap_qty
+        - location_id
+        - scrap_location_id
+        - scrap_reason_tag_ids
+        - company_id
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 40
+        state:
+          type: string
+        origin:
+          nullable: true
+          type: string
+          maxLength: 200
+        date_expected:
+          type: string
+          format: date-time
+        item_id:
+          type: string
+          format: uuid
+        scrap_qty:
+          type: string
+        location_id:
+          type: string
+          format: uuid
+        scrap_location_id:
+          type: string
+          format: uuid
+        lot_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_id:
+          nullable: true
+          type: string
+          format: uuid
+        owner_id:
+          nullable: true
+          type: string
+          format: uuid
+        picking_id:
+          nullable: true
+          type: string
+          format: uuid
+        move_id:
+          nullable: true
+          type: string
+          format: uuid
+        scrap_reason_tag_ids:
+          type: array
+        company_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    ScrapBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Scrap'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreateScrapRequest:
+      type: object
+      required:
+        - name
+        - state
+        - date_expected
+        - item_id
+        - scrap_qty
+        - location_id
+        - scrap_location_id
+        - scrap_reason_tag_ids
+        - company_id
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 40
+        state:
+          type: string
+        origin:
+          nullable: true
+          type: string
+          maxLength: 200
+        date_expected:
+          type: string
+          format: date-time
+        item_id:
+          type: string
+          format: uuid
+        scrap_qty:
+          type: string
+        location_id:
+          type: string
+          format: uuid
+        scrap_location_id:
+          type: string
+          format: uuid
+        lot_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_id:
+          nullable: true
+          type: string
+          format: uuid
+        owner_id:
+          nullable: true
+          type: string
+          format: uuid
+        picking_id:
+          nullable: true
+          type: string
+          format: uuid
+        move_id:
+          nullable: true
+          type: string
+          format: uuid
+        scrap_reason_tag_ids:
+          type: array
+        company_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    UpdateScrapRequest:
+      type: object
+      required:
+        - name
+        - state
+        - date_expected
+        - item_id
+        - scrap_qty
+        - location_id
+        - scrap_location_id
+        - scrap_reason_tag_ids
+        - company_id
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 40
+        state:
+          type: string
+        origin:
+          nullable: true
+          type: string
+          maxLength: 200
+        date_expected:
+          type: string
+          format: date-time
+        item_id:
+          type: string
+          format: uuid
+        scrap_qty:
+          type: string
+        location_id:
+          type: string
+          format: uuid
+        scrap_location_id:
+          type: string
+          format: uuid
+        lot_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_id:
+          nullable: true
+          type: string
+          format: uuid
+        owner_id:
+          nullable: true
+          type: string
+          format: uuid
+        picking_id:
+          nullable: true
+          type: string
+          format: uuid
+        move_id:
+          nullable: true
+          type: string
+          format: uuid
+        scrap_reason_tag_ids:
+          type: array
+        company_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    PatchScrapRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 40
+        state:
+          type: string
+        origin:
+          nullable: true
+          type: string
+          maxLength: 200
+        date_expected:
+          type: string
+          format: date-time
+        item_id:
+          type: string
+          format: uuid
+        scrap_qty:
+          type: string
+        location_id:
+          type: string
+          format: uuid
+        scrap_location_id:
+          type: string
+          format: uuid
+        lot_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_id:
+          nullable: true
+          type: string
+          format: uuid
+        owner_id:
+          nullable: true
+          type: string
+          format: uuid
+        picking_id:
+          nullable: true
+          type: string
+          format: uuid
+        move_id:
+          nullable: true
+          type: string
+          format: uuid
+        scrap_reason_tag_ids:
+          type: array
+        company_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    ScrapList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Scrap'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    ScrapReasonTag:
+      type: object
+      required:
+        - id
+        - name
+        - active
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 150
+        active:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    ScrapReasonTagBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScrapReasonTag'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreateScrapReasonTagRequest:
+      type: object
+      required:
+        - name
+        - active
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        active:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    UpdateScrapReasonTagRequest:
+      type: object
+      required:
+        - name
+        - active
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        active:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    PatchScrapReasonTagRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        active:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    ScrapReasonTagList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScrapReasonTag'
         meta:
           $ref: '#/components/schemas/PaginationMeta'
 
@@ -12870,6 +18190,652 @@ components:
         meta:
           $ref: '#/components/schemas/PaginationMeta'
 
+    PackageType:
+      type: object
+      required:
+        - id
+        - name
+        - package_use
+        - sequence
+        - active
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 150
+        barcode:
+          nullable: true
+          type: string
+          maxLength: 64
+        package_use:
+          type: string
+        sequence:
+          type: integer
+          format: int32
+        length:
+          nullable: true
+          type: string
+        width:
+          nullable: true
+          type: string
+        height:
+          nullable: true
+          type: string
+        max_weight:
+          nullable: true
+          type: string
+        active:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    PackageTypeBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PackageType'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreatePackageTypeRequest:
+      type: object
+      required:
+        - name
+        - package_use
+        - sequence
+        - active
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        barcode:
+          nullable: true
+          type: string
+          maxLength: 64
+        package_use:
+          type: string
+        sequence:
+          type: integer
+          format: int32
+        length:
+          nullable: true
+          type: string
+        width:
+          nullable: true
+          type: string
+        height:
+          nullable: true
+          type: string
+        max_weight:
+          nullable: true
+          type: string
+        active:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    UpdatePackageTypeRequest:
+      type: object
+      required:
+        - name
+        - package_use
+        - sequence
+        - active
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        barcode:
+          nullable: true
+          type: string
+          maxLength: 64
+        package_use:
+          type: string
+        sequence:
+          type: integer
+          format: int32
+        length:
+          nullable: true
+          type: string
+        width:
+          nullable: true
+          type: string
+        height:
+          nullable: true
+          type: string
+        max_weight:
+          nullable: true
+          type: string
+        active:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    PatchPackageTypeRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        barcode:
+          nullable: true
+          type: string
+          maxLength: 64
+        package_use:
+          type: string
+        sequence:
+          type: integer
+          format: int32
+        length:
+          nullable: true
+          type: string
+        width:
+          nullable: true
+          type: string
+        height:
+          nullable: true
+          type: string
+        max_weight:
+          nullable: true
+          type: string
+        active:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    PackageTypeList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PackageType'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    StorageCategory:
+      type: object
+      required:
+        - id
+        - name
+        - allow_new_product
+        - active
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 150
+        max_weight:
+          nullable: true
+          type: string
+        allow_new_product:
+          type: string
+        active:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    StorageCategoryBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StorageCategory'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreateStorageCategoryRequest:
+      type: object
+      required:
+        - name
+        - allow_new_product
+        - active
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        max_weight:
+          nullable: true
+          type: string
+        allow_new_product:
+          type: string
+        active:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    UpdateStorageCategoryRequest:
+      type: object
+      required:
+        - name
+        - allow_new_product
+        - active
+        - metadata
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        max_weight:
+          nullable: true
+          type: string
+        allow_new_product:
+          type: string
+        active:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    PatchStorageCategoryRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        max_weight:
+          nullable: true
+          type: string
+        allow_new_product:
+          type: string
+        active:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    StorageCategoryList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StorageCategory'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    StorageCategoryCapacity:
+      type: object
+      required:
+        - id
+        - storage_category_id
+        - quantity
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        storage_category_id:
+          type: string
+          format: uuid
+        item_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_type_id:
+          nullable: true
+          type: string
+          format: uuid
+        quantity:
+          type: string
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    StorageCategoryCapacityBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StorageCategoryCapacity'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreateStorageCategoryCapacityRequest:
+      type: object
+      required:
+        - storage_category_id
+        - quantity
+        - metadata
+      properties:
+        storage_category_id:
+          type: string
+          format: uuid
+        item_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_type_id:
+          nullable: true
+          type: string
+          format: uuid
+        quantity:
+          type: string
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    UpdateStorageCategoryCapacityRequest:
+      type: object
+      required:
+        - storage_category_id
+        - quantity
+        - metadata
+      properties:
+        storage_category_id:
+          type: string
+          format: uuid
+        item_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_type_id:
+          nullable: true
+          type: string
+          format: uuid
+        quantity:
+          type: string
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    PatchStorageCategoryCapacityRequest:
+      type: object
+      properties:
+        storage_category_id:
+          type: string
+          format: uuid
+        item_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_type_id:
+          nullable: true
+          type: string
+          format: uuid
+        quantity:
+          type: string
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    StorageCategoryCapacityList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/StorageCategoryCapacity'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    PutawayRule:
+      type: object
+      required:
+        - id
+        - sequence
+        - location_in_id
+        - location_out_id
+        - sublocation
+        - active
+        - metadata
+      properties:
+        id:
+          type: string
+          format: uuid
+        sequence:
+          type: integer
+          format: int32
+        location_in_id:
+          type: string
+          format: uuid
+        location_out_id:
+          type: string
+          format: uuid
+        item_id:
+          nullable: true
+          type: string
+          format: uuid
+        category_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_type_id:
+          nullable: true
+          type: string
+          format: uuid
+        storage_category_id:
+          nullable: true
+          type: string
+          format: uuid
+        sublocation:
+          type: string
+        active:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    PutawayRuleBulkResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PutawayRule'
+        total: { type: integer }
+        failed: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+
+    CreatePutawayRuleRequest:
+      type: object
+      required:
+        - sequence
+        - location_in_id
+        - location_out_id
+        - sublocation
+        - active
+        - metadata
+      properties:
+        sequence:
+          type: integer
+          format: int32
+        location_in_id:
+          type: string
+          format: uuid
+        location_out_id:
+          type: string
+          format: uuid
+        item_id:
+          nullable: true
+          type: string
+          format: uuid
+        category_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_type_id:
+          nullable: true
+          type: string
+          format: uuid
+        storage_category_id:
+          nullable: true
+          type: string
+          format: uuid
+        sublocation:
+          type: string
+        active:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    UpdatePutawayRuleRequest:
+      type: object
+      required:
+        - sequence
+        - location_in_id
+        - location_out_id
+        - sublocation
+        - active
+        - metadata
+      properties:
+        sequence:
+          type: integer
+          format: int32
+        location_in_id:
+          type: string
+          format: uuid
+        location_out_id:
+          type: string
+          format: uuid
+        item_id:
+          nullable: true
+          type: string
+          format: uuid
+        category_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_type_id:
+          nullable: true
+          type: string
+          format: uuid
+        storage_category_id:
+          nullable: true
+          type: string
+          format: uuid
+        sublocation:
+          type: string
+        active:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    PatchPutawayRuleRequest:
+      type: object
+      properties:
+        sequence:
+          type: integer
+          format: int32
+        location_in_id:
+          type: string
+          format: uuid
+        location_out_id:
+          type: string
+          format: uuid
+        item_id:
+          nullable: true
+          type: string
+          format: uuid
+        category_id:
+          nullable: true
+          type: string
+          format: uuid
+        package_type_id:
+          nullable: true
+          type: string
+          format: uuid
+        storage_category_id:
+          nullable: true
+          type: string
+          format: uuid
+        sublocation:
+          type: string
+        active:
+          type: boolean
+        company_id:
+          nullable: true
+          type: string
+          format: uuid
+        metadata:
+          type: object
+
+    PutawayRuleList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PutawayRule'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
     Lot:
       type: object
       required:
@@ -13069,6 +19035,10 @@ components:
           nullable: true
           type: string
           format: date
+        package_type_id:
+          nullable: true
+          type: string
+          format: uuid
         metadata:
           type: object
 
@@ -13118,6 +19088,10 @@ components:
           nullable: true
           type: string
           format: date
+        package_type_id:
+          nullable: true
+          type: string
+          format: uuid
         metadata:
           type: object
 
@@ -13154,6 +19128,10 @@ components:
           nullable: true
           type: string
           format: date
+        package_type_id:
+          nullable: true
+          type: string
+          format: uuid
         metadata:
           type: object
 
@@ -13185,6 +19163,10 @@ components:
           nullable: true
           type: string
           format: date
+        package_type_id:
+          nullable: true
+          type: string
+          format: uuid
         metadata:
           type: object
 
@@ -13349,6 +19331,7 @@ components:
         - has_batch
         - valuation_method
         - reorder_level
+        - weight_per_unit
         - metadata
       properties:
         id:
@@ -13370,6 +19353,8 @@ components:
         valuation_method:
           type: string
         reorder_level:
+          type: string
+        weight_per_unit:
           type: string
         metadata:
           type: object
@@ -13397,6 +19382,7 @@ components:
         - has_batch
         - valuation_method
         - reorder_level
+        - weight_per_unit
         - metadata
       properties:
         item_id:
@@ -13415,6 +19401,8 @@ components:
         valuation_method:
           type: string
         reorder_level:
+          type: string
+        weight_per_unit:
           type: string
         metadata:
           type: object
@@ -13429,6 +19417,7 @@ components:
         - has_batch
         - valuation_method
         - reorder_level
+        - weight_per_unit
         - metadata
       properties:
         item_id:
@@ -13447,6 +19436,8 @@ components:
         valuation_method:
           type: string
         reorder_level:
+          type: string
+        weight_per_unit:
           type: string
         metadata:
           type: object
@@ -13470,6 +19461,8 @@ components:
         valuation_method:
           type: string
         reorder_level:
+          type: string
+        weight_per_unit:
           type: string
         metadata:
           type: object

@@ -55,6 +55,7 @@ pub struct Package {
     pub parent_package_id: Option<Uuid>,
     pub parent_path: String,
     pub pack_date: Option<NaiveDate>,
+    pub package_type_id: Option<Uuid>,
     #[serde(default)]
     #[sqlx(json)]
     pub metadata: AuditMetadata,
@@ -77,6 +78,7 @@ impl Package {
             parent_package_id: None,
             parent_path,
             pack_date: None,
+            package_type_id: None,
             metadata: AuditMetadata::default(),
         }
     }
@@ -160,6 +162,12 @@ impl Package {
         self
     }
 
+    /// Set the package_type_id field (chainable)
+    pub fn with_package_type_id(mut self, value: Uuid) -> Self {
+        self.package_type_id = Some(value);
+        self
+    }
+
     // ==========================================================
     // Partial Update
     // ==========================================================
@@ -188,6 +196,9 @@ impl Package {
                 }
                 "pack_date" => {
                     if let Ok(v) = serde_json::from_value(value) { self.pack_date = v; }
+                }
+                "package_type_id" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.package_type_id = v; }
                 }
                 _ => {} // ignore unknown fields
             }
@@ -246,6 +257,7 @@ impl backbone_orm::EntityRepoMeta for Package {
         m.insert("location_id".to_string(), "uuid".to_string());
         m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("parent_package_id".to_string(), "uuid".to_string());
+        m.insert("package_type_id".to_string(), "uuid".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
@@ -269,6 +281,7 @@ pub struct PackageBuilder {
     parent_package_id: Option<Uuid>,
     parent_path: Option<String>,
     pack_date: Option<NaiveDate>,
+    package_type_id: Option<Uuid>,
 }
 
 impl PackageBuilder {
@@ -314,6 +327,12 @@ impl PackageBuilder {
         self
     }
 
+    /// Set the package_type_id field (optional)
+    pub fn package_type_id(mut self, value: Uuid) -> Self {
+        self.package_type_id = Some(value);
+        self
+    }
+
     /// Build the Package entity
     ///
     /// Returns Err if any required field without a default is missing.
@@ -331,6 +350,7 @@ impl PackageBuilder {
             parent_package_id: self.parent_package_id,
             parent_path,
             pack_date: self.pack_date,
+            package_type_id: self.package_type_id,
             metadata: AuditMetadata::default(),
         })
     }

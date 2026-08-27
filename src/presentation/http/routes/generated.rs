@@ -9,8 +9,13 @@ use axum::Router;
 use std::sync::Arc;
 
 use super::{
+    picking_batch_handler::create_picking_batch_read_routes,
     delivery_note_handler::create_delivery_note_routes,
     delivery_note_item_handler::create_delivery_note_item_routes,
+    inventory_company_setting_handler::create_inventory_company_setting_routes,
+    landed_cost_handler::create_landed_cost_routes,
+    landed_cost_line_handler::create_landed_cost_line_routes,
+    landed_cost_adjustment_line_handler::create_landed_cost_adjustment_line_routes,
     location_handler::create_location_routes,
     stock_move_handler::create_stock_move_routes,
     stock_move_line_handler::create_stock_move_line_routes,
@@ -22,12 +27,18 @@ use super::{
     purchase_receipt_handler::create_purchase_receipt_routes,
     purchase_receipt_item_handler::create_purchase_receipt_item_routes,
     quant_handler::create_quant_routes,
+    scrap_handler::create_scrap_read_routes,
+    scrap_reason_tag_handler::create_scrap_reason_tag_routes,
     stock_entry_handler::create_stock_entry_routes,
     stock_entry_item_handler::create_stock_entry_item_routes,
     stock_ledger_entry_handler::create_stock_ledger_entry_routes,
     bin_handler::create_bin_routes,
     stock_reconciliation_handler::create_stock_reconciliation_routes,
     stock_reconciliation_item_handler::create_stock_reconciliation_item_routes,
+    package_type_handler::create_package_type_routes,
+    storage_category_handler::create_storage_category_routes,
+    storage_category_capacity_handler::create_storage_category_capacity_routes,
+    putaway_rule_handler::create_putaway_rule_routes,
     lot_handler::create_lot_routes,
     package_handler::create_package_routes,
     warehouse_handler::create_warehouse_routes,
@@ -35,8 +46,13 @@ use super::{
 };
 
 use crate::application::service::{
+    PickingBatchService,
     DeliveryNoteService,
     DeliveryNoteItemService,
+    InventoryCompanySettingService,
+    LandedCostService,
+    LandedCostLineService,
+    LandedCostAdjustmentLineService,
     LocationService,
     StockMoveService,
     StockMoveLineService,
@@ -48,12 +64,18 @@ use crate::application::service::{
     PurchaseReceiptService,
     PurchaseReceiptItemService,
     QuantService,
+    ScrapService,
+    ScrapReasonTagService,
     StockEntryService,
     StockEntryItemService,
     StockLedgerEntryService,
     BinService,
     StockReconciliationService,
     StockReconciliationItemService,
+    PackageTypeService,
+    StorageCategoryService,
+    StorageCategoryCapacityService,
+    PutawayRuleService,
     LotService,
     PackageService,
     WarehouseService,
@@ -62,8 +84,13 @@ use crate::application::service::{
 
 /// Services collection for all CRUD endpoints
 pub struct HttpServices {
+    pub picking_batch: Arc<PickingBatchService>,
     pub delivery_note: Arc<DeliveryNoteService>,
     pub delivery_note_item: Arc<DeliveryNoteItemService>,
+    pub inventory_company_setting: Arc<InventoryCompanySettingService>,
+    pub landed_cost: Arc<LandedCostService>,
+    pub landed_cost_line: Arc<LandedCostLineService>,
+    pub landed_cost_adjustment_line: Arc<LandedCostAdjustmentLineService>,
     pub location: Arc<LocationService>,
     pub stock_move: Arc<StockMoveService>,
     pub stock_move_line: Arc<StockMoveLineService>,
@@ -75,12 +102,18 @@ pub struct HttpServices {
     pub purchase_receipt: Arc<PurchaseReceiptService>,
     pub purchase_receipt_item: Arc<PurchaseReceiptItemService>,
     pub quant: Arc<QuantService>,
+    pub scrap: Arc<ScrapService>,
+    pub scrap_reason_tag: Arc<ScrapReasonTagService>,
     pub stock_entry: Arc<StockEntryService>,
     pub stock_entry_item: Arc<StockEntryItemService>,
     pub stock_ledger_entry: Arc<StockLedgerEntryService>,
     pub bin: Arc<BinService>,
     pub stock_reconciliation: Arc<StockReconciliationService>,
     pub stock_reconciliation_item: Arc<StockReconciliationItemService>,
+    pub package_type: Arc<PackageTypeService>,
+    pub storage_category: Arc<StorageCategoryService>,
+    pub storage_category_capacity: Arc<StorageCategoryCapacityService>,
+    pub putaway_rule: Arc<PutawayRuleService>,
     pub lot: Arc<LotService>,
     pub package: Arc<PackageService>,
     pub warehouse: Arc<WarehouseService>,
@@ -104,10 +137,20 @@ pub struct HttpServices {
 /// 12. GET /api/v1/{collection}/:id/deleted - Get deleted by ID
 pub fn configure_routes(services: HttpServices) -> Router {
     Router::new()
+        // PickingBatch routes (READ-ONLY — append-only/event-sourced entity; writes arrive via the event handlers)
+        .merge(create_picking_batch_read_routes(services.picking_batch))
         // DeliveryNote routes (12 Backbone endpoints)
         .merge(create_delivery_note_routes(services.delivery_note))
         // DeliveryNoteItem routes (12 Backbone endpoints)
         .merge(create_delivery_note_item_routes(services.delivery_note_item))
+        // InventoryCompanySetting routes (12 Backbone endpoints)
+        .merge(create_inventory_company_setting_routes(services.inventory_company_setting))
+        // LandedCost routes (12 Backbone endpoints)
+        .merge(create_landed_cost_routes(services.landed_cost))
+        // LandedCostLine routes (12 Backbone endpoints)
+        .merge(create_landed_cost_line_routes(services.landed_cost_line))
+        // LandedCostAdjustmentLine routes (12 Backbone endpoints)
+        .merge(create_landed_cost_adjustment_line_routes(services.landed_cost_adjustment_line))
         // Location routes (12 Backbone endpoints)
         .merge(create_location_routes(services.location))
         // StockMove routes (12 Backbone endpoints)
@@ -130,6 +173,10 @@ pub fn configure_routes(services: HttpServices) -> Router {
         .merge(create_purchase_receipt_item_routes(services.purchase_receipt_item))
         // Quant routes (12 Backbone endpoints)
         .merge(create_quant_routes(services.quant))
+        // Scrap routes (READ-ONLY — append-only/event-sourced entity; writes arrive via the event handlers)
+        .merge(create_scrap_read_routes(services.scrap))
+        // ScrapReasonTag routes (12 Backbone endpoints)
+        .merge(create_scrap_reason_tag_routes(services.scrap_reason_tag))
         // StockEntry routes (12 Backbone endpoints)
         .merge(create_stock_entry_routes(services.stock_entry))
         // StockEntryItem routes (12 Backbone endpoints)
@@ -142,6 +189,14 @@ pub fn configure_routes(services: HttpServices) -> Router {
         .merge(create_stock_reconciliation_routes(services.stock_reconciliation))
         // StockReconciliationItem routes (12 Backbone endpoints)
         .merge(create_stock_reconciliation_item_routes(services.stock_reconciliation_item))
+        // PackageType routes (12 Backbone endpoints)
+        .merge(create_package_type_routes(services.package_type))
+        // StorageCategory routes (12 Backbone endpoints)
+        .merge(create_storage_category_routes(services.storage_category))
+        // StorageCategoryCapacity routes (12 Backbone endpoints)
+        .merge(create_storage_category_capacity_routes(services.storage_category_capacity))
+        // PutawayRule routes (12 Backbone endpoints)
+        .merge(create_putaway_rule_routes(services.putaway_rule))
         // Lot routes (12 Backbone endpoints)
         .merge(create_lot_routes(services.lot))
         // Package routes (12 Backbone endpoints)
@@ -156,12 +211,32 @@ pub fn configure_routes(services: HttpServices) -> Router {
 pub mod individual {
     use super::*;
 
+    pub fn picking_batch_routes(service: Arc<PickingBatchService>) -> Router {
+        create_picking_batch_routes(service)
+    }
+
     pub fn delivery_note_routes(service: Arc<DeliveryNoteService>) -> Router {
         create_delivery_note_routes(service)
     }
 
     pub fn delivery_note_item_routes(service: Arc<DeliveryNoteItemService>) -> Router {
         create_delivery_note_item_routes(service)
+    }
+
+    pub fn inventory_company_setting_routes(service: Arc<InventoryCompanySettingService>) -> Router {
+        create_inventory_company_setting_routes(service)
+    }
+
+    pub fn landed_cost_routes(service: Arc<LandedCostService>) -> Router {
+        create_landed_cost_routes(service)
+    }
+
+    pub fn landed_cost_line_routes(service: Arc<LandedCostLineService>) -> Router {
+        create_landed_cost_line_routes(service)
+    }
+
+    pub fn landed_cost_adjustment_line_routes(service: Arc<LandedCostAdjustmentLineService>) -> Router {
+        create_landed_cost_adjustment_line_routes(service)
     }
 
     pub fn location_routes(service: Arc<LocationService>) -> Router {
@@ -208,6 +283,14 @@ pub mod individual {
         create_quant_routes(service)
     }
 
+    pub fn scrap_routes(service: Arc<ScrapService>) -> Router {
+        create_scrap_routes(service)
+    }
+
+    pub fn scrap_reason_tag_routes(service: Arc<ScrapReasonTagService>) -> Router {
+        create_scrap_reason_tag_routes(service)
+    }
+
     pub fn stock_entry_routes(service: Arc<StockEntryService>) -> Router {
         create_stock_entry_routes(service)
     }
@@ -230,6 +313,22 @@ pub mod individual {
 
     pub fn stock_reconciliation_item_routes(service: Arc<StockReconciliationItemService>) -> Router {
         create_stock_reconciliation_item_routes(service)
+    }
+
+    pub fn package_type_routes(service: Arc<PackageTypeService>) -> Router {
+        create_package_type_routes(service)
+    }
+
+    pub fn storage_category_routes(service: Arc<StorageCategoryService>) -> Router {
+        create_storage_category_routes(service)
+    }
+
+    pub fn storage_category_capacity_routes(service: Arc<StorageCategoryCapacityService>) -> Router {
+        create_storage_category_capacity_routes(service)
+    }
+
+    pub fn putaway_rule_routes(service: Arc<PutawayRuleService>) -> Router {
+        create_putaway_rule_routes(service)
     }
 
     pub fn lot_routes(service: Arc<LotService>) -> Router {

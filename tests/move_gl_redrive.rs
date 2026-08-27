@@ -169,10 +169,11 @@ fn new_move(company: Uuid, item: Uuid, src: Uuid, dst: Uuid, qty: &str) -> NewSt
 
 /// Drive a move draft → confirmed → assigned → done with the given directive + sink.
 async fn drive_to_done(w: &InventoryWriteService, mv: NewStockMove, gl: &MoveGlDirective, sink: &dyn GlPostSink) -> Result<backbone_inventory::application::service::inventory_move_engine::MoveDoneOutcome, backbone_inventory::application::service::inventory_write_service::InventoryError> {
+    let company = mv.company_id;
     let id = w.create_move(mv).await.unwrap();
-    w.action_confirm(id).await.unwrap();
-    w.action_assign(id).await.unwrap();
-    w.action_done(id, BackorderPolicy::Never, gl, sink).await
+    w.action_confirm(company, id).await.unwrap();
+    w.action_assign(company, id).await.unwrap();
+    w.action_done(company, id, BackorderPolicy::Never, gl, sink).await
 }
 
 async fn posting_state_of(pool: &PgPool, id: Uuid) -> String {
@@ -232,7 +233,7 @@ async fn rejected_post_marks_failed_and_repost_heals() {
     assert_eq!(journal_count(&pool, company).await, 0, "the GL leg is genuinely missing");
 
     // Repost with a healthy sink → posted, and the real journal carries the engine's valuation.
-    let out = w.repost_move_gl(mv_id, &out_gl(coa["5100"], coa["1300"]), &adapter).await.unwrap();
+    let out = w.repost_move_gl(company, mv_id, &out_gl(coa["5100"], coa["1300"]), &adapter).await.unwrap();
     assert!(out.posted);
     assert_eq!(posting_state_of(&pool, mv_id).await, "posted");
     assert_eq!(journal_count(&pool, company).await, 1);
@@ -272,7 +273,7 @@ async fn real_rejection_parks_failed_and_corrected_directive_reposts() {
     assert_eq!(posting_state_of(&pool, mv_id).await, "failed");
 
     // The directive is caller-supplied config — reposting with the corrected account posts.
-    let out = w.repost_move_gl(mv_id, &out_gl(coa["5100"], coa["1300"]), &adapter).await.unwrap();
+    let out = w.repost_move_gl(company, mv_id, &out_gl(coa["5100"], coa["1300"]), &adapter).await.unwrap();
     assert!(out.posted);
     assert_eq!(posting_state_of(&pool, mv_id).await, "posted");
     assert_eq!(journal_count(&pool, company).await, 1);
@@ -295,9 +296,9 @@ async fn repost_does_not_double_post() {
     seed_bin(&pool, company, item, wh, "10", "100").await;
     let gl = out_gl(coa["5100"], coa["1300"]);
     let id = w.create_move(new_move(company, item, stock, customer, "5")).await.unwrap();
-    w.action_confirm(id).await.unwrap();
-    w.action_assign(id).await.unwrap();
-    let first = w.action_done(id, BackorderPolicy::Never, &gl, &adapter).await.unwrap();
+    w.action_confirm(company, id).await.unwrap();
+    w.action_assign(company, id).await.unwrap();
+    let first = w.action_done(company, id, BackorderPolicy::Never, &gl, &adapter).await.unwrap();
     assert!(first.gl_posted);
     assert_eq!(posting_state_of(&pool, id).await, "posted");
     let orig_jid: Uuid = sqlx::query_scalar("SELECT id FROM accounting.journals WHERE company_id=$1")
@@ -306,13 +307,13 @@ async fn repost_does_not_double_post() {
     // Simulate the crash window: the post landed but the status update was lost.
     sqlx::query("UPDATE inventory.stock_moves SET posting_state='failed'::gl_posting_state WHERE id=$1")
         .bind(id).execute(&pool).await.unwrap();
-    let again = w.repost_move_gl(id, &gl, &adapter).await.unwrap();
+    let again = w.repost_move_gl(company, id, &gl, &adapter).await.unwrap();
     assert!(again.posted);
     assert_eq!(again.journal_id, Some(orig_jid), "dedupe returns the original journal");
     assert_eq!(journal_count(&pool, company).await, 1, "no second journal");
 
     // An already-posted move short-circuits.
-    let noop = w.repost_move_gl(id, &gl, &adapter).await.unwrap();
+    let noop = w.repost_move_gl(company, id, &gl, &adapter).await.unwrap();
     assert!(noop.posted);
     assert!(noop.journal_id.is_none(), "settled short-circuit re-emits nothing");
     assert_eq!(journal_count(&pool, company).await, 1);
@@ -348,7 +349,7 @@ async fn voucher_door_moves_stay_not_applicable() {
     assert_eq!(states[0].2, "not_applicable", "the door's move posts no GL of its own");
 
     // A blind repost on a door-owned move is a no-op (sweep-safe).
-    let noop = w.repost_move_gl(states[0].0, &out_gl(coa["5100"], coa["1300"]), &adapter).await.unwrap();
+    let noop = w.repost_move_gl(company, states[0].0, &out_gl(coa["5100"], coa["1300"]), &adapter).await.unwrap();
     assert!(!noop.posted);
     assert_eq!(journal_count(&pool, company).await, 1, "still exactly the voucher's journal");
 
@@ -389,7 +390,7 @@ async fn value_neutral_move_stays_not_applicable() {
     let mv_id: Uuid = sqlx::query_scalar("SELECT id FROM inventory.stock_moves WHERE company_id=$1 ORDER BY create_date DESC LIMIT 1")
         .bind(company).fetch_one(&pool).await.unwrap();
     assert_eq!(posting_state_of(&pool, mv_id).await, "not_applicable");
-    let noop = w.repost_move_gl(mv_id, &out_gl(coa["5100"], coa["1300"]), &adapter).await.unwrap();
+    let noop = w.repost_move_gl(company, mv_id, &out_gl(coa["5100"], coa["1300"]), &adapter).await.unwrap();
     assert!(!noop.posted);
     assert_eq!(journal_count(&pool, company).await, 0);
 }

@@ -183,20 +183,27 @@ impl ValuationOverlayRepository {
 
     /// A location's valuation-account override, when set. `None` = no override (the caller
     /// falls through to the door-header account).
+    ///
+    /// The read runs company-scoped. Locations carry the shared_blank fence (`company_id =
+    /// app.company_id OR company_id IS NULL`): a shared row stays visible unscoped, but a
+    /// COMPANY-OWNED location's override is invisible to an unbound read under an armed fence —
+    /// the resolution chain would silently fall through to the door-header account. The scoped
+    /// execute binds the caller's company first, so both arms of the policy match and the
+    /// override is resolved for company locations exactly as for shared ones.
     pub async fn fetch_location_valuation_override(
         &self,
         pool: &PgPool,
         location_id: Uuid,
     ) -> Result<Option<Uuid>, sqlx::Error> {
-        let row: Option<sqlx::postgres::PgRow> = sqlx::query(
-            r#"SELECT valuation_account_id FROM inventory.locations
-               WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
+        let row = backbone_orm::company_scope::fetch_optional_row_scoped(
+            pool,
+            sqlx::query(
+                r#"SELECT valuation_account_id FROM inventory.locations
+                   WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
+            )
+            .bind(location_id),
         )
-        .bind(location_id)
-        .fetch_optional(pool)
         .await?;
-        // Locations are shared_blank-fenced (NULL company = shared row), so this read runs
-        // unfenced by design — it resolves an account hint, never tenant data.
         Ok(row.and_then(|r| r.get("valuation_account_id")))
     }
 

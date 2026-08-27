@@ -6,8 +6,13 @@
 //! Implementations should be in the infrastructure layer.
 
 
+pub mod picking_batch_repository;
 pub mod delivery_note_repository;
 pub mod delivery_note_item_repository;
+pub mod inventory_company_setting_repository;
+pub mod landed_cost_repository;
+pub mod landed_cost_line_repository;
+pub mod landed_cost_adjustment_line_repository;
 pub mod location_repository;
 pub mod stock_move_repository;
 pub mod stock_move_line_repository;
@@ -19,22 +24,30 @@ pub mod reordering_rule_repository;
 pub mod purchase_receipt_repository;
 pub mod purchase_receipt_item_repository;
 pub mod quant_repository;
+pub mod scrap_repository;
+pub mod scrap_reason_tag_repository;
 pub mod stock_entry_repository;
 pub mod stock_entry_item_repository;
 pub mod stock_ledger_entry_repository;
 pub mod bin_repository;
 pub mod stock_reconciliation_repository;
 pub mod stock_reconciliation_item_repository;
+pub mod package_type_repository;
+pub mod storage_category_repository;
+pub mod storage_category_capacity_repository;
+pub mod putaway_rule_repository;
 pub mod lot_repository;
 pub mod package_repository;
 pub mod warehouse_repository;
 pub mod stock_item_repository;
-pub mod inventory_company_setting_repository;
-pub mod landed_cost_repository;
-pub mod landed_cost_line_repository;
-pub mod landed_cost_adjustment_line_repository;
 
 // Re-exports
+pub use picking_batch_repository::{
+    PickingBatchRepository,
+    PickingBatchPaginationParams,
+    PickingBatchPaginatedResult,
+    PickingBatchFilter,
+};
 pub use delivery_note_repository::{
     DeliveryNoteRepository,
     DeliveryNotePaginationParams,
@@ -46,6 +59,30 @@ pub use delivery_note_item_repository::{
     DeliveryNoteItemPaginationParams,
     DeliveryNoteItemPaginatedResult,
     DeliveryNoteItemFilter,
+};
+pub use inventory_company_setting_repository::{
+    InventoryCompanySettingRepository,
+    InventoryCompanySettingPaginationParams,
+    InventoryCompanySettingPaginatedResult,
+    InventoryCompanySettingFilter,
+};
+pub use landed_cost_repository::{
+    LandedCostRepository,
+    LandedCostPaginationParams,
+    LandedCostPaginatedResult,
+    LandedCostFilter,
+};
+pub use landed_cost_line_repository::{
+    LandedCostLineRepository,
+    LandedCostLinePaginationParams,
+    LandedCostLinePaginatedResult,
+    LandedCostLineFilter,
+};
+pub use landed_cost_adjustment_line_repository::{
+    LandedCostAdjustmentLineRepository,
+    LandedCostAdjustmentLinePaginationParams,
+    LandedCostAdjustmentLinePaginatedResult,
+    LandedCostAdjustmentLineFilter,
 };
 pub use location_repository::{
     LocationRepository,
@@ -113,6 +150,18 @@ pub use quant_repository::{
     QuantPaginatedResult,
     QuantFilter,
 };
+pub use scrap_repository::{
+    ScrapRepository,
+    ScrapPaginationParams,
+    ScrapPaginatedResult,
+    ScrapFilter,
+};
+pub use scrap_reason_tag_repository::{
+    ScrapReasonTagRepository,
+    ScrapReasonTagPaginationParams,
+    ScrapReasonTagPaginatedResult,
+    ScrapReasonTagFilter,
+};
 pub use stock_entry_repository::{
     StockEntryRepository,
     StockEntryPaginationParams,
@@ -149,6 +198,30 @@ pub use stock_reconciliation_item_repository::{
     StockReconciliationItemPaginatedResult,
     StockReconciliationItemFilter,
 };
+pub use package_type_repository::{
+    PackageTypeRepository,
+    PackageTypePaginationParams,
+    PackageTypePaginatedResult,
+    PackageTypeFilter,
+};
+pub use storage_category_repository::{
+    StorageCategoryRepository,
+    StorageCategoryPaginationParams,
+    StorageCategoryPaginatedResult,
+    StorageCategoryFilter,
+};
+pub use storage_category_capacity_repository::{
+    StorageCategoryCapacityRepository,
+    StorageCategoryCapacityPaginationParams,
+    StorageCategoryCapacityPaginatedResult,
+    StorageCategoryCapacityFilter,
+};
+pub use putaway_rule_repository::{
+    PutawayRuleRepository,
+    PutawayRulePaginationParams,
+    PutawayRulePaginatedResult,
+    PutawayRuleFilter,
+};
 pub use lot_repository::{
     LotRepository,
     LotPaginationParams,
@@ -173,28 +246,3 @@ pub use stock_item_repository::{
     StockItemPaginatedResult,
     StockItemFilter,
 };
-pub use inventory_company_setting_repository::{
-    InventoryCompanySettingRepository,
-    InventoryCompanySettingPaginationParams,
-    InventoryCompanySettingPaginatedResult,
-    InventoryCompanySettingFilter,
-};
-pub use landed_cost_repository::{
-    LandedCostRepository,
-    LandedCostPaginationParams,
-    LandedCostPaginatedResult,
-    LandedCostFilter,
-};
-pub use landed_cost_line_repository::{
-    LandedCostLineRepository,
-    LandedCostLinePaginationParams,
-    LandedCostLinePaginatedResult,
-    LandedCostLineFilter,
-};
-pub use landed_cost_adjustment_line_repository::{
-    LandedCostAdjustmentLineRepository,
-    LandedCostAdjustmentLinePaginationParams,
-    LandedCostAdjustmentLinePaginatedResult,
-    LandedCostAdjustmentLineFilter,
-};
-

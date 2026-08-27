@@ -50,12 +50,13 @@ pub struct PackageFilter {
     pub company_id: Option<Uuid>,
     pub parent_package_id: Option<Uuid>,
     pub parent_path: Option<String>,
+    pub package_type_id: Option<Uuid>,
 }
 
 impl PackageFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.name.is_some() || self.complete_name.is_some() || self.location_id.is_some() || self.company_id.is_some() || self.parent_package_id.is_some() || self.parent_path.is_some()
+        self.name.is_some() || self.complete_name.is_some() || self.location_id.is_some() || self.company_id.is_some() || self.parent_package_id.is_some() || self.parent_path.is_some() || self.package_type_id.is_some()
     }
 }
 

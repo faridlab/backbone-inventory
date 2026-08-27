@@ -5,8 +5,13 @@
 //! This module provides DTOs for the presentation layer,
 //! with validation and OpenAPI schema support.
 
+pub mod picking_batch_dto;
 pub mod delivery_note_dto;
 pub mod delivery_note_item_dto;
+pub mod inventory_company_setting_dto;
+pub mod landed_cost_dto;
+pub mod landed_cost_line_dto;
+pub mod landed_cost_adjustment_line_dto;
 pub mod location_dto;
 pub mod stock_move_dto;
 pub mod stock_move_line_dto;
@@ -18,22 +23,32 @@ pub mod reordering_rule_dto;
 pub mod purchase_receipt_dto;
 pub mod purchase_receipt_item_dto;
 pub mod quant_dto;
+pub mod scrap_dto;
+pub mod scrap_reason_tag_dto;
 pub mod stock_entry_dto;
 pub mod stock_entry_item_dto;
 pub mod stock_ledger_entry_dto;
 pub mod bin_dto;
 pub mod stock_reconciliation_dto;
 pub mod stock_reconciliation_item_dto;
+pub mod package_type_dto;
+pub mod storage_category_dto;
+pub mod storage_category_capacity_dto;
+pub mod putaway_rule_dto;
 pub mod lot_dto;
 pub mod package_dto;
 pub mod warehouse_dto;
 pub mod stock_item_dto;
-pub mod inventory_company_setting_dto;
-pub mod landed_cost_dto;
-pub mod landed_cost_line_dto;
-pub mod landed_cost_adjustment_line_dto;
 
 // Re-exports
+pub use picking_batch_dto::{
+    CreatePickingBatchDto,
+    UpdatePickingBatchDto,
+    PatchPickingBatchDto,
+    PickingBatchResponseDto,
+    PickingBatchListResponseDto,
+    PickingBatchSummaryDto,
+};
 pub use delivery_note_dto::{
     CreateDeliveryNoteDto,
     UpdateDeliveryNoteDto,
@@ -49,6 +64,38 @@ pub use delivery_note_item_dto::{
     DeliveryNoteItemResponseDto,
     DeliveryNoteItemListResponseDto,
     DeliveryNoteItemSummaryDto,
+};
+pub use inventory_company_setting_dto::{
+    CreateInventoryCompanySettingDto,
+    UpdateInventoryCompanySettingDto,
+    PatchInventoryCompanySettingDto,
+    InventoryCompanySettingResponseDto,
+    InventoryCompanySettingListResponseDto,
+    InventoryCompanySettingSummaryDto,
+};
+pub use landed_cost_dto::{
+    CreateLandedCostDto,
+    UpdateLandedCostDto,
+    PatchLandedCostDto,
+    LandedCostResponseDto,
+    LandedCostListResponseDto,
+    LandedCostSummaryDto,
+};
+pub use landed_cost_line_dto::{
+    CreateLandedCostLineDto,
+    UpdateLandedCostLineDto,
+    PatchLandedCostLineDto,
+    LandedCostLineResponseDto,
+    LandedCostLineListResponseDto,
+    LandedCostLineSummaryDto,
+};
+pub use landed_cost_adjustment_line_dto::{
+    CreateLandedCostAdjustmentLineDto,
+    UpdateLandedCostAdjustmentLineDto,
+    PatchLandedCostAdjustmentLineDto,
+    LandedCostAdjustmentLineResponseDto,
+    LandedCostAdjustmentLineListResponseDto,
+    LandedCostAdjustmentLineSummaryDto,
 };
 pub use location_dto::{
     CreateLocationDto,
@@ -138,6 +185,22 @@ pub use quant_dto::{
     QuantListResponseDto,
     QuantSummaryDto,
 };
+pub use scrap_dto::{
+    CreateScrapDto,
+    UpdateScrapDto,
+    PatchScrapDto,
+    ScrapResponseDto,
+    ScrapListResponseDto,
+    ScrapSummaryDto,
+};
+pub use scrap_reason_tag_dto::{
+    CreateScrapReasonTagDto,
+    UpdateScrapReasonTagDto,
+    PatchScrapReasonTagDto,
+    ScrapReasonTagResponseDto,
+    ScrapReasonTagListResponseDto,
+    ScrapReasonTagSummaryDto,
+};
 pub use stock_entry_dto::{
     CreateStockEntryDto,
     UpdateStockEntryDto,
@@ -186,6 +249,38 @@ pub use stock_reconciliation_item_dto::{
     StockReconciliationItemListResponseDto,
     StockReconciliationItemSummaryDto,
 };
+pub use package_type_dto::{
+    CreatePackageTypeDto,
+    UpdatePackageTypeDto,
+    PatchPackageTypeDto,
+    PackageTypeResponseDto,
+    PackageTypeListResponseDto,
+    PackageTypeSummaryDto,
+};
+pub use storage_category_dto::{
+    CreateStorageCategoryDto,
+    UpdateStorageCategoryDto,
+    PatchStorageCategoryDto,
+    StorageCategoryResponseDto,
+    StorageCategoryListResponseDto,
+    StorageCategorySummaryDto,
+};
+pub use storage_category_capacity_dto::{
+    CreateStorageCategoryCapacityDto,
+    UpdateStorageCategoryCapacityDto,
+    PatchStorageCategoryCapacityDto,
+    StorageCategoryCapacityResponseDto,
+    StorageCategoryCapacityListResponseDto,
+    StorageCategoryCapacitySummaryDto,
+};
+pub use putaway_rule_dto::{
+    CreatePutawayRuleDto,
+    UpdatePutawayRuleDto,
+    PatchPutawayRuleDto,
+    PutawayRuleResponseDto,
+    PutawayRuleListResponseDto,
+    PutawayRuleSummaryDto,
+};
 pub use lot_dto::{
     CreateLotDto,
     UpdateLotDto,
@@ -218,39 +313,6 @@ pub use stock_item_dto::{
     StockItemListResponseDto,
     StockItemSummaryDto,
 };
-pub use inventory_company_setting_dto::{
-    CreateInventoryCompanySettingDto,
-    UpdateInventoryCompanySettingDto,
-    PatchInventoryCompanySettingDto,
-    InventoryCompanySettingResponseDto,
-    InventoryCompanySettingListResponseDto,
-    InventoryCompanySettingSummaryDto,
-};
-pub use landed_cost_dto::{
-    CreateLandedCostDto,
-    UpdateLandedCostDto,
-    PatchLandedCostDto,
-    LandedCostResponseDto,
-    LandedCostListResponseDto,
-    LandedCostSummaryDto,
-};
-pub use landed_cost_line_dto::{
-    CreateLandedCostLineDto,
-    UpdateLandedCostLineDto,
-    PatchLandedCostLineDto,
-    LandedCostLineResponseDto,
-    LandedCostLineListResponseDto,
-    LandedCostLineSummaryDto,
-};
-pub use landed_cost_adjustment_line_dto::{
-    CreateLandedCostAdjustmentLineDto,
-    UpdateLandedCostAdjustmentLineDto,
-    PatchLandedCostAdjustmentLineDto,
-    LandedCostAdjustmentLineResponseDto,
-    LandedCostAdjustmentLineListResponseDto,
-    LandedCostAdjustmentLineSummaryDto,
-};
-
 
 // Common pagination types
 use serde::Serialize;

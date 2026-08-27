@@ -36,7 +36,7 @@ impl Seeder for SeedPurchaseReceiptItemSeeder {
     }
 
     fn order(&self) -> i32 {
-        12
+        17
     }
 
     async fn should_run(&self, pool: &PgPool) -> Result<bool> {

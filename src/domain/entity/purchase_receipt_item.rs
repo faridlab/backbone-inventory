@@ -55,6 +55,7 @@ pub struct PurchaseReceiptItem {
     pub quantity: Decimal,
     pub rate: Decimal,
     pub amount: Decimal,
+    pub is_landed_costs_line: bool,
     #[serde(default)]
     #[sqlx(json)]
     pub metadata: AuditMetadata,
@@ -67,7 +68,7 @@ impl PurchaseReceiptItem {
     }
 
     /// Create a new PurchaseReceiptItem with required fields
-    pub fn new(receipt_id: Uuid, company_id: Uuid, item_id: Uuid, quantity: Decimal, rate: Decimal, amount: Decimal) -> Self {
+    pub fn new(receipt_id: Uuid, company_id: Uuid, item_id: Uuid, quantity: Decimal, rate: Decimal, amount: Decimal, is_landed_costs_line: bool) -> Self {
         Self {
             id: Uuid::new_v4(),
             receipt_id,
@@ -76,6 +77,7 @@ impl PurchaseReceiptItem {
             quantity,
             rate,
             amount,
+            is_landed_costs_line,
             metadata: AuditMetadata::default(),
         }
     }
@@ -156,6 +158,9 @@ impl PurchaseReceiptItem {
                 }
                 "amount" => {
                     if let Ok(v) = serde_json::from_value(value) { self.amount = v; }
+                }
+                "is_landed_costs_line" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.is_landed_costs_line = v; }
                 }
                 _ => {} // ignore unknown fields
             }
@@ -239,6 +244,7 @@ pub struct PurchaseReceiptItemBuilder {
     quantity: Option<Decimal>,
     rate: Option<Decimal>,
     amount: Option<Decimal>,
+    is_landed_costs_line: Option<bool>,
 }
 
 impl PurchaseReceiptItemBuilder {
@@ -278,6 +284,12 @@ impl PurchaseReceiptItemBuilder {
         self
     }
 
+    /// Set the is_landed_costs_line field (default: `false`)
+    pub fn is_landed_costs_line(mut self, value: bool) -> Self {
+        self.is_landed_costs_line = Some(value);
+        self
+    }
+
     /// Build the PurchaseReceiptItem entity
     ///
     /// Returns Err if any required field without a default is missing.
@@ -296,6 +308,7 @@ impl PurchaseReceiptItemBuilder {
             quantity,
             rate,
             amount: self.amount.unwrap_or(Decimal::from(0)),
+            is_landed_costs_line: self.is_landed_costs_line.unwrap_or(false),
             metadata: AuditMetadata::default(),
         })
     }

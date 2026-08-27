@@ -8,7 +8,7 @@
 //! ## Usage from other modules
 //!
 //! ```text
-//! use inventory::exports::{DeliveryNoteDto};
+//! use inventory::exports::{PickingBatchDto};
 //! ```
 
 mod types;
@@ -27,12 +27,27 @@ pub use events::*;
 /// Summary of what this module exports
 ///
 /// ## Public Types
+/// - `PickingBatchDto` - Data transfer object for PickingBatch
+/// - `PickingBatchSummary` - Summary view of PickingBatch
+/// - `PickingBatchId` - Type-safe ID wrapper
 /// - `DeliveryNoteDto` - Data transfer object for DeliveryNote
 /// - `DeliveryNoteSummary` - Summary view of DeliveryNote
 /// - `DeliveryNoteId` - Type-safe ID wrapper
 /// - `DeliveryNoteItemDto` - Data transfer object for DeliveryNoteItem
 /// - `DeliveryNoteItemSummary` - Summary view of DeliveryNoteItem
 /// - `DeliveryNoteItemId` - Type-safe ID wrapper
+/// - `InventoryCompanySettingDto` - Data transfer object for InventoryCompanySetting
+/// - `InventoryCompanySettingSummary` - Summary view of InventoryCompanySetting
+/// - `InventoryCompanySettingId` - Type-safe ID wrapper
+/// - `LandedCostDto` - Data transfer object for LandedCost
+/// - `LandedCostSummary` - Summary view of LandedCost
+/// - `LandedCostId` - Type-safe ID wrapper
+/// - `LandedCostLineDto` - Data transfer object for LandedCostLine
+/// - `LandedCostLineSummary` - Summary view of LandedCostLine
+/// - `LandedCostLineId` - Type-safe ID wrapper
+/// - `LandedCostAdjustmentLineDto` - Data transfer object for LandedCostAdjustmentLine
+/// - `LandedCostAdjustmentLineSummary` - Summary view of LandedCostAdjustmentLine
+/// - `LandedCostAdjustmentLineId` - Type-safe ID wrapper
 /// - `LocationDto` - Data transfer object for Location
 /// - `LocationSummary` - Summary view of Location
 /// - `LocationId` - Type-safe ID wrapper
@@ -66,6 +81,12 @@ pub use events::*;
 /// - `QuantDto` - Data transfer object for Quant
 /// - `QuantSummary` - Summary view of Quant
 /// - `QuantId` - Type-safe ID wrapper
+/// - `ScrapDto` - Data transfer object for Scrap
+/// - `ScrapSummary` - Summary view of Scrap
+/// - `ScrapId` - Type-safe ID wrapper
+/// - `ScrapReasonTagDto` - Data transfer object for ScrapReasonTag
+/// - `ScrapReasonTagSummary` - Summary view of ScrapReasonTag
+/// - `ScrapReasonTagId` - Type-safe ID wrapper
 /// - `StockEntryDto` - Data transfer object for StockEntry
 /// - `StockEntrySummary` - Summary view of StockEntry
 /// - `StockEntryId` - Type-safe ID wrapper
@@ -84,6 +105,18 @@ pub use events::*;
 /// - `StockReconciliationItemDto` - Data transfer object for StockReconciliationItem
 /// - `StockReconciliationItemSummary` - Summary view of StockReconciliationItem
 /// - `StockReconciliationItemId` - Type-safe ID wrapper
+/// - `PackageTypeDto` - Data transfer object for PackageType
+/// - `PackageTypeSummary` - Summary view of PackageType
+/// - `PackageTypeId` - Type-safe ID wrapper
+/// - `StorageCategoryDto` - Data transfer object for StorageCategory
+/// - `StorageCategorySummary` - Summary view of StorageCategory
+/// - `StorageCategoryId` - Type-safe ID wrapper
+/// - `StorageCategoryCapacityDto` - Data transfer object for StorageCategoryCapacity
+/// - `StorageCategoryCapacitySummary` - Summary view of StorageCategoryCapacity
+/// - `StorageCategoryCapacityId` - Type-safe ID wrapper
+/// - `PutawayRuleDto` - Data transfer object for PutawayRule
+/// - `PutawayRuleSummary` - Summary view of PutawayRule
+/// - `PutawayRuleId` - Type-safe ID wrapper
 /// - `LotDto` - Data transfer object for Lot
 /// - `LotSummary` - Summary view of Lot
 /// - `LotId` - Type-safe ID wrapper
@@ -98,12 +131,27 @@ pub use events::*;
 /// - `StockItemId` - Type-safe ID wrapper
 ///
 /// ## Public Events
+/// - `PickingBatchCreatedEvent` - Published when PickingBatch is created
+/// - `PickingBatchUpdatedEvent` - Published when PickingBatch is updated
+/// - `PickingBatchDeletedEvent` - Published when PickingBatch is deleted
 /// - `DeliveryNoteCreatedEvent` - Published when DeliveryNote is created
 /// - `DeliveryNoteUpdatedEvent` - Published when DeliveryNote is updated
 /// - `DeliveryNoteDeletedEvent` - Published when DeliveryNote is deleted
 /// - `DeliveryNoteItemCreatedEvent` - Published when DeliveryNoteItem is created
 /// - `DeliveryNoteItemUpdatedEvent` - Published when DeliveryNoteItem is updated
 /// - `DeliveryNoteItemDeletedEvent` - Published when DeliveryNoteItem is deleted
+/// - `InventoryCompanySettingCreatedEvent` - Published when InventoryCompanySetting is created
+/// - `InventoryCompanySettingUpdatedEvent` - Published when InventoryCompanySetting is updated
+/// - `InventoryCompanySettingDeletedEvent` - Published when InventoryCompanySetting is deleted
+/// - `LandedCostCreatedEvent` - Published when LandedCost is created
+/// - `LandedCostUpdatedEvent` - Published when LandedCost is updated
+/// - `LandedCostDeletedEvent` - Published when LandedCost is deleted
+/// - `LandedCostLineCreatedEvent` - Published when LandedCostLine is created
+/// - `LandedCostLineUpdatedEvent` - Published when LandedCostLine is updated
+/// - `LandedCostLineDeletedEvent` - Published when LandedCostLine is deleted
+/// - `LandedCostAdjustmentLineCreatedEvent` - Published when LandedCostAdjustmentLine is created
+/// - `LandedCostAdjustmentLineUpdatedEvent` - Published when LandedCostAdjustmentLine is updated
+/// - `LandedCostAdjustmentLineDeletedEvent` - Published when LandedCostAdjustmentLine is deleted
 /// - `LocationCreatedEvent` - Published when Location is created
 /// - `LocationUpdatedEvent` - Published when Location is updated
 /// - `LocationDeletedEvent` - Published when Location is deleted
@@ -137,6 +185,12 @@ pub use events::*;
 /// - `QuantCreatedEvent` - Published when Quant is created
 /// - `QuantUpdatedEvent` - Published when Quant is updated
 /// - `QuantDeletedEvent` - Published when Quant is deleted
+/// - `ScrapCreatedEvent` - Published when Scrap is created
+/// - `ScrapUpdatedEvent` - Published when Scrap is updated
+/// - `ScrapDeletedEvent` - Published when Scrap is deleted
+/// - `ScrapReasonTagCreatedEvent` - Published when ScrapReasonTag is created
+/// - `ScrapReasonTagUpdatedEvent` - Published when ScrapReasonTag is updated
+/// - `ScrapReasonTagDeletedEvent` - Published when ScrapReasonTag is deleted
 /// - `StockEntryCreatedEvent` - Published when StockEntry is created
 /// - `StockEntryUpdatedEvent` - Published when StockEntry is updated
 /// - `StockEntryDeletedEvent` - Published when StockEntry is deleted
@@ -155,6 +209,18 @@ pub use events::*;
 /// - `StockReconciliationItemCreatedEvent` - Published when StockReconciliationItem is created
 /// - `StockReconciliationItemUpdatedEvent` - Published when StockReconciliationItem is updated
 /// - `StockReconciliationItemDeletedEvent` - Published when StockReconciliationItem is deleted
+/// - `PackageTypeCreatedEvent` - Published when PackageType is created
+/// - `PackageTypeUpdatedEvent` - Published when PackageType is updated
+/// - `PackageTypeDeletedEvent` - Published when PackageType is deleted
+/// - `StorageCategoryCreatedEvent` - Published when StorageCategory is created
+/// - `StorageCategoryUpdatedEvent` - Published when StorageCategory is updated
+/// - `StorageCategoryDeletedEvent` - Published when StorageCategory is deleted
+/// - `StorageCategoryCapacityCreatedEvent` - Published when StorageCategoryCapacity is created
+/// - `StorageCategoryCapacityUpdatedEvent` - Published when StorageCategoryCapacity is updated
+/// - `StorageCategoryCapacityDeletedEvent` - Published when StorageCategoryCapacity is deleted
+/// - `PutawayRuleCreatedEvent` - Published when PutawayRule is created
+/// - `PutawayRuleUpdatedEvent` - Published when PutawayRule is updated
+/// - `PutawayRuleDeletedEvent` - Published when PutawayRule is deleted
 /// - `LotCreatedEvent` - Published when Lot is created
 /// - `LotUpdatedEvent` - Published when Lot is updated
 /// - `LotDeletedEvent` - Published when Lot is deleted

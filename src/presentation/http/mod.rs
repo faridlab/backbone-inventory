@@ -5,8 +5,13 @@
 //! These handlers use Axum and backbone-core's BackboneCrudHandler
 //! to provide all 12 standard Backbone CRUD endpoints.
 
+pub mod picking_batch_handler;
 pub mod delivery_note_handler;
 pub mod delivery_note_item_handler;
+pub mod inventory_company_setting_handler;
+pub mod landed_cost_handler;
+pub mod landed_cost_line_handler;
+pub mod landed_cost_adjustment_line_handler;
 pub mod location_handler;
 pub mod stock_move_handler;
 pub mod stock_move_line_handler;
@@ -18,28 +23,35 @@ pub mod reordering_rule_handler;
 pub mod purchase_receipt_handler;
 pub mod purchase_receipt_item_handler;
 pub mod quant_handler;
+pub mod scrap_handler;
+pub mod scrap_reason_tag_handler;
 pub mod stock_entry_handler;
 pub mod stock_entry_item_handler;
 pub mod stock_ledger_entry_handler;
 pub mod bin_handler;
 pub mod stock_reconciliation_handler;
 pub mod stock_reconciliation_item_handler;
+pub mod package_type_handler;
+pub mod storage_category_handler;
+pub mod storage_category_capacity_handler;
+pub mod putaway_rule_handler;
 pub mod lot_handler;
 pub mod package_handler;
 pub mod warehouse_handler;
 pub mod stock_item_handler;
-pub mod inventory_company_setting_handler;
-pub mod landed_cost_handler;
-pub mod landed_cost_line_handler;
-pub mod landed_cost_adjustment_line_handler;
 
 // <<< CUSTOM
 pub mod guarded_routes;
 // END CUSTOM
 
 // Re-exports
+pub use picking_batch_handler::{create_picking_batch_routes, create_picking_batch_read_routes, create_picking_batch_write_routes};
 pub use delivery_note_handler::{create_delivery_note_routes, create_delivery_note_read_routes, create_delivery_note_write_routes};
 pub use delivery_note_item_handler::{create_delivery_note_item_routes, create_delivery_note_item_read_routes, create_delivery_note_item_write_routes};
+pub use inventory_company_setting_handler::{create_inventory_company_setting_routes, create_inventory_company_setting_read_routes, create_inventory_company_setting_write_routes};
+pub use landed_cost_handler::{create_landed_cost_routes, create_landed_cost_read_routes, create_landed_cost_write_routes};
+pub use landed_cost_line_handler::{create_landed_cost_line_routes, create_landed_cost_line_read_routes, create_landed_cost_line_write_routes};
+pub use landed_cost_adjustment_line_handler::{create_landed_cost_adjustment_line_routes, create_landed_cost_adjustment_line_read_routes, create_landed_cost_adjustment_line_write_routes};
 pub use location_handler::{create_location_routes, create_location_read_routes, create_location_write_routes};
 pub use stock_move_handler::{create_stock_move_routes, create_stock_move_read_routes, create_stock_move_write_routes};
 pub use stock_move_line_handler::{create_stock_move_line_routes, create_stock_move_line_read_routes, create_stock_move_line_write_routes};
@@ -51,20 +63,22 @@ pub use reordering_rule_handler::{create_reordering_rule_routes, create_reorderi
 pub use purchase_receipt_handler::{create_purchase_receipt_routes, create_purchase_receipt_read_routes, create_purchase_receipt_write_routes};
 pub use purchase_receipt_item_handler::{create_purchase_receipt_item_routes, create_purchase_receipt_item_read_routes, create_purchase_receipt_item_write_routes};
 pub use quant_handler::{create_quant_routes, create_quant_read_routes, create_quant_write_routes};
+pub use scrap_handler::{create_scrap_routes, create_scrap_read_routes, create_scrap_write_routes};
+pub use scrap_reason_tag_handler::{create_scrap_reason_tag_routes, create_scrap_reason_tag_read_routes, create_scrap_reason_tag_write_routes};
 pub use stock_entry_handler::{create_stock_entry_routes, create_stock_entry_read_routes, create_stock_entry_write_routes};
 pub use stock_entry_item_handler::{create_stock_entry_item_routes, create_stock_entry_item_read_routes, create_stock_entry_item_write_routes};
 pub use stock_ledger_entry_handler::{create_stock_ledger_entry_routes, create_stock_ledger_entry_read_routes, create_stock_ledger_entry_write_routes};
 pub use bin_handler::{create_bin_routes, create_bin_read_routes, create_bin_write_routes};
 pub use stock_reconciliation_handler::{create_stock_reconciliation_routes, create_stock_reconciliation_read_routes, create_stock_reconciliation_write_routes};
 pub use stock_reconciliation_item_handler::{create_stock_reconciliation_item_routes, create_stock_reconciliation_item_read_routes, create_stock_reconciliation_item_write_routes};
+pub use package_type_handler::{create_package_type_routes, create_package_type_read_routes, create_package_type_write_routes};
+pub use storage_category_handler::{create_storage_category_routes, create_storage_category_read_routes, create_storage_category_write_routes};
+pub use storage_category_capacity_handler::{create_storage_category_capacity_routes, create_storage_category_capacity_read_routes, create_storage_category_capacity_write_routes};
+pub use putaway_rule_handler::{create_putaway_rule_routes, create_putaway_rule_read_routes, create_putaway_rule_write_routes};
 pub use lot_handler::{create_lot_routes, create_lot_read_routes, create_lot_write_routes};
 pub use package_handler::{create_package_routes, create_package_read_routes, create_package_write_routes};
 pub use warehouse_handler::{create_warehouse_routes, create_warehouse_read_routes, create_warehouse_write_routes};
 pub use stock_item_handler::{create_stock_item_routes, create_stock_item_read_routes, create_stock_item_write_routes};
-pub use inventory_company_setting_handler::{create_inventory_company_setting_routes, create_inventory_company_setting_read_routes, create_inventory_company_setting_write_routes};
-pub use landed_cost_handler::{create_landed_cost_routes, create_landed_cost_read_routes, create_landed_cost_write_routes};
-pub use landed_cost_line_handler::{create_landed_cost_line_routes, create_landed_cost_line_read_routes, create_landed_cost_line_write_routes};
-pub use landed_cost_adjustment_line_handler::{create_landed_cost_adjustment_line_routes, create_landed_cost_adjustment_line_read_routes, create_landed_cost_adjustment_line_write_routes};
 // <<< CUSTOM
 pub use guarded_routes::create_guarded_inventory_routes;
 // END CUSTOM

@@ -181,6 +181,83 @@ entities:
     pagination:
       default_limit: 20
       max_limit: 100
+  picking_batch:
+    collection: picking_batches
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  inventory_company_setting:
+    collection: inventory_company_settings
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  landed_cost:
+    collection: landed_costs
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  landed_cost_line:
+    collection: landed_cost_lines
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  landed_cost_adjustment_line:
+    collection: landed_cost_adjustment_lines
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  scrap:
+    collection: scraps
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  scrap_reason_tag:
+    collection: scrap_reason_tags
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  package_type:
+    collection: package_types
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  storage_category:
+    collection: storage_categories
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  storage_category_capacity:
+    collection: storage_category_capacities
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
+  putaway_rule:
+    collection: putaway_rules
+    enabled: true
+    cache_ttl: 300
+    pagination:
+      default_limit: 20
+      max_limit: 100
 tracing:
   enabled: true
   exporter: otlp

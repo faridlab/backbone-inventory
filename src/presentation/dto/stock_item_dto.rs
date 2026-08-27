@@ -54,6 +54,8 @@ pub struct CreateStockItemDto {
     pub valuation_method: ValuationMethod,
     #[serde(alias = "reorder_level")]
     pub reorder_level: Decimal,
+    #[serde(alias = "weight_per_unit")]
+    pub weight_per_unit: Decimal,
 }
 
 // =============================================================================
@@ -89,6 +91,8 @@ pub struct UpdateStockItemDto {
     pub valuation_method: ValuationMethod,
     #[serde(alias = "reorder_level")]
     pub reorder_level: Decimal,
+    #[serde(alias = "weight_per_unit")]
+    pub weight_per_unit: Decimal,
 }
 
 // =============================================================================
@@ -124,12 +128,14 @@ pub struct PatchStockItemDto {
     pub valuation_method: Option<ValuationMethod>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "reorder_level")]
     pub reorder_level: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "weight_per_unit")]
+    pub weight_per_unit: Option<Decimal>,
 }
 
 impl PatchStockItemDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.item_id.is_some() || self.company_id.is_some() || self.stock_uom.is_some() || self.is_stock_item.is_some() || self.has_batch.is_some() || self.valuation_method.is_some() || self.reorder_level.is_some()
+        self.item_id.is_some() || self.company_id.is_some() || self.stock_uom.is_some() || self.is_stock_item.is_some() || self.has_batch.is_some() || self.valuation_method.is_some() || self.reorder_level.is_some() || self.weight_per_unit.is_some()
     }
 }
 
@@ -159,6 +165,7 @@ pub struct StockItemResponseDto {
     pub has_batch: bool,
     pub valuation_method: ValuationMethod,
     pub reorder_level: Decimal,
+    pub weight_per_unit: Decimal,
     pub metadata: AuditMetadata,
 }
 
@@ -237,6 +244,7 @@ impl From<StockItem> for StockItemResponseDto {
             has_batch: entity.has_batch,
             valuation_method: entity.valuation_method,
             reorder_level: entity.reorder_level,
+            weight_per_unit: entity.weight_per_unit,
             metadata: entity.metadata,
         }
     }
@@ -266,6 +274,7 @@ impl From<CreateStockItemDto> for StockItem {
             has_batch: dto.has_batch,
             valuation_method: dto.valuation_method,
             reorder_level: dto.reorder_level,
+            weight_per_unit: dto.weight_per_unit,
             metadata: AuditMetadata::default(),
         }
     }
@@ -282,6 +291,7 @@ impl From<&StockItem> for StockItemResponseDto {
             has_batch: entity.has_batch.clone(),
             valuation_method: entity.valuation_method.clone(),
             reorder_level: entity.reorder_level.clone(),
+            weight_per_unit: entity.weight_per_unit.clone(),
             metadata: entity.metadata.clone(),
         }
     }
@@ -302,6 +312,7 @@ impl backbone_core::ApplyUpdateDto<UpdateStockItemDto> for StockItem {
         self.has_batch = dto.has_batch;
         self.valuation_method = dto.valuation_method;
         self.reorder_level = dto.reorder_level;
+        self.weight_per_unit = dto.weight_per_unit;
         Ok(self)
     }
 }

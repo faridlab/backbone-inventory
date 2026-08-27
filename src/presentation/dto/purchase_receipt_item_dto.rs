@@ -45,6 +45,9 @@ pub struct CreatePurchaseReceiptItemDto {
     pub quantity: Decimal,
     pub rate: Decimal,
     pub amount: Decimal,
+    #[cfg_attr(feature = "openapi", schema(example = true))]
+    #[serde(alias = "is_landed_costs_line")]
+    pub is_landed_costs_line: bool,
 }
 
 // =============================================================================
@@ -72,6 +75,9 @@ pub struct UpdatePurchaseReceiptItemDto {
     pub quantity: Decimal,
     pub rate: Decimal,
     pub amount: Decimal,
+    #[cfg_attr(feature = "openapi", schema(example = true))]
+    #[serde(alias = "is_landed_costs_line")]
+    pub is_landed_costs_line: bool,
 }
 
 // =============================================================================
@@ -102,12 +108,15 @@ pub struct PatchPurchaseReceiptItemDto {
     pub rate: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub amount: Option<Decimal>,
+    #[cfg_attr(feature = "openapi", schema(example = true))]
+    #[serde(skip_serializing_if = "Option::is_none", alias = "is_landed_costs_line")]
+    pub is_landed_costs_line: Option<bool>,
 }
 
 impl PatchPurchaseReceiptItemDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.receipt_id.is_some() || self.company_id.is_some() || self.item_id.is_some() || self.quantity.is_some() || self.rate.is_some() || self.amount.is_some()
+        self.receipt_id.is_some() || self.company_id.is_some() || self.item_id.is_some() || self.quantity.is_some() || self.rate.is_some() || self.amount.is_some() || self.is_landed_costs_line.is_some()
     }
 }
 
@@ -134,6 +143,8 @@ pub struct PurchaseReceiptItemResponseDto {
     pub quantity: Decimal,
     pub rate: Decimal,
     pub amount: Decimal,
+    #[cfg_attr(feature = "openapi", schema(example = true))]
+    pub is_landed_costs_line: bool,
     pub metadata: AuditMetadata,
 }
 
@@ -211,6 +222,7 @@ impl From<PurchaseReceiptItem> for PurchaseReceiptItemResponseDto {
             quantity: entity.quantity,
             rate: entity.rate,
             amount: entity.amount,
+            is_landed_costs_line: entity.is_landed_costs_line,
             metadata: entity.metadata,
         }
     }
@@ -239,6 +251,7 @@ impl From<CreatePurchaseReceiptItemDto> for PurchaseReceiptItem {
             quantity: dto.quantity,
             rate: dto.rate,
             amount: dto.amount,
+            is_landed_costs_line: dto.is_landed_costs_line,
             metadata: AuditMetadata::default(),
         }
     }
@@ -254,6 +267,7 @@ impl From<&PurchaseReceiptItem> for PurchaseReceiptItemResponseDto {
             quantity: entity.quantity.clone(),
             rate: entity.rate.clone(),
             amount: entity.amount.clone(),
+            is_landed_costs_line: entity.is_landed_costs_line.clone(),
             metadata: entity.metadata.clone(),
         }
     }
@@ -273,6 +287,7 @@ impl backbone_core::ApplyUpdateDto<UpdatePurchaseReceiptItemDto> for PurchaseRec
         self.quantity = dto.quantity;
         self.rate = dto.rate;
         self.amount = dto.amount;
+        self.is_landed_costs_line = dto.is_landed_costs_line;
         Ok(self)
     }
 }

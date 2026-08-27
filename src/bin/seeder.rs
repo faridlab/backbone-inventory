@@ -12,8 +12,13 @@ use sqlx::postgres::PgPoolOptions;
 use std::env;
 
 // Import seeders
+use backbone_inventory::seeders::SeedPickingBatchSeeder;
 use backbone_inventory::seeders::SeedDeliveryNoteSeeder;
 use backbone_inventory::seeders::SeedDeliveryNoteItemSeeder;
+use backbone_inventory::seeders::SeedInventoryCompanySettingSeeder;
+use backbone_inventory::seeders::SeedLandedCostSeeder;
+use backbone_inventory::seeders::SeedLandedCostLineSeeder;
+use backbone_inventory::seeders::SeedLandedCostAdjustmentLineSeeder;
 use backbone_inventory::seeders::SeedLocationSeeder;
 use backbone_inventory::seeders::SeedStockMoveSeeder;
 use backbone_inventory::seeders::SeedStockMoveLineSeeder;
@@ -25,12 +30,18 @@ use backbone_inventory::seeders::SeedReorderingRuleSeeder;
 use backbone_inventory::seeders::SeedPurchaseReceiptSeeder;
 use backbone_inventory::seeders::SeedPurchaseReceiptItemSeeder;
 use backbone_inventory::seeders::SeedQuantSeeder;
+use backbone_inventory::seeders::SeedScrapSeeder;
+use backbone_inventory::seeders::SeedScrapReasonTagSeeder;
 use backbone_inventory::seeders::SeedStockEntrySeeder;
 use backbone_inventory::seeders::SeedStockEntryItemSeeder;
 use backbone_inventory::seeders::SeedStockLedgerEntrySeeder;
 use backbone_inventory::seeders::SeedBinSeeder;
 use backbone_inventory::seeders::SeedStockReconciliationSeeder;
 use backbone_inventory::seeders::SeedStockReconciliationItemSeeder;
+use backbone_inventory::seeders::SeedPackageTypeSeeder;
+use backbone_inventory::seeders::SeedStorageCategorySeeder;
+use backbone_inventory::seeders::SeedStorageCategoryCapacitySeeder;
+use backbone_inventory::seeders::SeedPutawayRuleSeeder;
 use backbone_inventory::seeders::SeedLotSeeder;
 use backbone_inventory::seeders::SeedPackageSeeder;
 use backbone_inventory::seeders::SeedWarehouseSeeder;
@@ -63,8 +74,13 @@ async fn main() -> Result<()> {
 
     // Register seeders in order
     let mut seeders: Vec<Box<dyn Seeder + Send + Sync>> = Vec::new();
+    seeders.push(Box::new(SeedPickingBatchSeeder::new()));
     seeders.push(Box::new(SeedDeliveryNoteSeeder::new()));
     seeders.push(Box::new(SeedDeliveryNoteItemSeeder::new()));
+    seeders.push(Box::new(SeedInventoryCompanySettingSeeder::new()));
+    seeders.push(Box::new(SeedLandedCostSeeder::new()));
+    seeders.push(Box::new(SeedLandedCostLineSeeder::new()));
+    seeders.push(Box::new(SeedLandedCostAdjustmentLineSeeder::new()));
     seeders.push(Box::new(SeedLocationSeeder::new()));
     seeders.push(Box::new(SeedStockMoveSeeder::new()));
     seeders.push(Box::new(SeedStockMoveLineSeeder::new()));
@@ -76,12 +92,18 @@ async fn main() -> Result<()> {
     seeders.push(Box::new(SeedPurchaseReceiptSeeder::new()));
     seeders.push(Box::new(SeedPurchaseReceiptItemSeeder::new()));
     seeders.push(Box::new(SeedQuantSeeder::new()));
+    seeders.push(Box::new(SeedScrapSeeder::new()));
+    seeders.push(Box::new(SeedScrapReasonTagSeeder::new()));
     seeders.push(Box::new(SeedStockEntrySeeder::new()));
     seeders.push(Box::new(SeedStockEntryItemSeeder::new()));
     seeders.push(Box::new(SeedStockLedgerEntrySeeder::new()));
     seeders.push(Box::new(SeedBinSeeder::new()));
     seeders.push(Box::new(SeedStockReconciliationSeeder::new()));
     seeders.push(Box::new(SeedStockReconciliationItemSeeder::new()));
+    seeders.push(Box::new(SeedPackageTypeSeeder::new()));
+    seeders.push(Box::new(SeedStorageCategorySeeder::new()));
+    seeders.push(Box::new(SeedStorageCategoryCapacitySeeder::new()));
+    seeders.push(Box::new(SeedPutawayRuleSeeder::new()));
     seeders.push(Box::new(SeedLotSeeder::new()));
     seeders.push(Box::new(SeedPackageSeeder::new()));
     seeders.push(Box::new(SeedWarehouseSeeder::new()));

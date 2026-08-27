@@ -95,7 +95,8 @@ pub struct UpdateQuantDto {
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "owner_id")]
     pub owner_id: Option<Uuid>,
     pub quantity: Decimal,
-    // reserved_quantity is NOT settable through generic CRUD - flows ONLY through the reservation engine
+    #[serde(alias = "reserved_quantity")]
+    pub reserved_quantity: Decimal,
     #[serde(alias = "available_quantity")]
     pub available_quantity: Decimal,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "in_date")]
@@ -144,7 +145,8 @@ pub struct PatchQuantDto {
     pub owner_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quantity: Option<Decimal>,
-    // reserved_quantity is NOT settable through generic CRUD - flows ONLY through the reservation engine
+    #[serde(skip_serializing_if = "Option::is_none", alias = "reserved_quantity")]
+    pub reserved_quantity: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "available_quantity")]
     pub available_quantity: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "in_date")]
@@ -169,7 +171,7 @@ pub struct PatchQuantDto {
 impl PatchQuantDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.item_id.is_some() || self.location_id.is_some() || self.lot_id.is_some() || self.package_id.is_some() || self.owner_id.is_some() || self.quantity.is_some() || self.available_quantity.is_some() || self.in_date.is_some() || self.inventory_quantity.is_some() || self.inventory_diff_quantity.is_some() || self.inventory_quantity_set.is_some() || self.inventory_date.is_some() || self.sn_duplicated.is_some() || self.company_id.is_some()
+        self.item_id.is_some() || self.location_id.is_some() || self.lot_id.is_some() || self.package_id.is_some() || self.owner_id.is_some() || self.quantity.is_some() || self.reserved_quantity.is_some() || self.available_quantity.is_some() || self.in_date.is_some() || self.inventory_quantity.is_some() || self.inventory_diff_quantity.is_some() || self.inventory_quantity_set.is_some() || self.inventory_date.is_some() || self.sn_duplicated.is_some() || self.company_id.is_some()
     }
 }
 
@@ -373,7 +375,7 @@ impl backbone_core::ApplyUpdateDto<UpdateQuantDto> for Quant {
         self.package_id = dto.package_id;
         self.owner_id = dto.owner_id;
         self.quantity = dto.quantity;
-        // reserved_quantity is NOT settable through generic CRUD - flows ONLY through the reservation engine
+        self.reserved_quantity = dto.reserved_quantity;
         self.available_quantity = dto.available_quantity;
         self.in_date = dto.in_date;
         self.inventory_quantity = dto.inventory_quantity;

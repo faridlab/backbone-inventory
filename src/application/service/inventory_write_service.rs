@@ -40,11 +40,12 @@ use uuid::Uuid;
 
 use crate::infrastructure::persistence::{
     BinRepository, DeliveryNoteItemRepository, DeliveryNoteRepository, GlSettlementState, GlVoucher,
-    GlVoucherRepository, PurchaseReceiptItemRepository, PurchaseReceiptRepository,
-    QuantRepository, StockAdjustmentRepository, StockEntryItemRepository, StockEntryRepository,
-    StockItemRepository, StockLedgerEntryRepository, StockMoveLineRepository, StockMoveRepository,
-    StockPickingRepository, StockReconciliationItemRepository, StockReconciliationRepository,
-    ValuationOverlayRepository, WarehouseRepository,
+    GlVoucherRepository, PickingBatchProjectionRepository, PurchaseReceiptItemRepository,
+    ScrapDoorRepository,
+    PurchaseReceiptRepository, QuantRepository, StockAdjustmentRepository, StockEntryItemRepository,
+    StockEntryRepository, StockItemRepository, StockLedgerEntryRepository, StockMoveLineRepository,
+    StockMoveRepository, StockPickingRepository, StockReconciliationItemRepository,
+    StockReconciliationRepository, ValuationOverlayRepository, WarehouseRepository,
 };
 
 use super::inventory_events::{InventoryEventSink, LoggingSink};
@@ -279,6 +280,28 @@ pub enum InventoryError {
     /// arithmetic invariant broke (each cost line's shares, with the last target line eating
     /// the rounding diff, must sum to exactly its amount).
     LandedCostAllocationMismatch { lc_id: Uuid, allocated: Decimal, declared: Decimal },
+    // ---- picking batch (the stock.picking.batch satellite, SB-1) -------------------------
+    /// A picking cannot join a batch whose projection already reached a terminal state
+    /// (`done`/`cancel`) — Odoo's sanitize-instead posture is deliberately NOT ported: a
+    /// terminal batch silently cancelling a live picking it was handed is a data-loss
+    /// shaped surprise, so the membership verb refuses loudly instead (fail-closed).
+    BatchTerminal { batch_id: Uuid, state: String },
+    /// A terminal picking (`done`/`cancel`) cannot join a batch — it has nothing left to
+    /// pick. Removal from a batch is always allowed; joining is draft-to-assigned only.
+    PickingTerminalForBatch { picking_id: Uuid, state: String },
+    /// A picking already belongs to another batch (one batch per picking — the membership
+    /// column is single-valued). Move it explicitly: remove from the old batch, then add.
+    PickingAlreadyBatched { picking_id: Uuid, batch_id: Uuid },
+    /// The picking is not a member of this batch (the removal verb only clears what is
+    /// actually grouped).
+    NotABatchMember { batch_id: Uuid, picking_id: Uuid },
+    // ---- scrap door (spec stock-business-logic.md §8) -----------------------------------
+    /// A scrap record can only be processed from `draft` (a done scrap is terminal — its
+    /// move exists; corrections are reversal moves, never re-processing).
+    ScrapNotDraft { scrap_id: Uuid, state: String },
+    /// The scrap record's scrap location is absent and no inventory-loss location exists
+    /// for the company (explicit destination or a seeded loss location is required).
+    ScrapLocationUnavailable { company_id: Uuid },
     Db(sqlx::Error),
 }
 
@@ -315,6 +338,12 @@ impl InventoryError {
             InventoryError::LandedCostNoLines { .. } => "landed_cost_no_lines".into(),
             InventoryError::LandedCostNoValuationAccount { .. } => "landed_cost_no_valuation_account".into(),
             InventoryError::LandedCostAllocationMismatch { .. } => "landed_cost_allocation_mismatch".into(),
+            InventoryError::BatchTerminal { .. } => "batch_terminal".into(),
+            InventoryError::PickingTerminalForBatch { .. } => "picking_terminal_for_batch".into(),
+            InventoryError::PickingAlreadyBatched { .. } => "picking_already_batched".into(),
+            InventoryError::NotABatchMember { .. } => "not_a_batch_member".into(),
+            InventoryError::ScrapNotDraft { .. } => "scrap_not_draft".into(),
+            InventoryError::ScrapLocationUnavailable { .. } => "scrap_location_unavailable".into(),
             InventoryError::Db(_) => "internal_error".into(),
         }
     }
@@ -398,6 +427,12 @@ pub struct InventoryWriteService {
     // The valuation overlay (per-company posting posture + landed-cost document family).
     // Stateless hand-owned SQL, same construction pattern as the GL voucher repository.
     pub(super) valuation_overlay: Arc<ValuationOverlayRepository>,
+    // The picking-batch satellite's membership surface (state mint, member add/remove,
+    // the SB-1 projection recompute, probes). Stateless hand-owned SQL.
+    pub(super) batches: Arc<PickingBatchProjectionRepository>,
+    // The scrap satellite's door (header mint, probe, terminal done-stamp). Stateless
+    // hand-owned SQL.
+    pub(super) scraps: Arc<ScrapDoorRepository>,
 }
 
 impl InventoryWriteService {
@@ -425,6 +460,8 @@ impl InventoryWriteService {
             pickings: Arc::new(StockPickingRepository::new()),
             adjustments: Arc::new(StockAdjustmentRepository::new()),
             valuation_overlay: Arc::new(ValuationOverlayRepository::new()),
+            batches: Arc::new(PickingBatchProjectionRepository::new()),
+            scraps: Arc::new(ScrapDoorRepository::new()),
             db_pool,
             sink,
         }
@@ -540,17 +577,21 @@ impl InventoryWriteService {
     /// draft), then an assign pass (if confirmed/partial). Returns the post-advance state —
     /// `assigned` when the full demand is covered, less when not. The door decides what a
     /// short advance means (the delivery refuses; the inbound receipt never is).
+    ///
+    /// The caller names its company; every state read and every engine verb below is scoped to
+    /// it (bind before fetch), so the whole advance is fence-correct under armed RLS.
     pub(in crate::application::service) async fn advance_move_to_assigned(
         &self,
+        company_id: Uuid,
         move_id: Uuid,
     ) -> Result<String, InventoryError> {
-        let mut state = self.move_state_of(move_id).await?;
+        let mut state = self.move_state_of(company_id, move_id).await?;
         if state == "draft" {
-            self.action_confirm(move_id).await?;
-            state = self.move_state_of(move_id).await?;
+            self.action_confirm(company_id, move_id).await?;
+            state = self.move_state_of(company_id, move_id).await?;
         }
         if state == "confirmed" || state == "partially_available" {
-            let outcome = self.action_assign(move_id).await?;
+            let outcome = self.action_assign(company_id, move_id).await?;
             state = outcome.state;
         }
         Ok(state)
@@ -558,15 +599,18 @@ impl InventoryWriteService {
 
     /// Read one move's current state under the company fence. The door drives the engine's
     /// verbs; this re-read between verbs is how it follows the state the ENGINE wrote (the
-    /// door never derives or asserts move state itself).
+    /// door never derives or asserts move state itself). The caller names its company: the
+    /// scope is bound BEFORE the read and the fetch is scoped by `(id, company_id)`, so an
+    /// armed fence cannot blind the read and a cross-company id reads as absent.
     pub(in crate::application::service) async fn move_state_of(
         &self,
+        company_id: Uuid,
         move_id: Uuid,
     ) -> Result<String, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        let mv = self.moves.fetch_move(&mut tx, move_id).await?
+        company_scope::bind_company_on(&mut tx, company_id).await?;
+        let mv = self.moves.fetch_move_for_company(&mut tx, company_id, move_id).await?
             .ok_or(InventoryError::NotFound(move_id))?;
-        company_scope::bind_company_on(&mut tx, mv.company_id).await?;
         tx.commit().await?;
         Ok(mv.state)
     }

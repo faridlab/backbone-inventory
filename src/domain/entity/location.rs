@@ -62,6 +62,8 @@ pub struct Location {
     pub cyclic_inventory_frequency: i32,
     pub last_inventory_date: Option<NaiveDate>,
     pub next_inventory_date: Option<NaiveDate>,
+    pub valuation_account_id: Option<Uuid>,
+    pub storage_category_id: Option<Uuid>,
     #[serde(default)]
     #[sqlx(json)]
     pub metadata: AuditMetadata,
@@ -89,6 +91,8 @@ impl Location {
             cyclic_inventory_frequency,
             last_inventory_date: None,
             next_inventory_date: None,
+            valuation_account_id: None,
+            storage_category_id: None,
             metadata: AuditMetadata::default(),
         }
     }
@@ -184,6 +188,18 @@ impl Location {
         self
     }
 
+    /// Set the valuation_account_id field (chainable)
+    pub fn with_valuation_account_id(mut self, value: Uuid) -> Self {
+        self.valuation_account_id = Some(value);
+        self
+    }
+
+    /// Set the storage_category_id field (chainable)
+    pub fn with_storage_category_id(mut self, value: Uuid) -> Self {
+        self.storage_category_id = Some(value);
+        self
+    }
+
     // ==========================================================
     // Partial Update
     // ==========================================================
@@ -227,6 +243,12 @@ impl Location {
                 }
                 "next_inventory_date" => {
                     if let Ok(v) = serde_json::from_value(value) { self.next_inventory_date = v; }
+                }
+                "valuation_account_id" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.valuation_account_id = v; }
+                }
+                "storage_category_id" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.storage_category_id = v; }
                 }
                 _ => {} // ignore unknown fields
             }
@@ -285,6 +307,8 @@ impl backbone_orm::EntityRepoMeta for Location {
         m.insert("location_id".to_string(), "uuid".to_string());
         m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("warehouse_id".to_string(), "uuid".to_string());
+        m.insert("valuation_account_id".to_string(), "uuid".to_string());
+        m.insert("storage_category_id".to_string(), "uuid".to_string());
         m.insert("usage".to_string(), "location_usage".to_string());
         m
     }
@@ -314,6 +338,8 @@ pub struct LocationBuilder {
     cyclic_inventory_frequency: Option<i32>,
     last_inventory_date: Option<NaiveDate>,
     next_inventory_date: Option<NaiveDate>,
+    valuation_account_id: Option<Uuid>,
+    storage_category_id: Option<Uuid>,
 }
 
 impl LocationBuilder {
@@ -389,6 +415,18 @@ impl LocationBuilder {
         self
     }
 
+    /// Set the valuation_account_id field (optional)
+    pub fn valuation_account_id(mut self, value: Uuid) -> Self {
+        self.valuation_account_id = Some(value);
+        self
+    }
+
+    /// Set the storage_category_id field (optional)
+    pub fn storage_category_id(mut self, value: Uuid) -> Self {
+        self.storage_category_id = Some(value);
+        self
+    }
+
     /// Build the Location entity
     ///
     /// Returns Err if any required field without a default is missing.
@@ -411,6 +449,8 @@ impl LocationBuilder {
             cyclic_inventory_frequency: self.cyclic_inventory_frequency.unwrap_or(0),
             last_inventory_date: self.last_inventory_date,
             next_inventory_date: self.next_inventory_date,
+            valuation_account_id: self.valuation_account_id,
+            storage_category_id: self.storage_category_id,
             metadata: AuditMetadata::default(),
         })
     }

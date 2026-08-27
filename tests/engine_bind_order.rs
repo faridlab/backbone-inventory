@@ -1,7 +1,13 @@
-//! Probe test for ENGINE BIND-ORDER rider: proves fetch-then-bind with FAIL-CLOSED company check.
+//! Probe test for the move engine's company-scope binding in `create_move`.
 //!
-//! This test demonstrates that the move engine fetches the entity first, checks company ownership,
-//! and ONLY THEN binds the company scope. A mismatch causes a hard failure — no silent cross-tenant writes.
+//! The engine binds the company scope on its transaction BEFORE reading the move's endpoint
+//! locations: the row-level-security fence hides every row whose company_id differs from
+//! `app.company_id` (shared rows with no company stay visible), so a fetch made before the
+//! bind cannot see the company's own locations and the mint would refuse with
+//! `location_not_found` under an armed fence. The explicit company check in `create_move`
+//! still guards the rows the read returns — a cross-company or shared internal endpoint is
+//! rejected with a hard failure, so no silent cross-tenant write is possible in either
+//! posture (fenced: the row is invisible; unfenced: the check fires).
 
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -41,9 +47,10 @@ async fn ensure_test_role(pool: &PgPool) -> Result<(), sqlx::Error> {
 
 #[sqlx::test]
 async fn fetch_then_bind_fail_closed_on_company_mismatch(pool: PgPool) -> Result<(), sqlx::Error> {
-    // This test verifies the ENGINE BIND-ORDER rider: the move engine now fetches entities first,
-    // checks company ownership, and ONLY THEN binds the company scope. This FAILS CLOSED when
-    // companies don't match, preventing cross-tenant writes.
+    // This test verifies the move engine's company-scope posture: the engine binds the company
+    // scope before its location reads, and the explicit company check still rejects a
+    // cross-company endpoint. This FAILS CLOSED when companies don't match, preventing
+    // cross-tenant writes.
 
     // Create two companies
     let company_a = Uuid::new_v4();

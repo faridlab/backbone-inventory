@@ -237,9 +237,19 @@ impl ProcurementService {
 
     /// Create a route (an ordered rule collection). Routes are shared_blank master data: a
     /// NULL company is the shared/global posture (ADR-0014), e.g. the seeded MTO route.
+    ///
+    /// The write rides its own transaction with `app.company_id` bound BEFORE the insert when
+    /// the route carries a company — under an armed fence an unbound INSERT fails the RLS
+    /// policy's WITH CHECK and provisioning 500s. A shared (NULL-company) route needs no bind:
+    /// the fence policies admit NULL-company rows on both the USING and WITH CHECK arms.
     pub async fn create_route(&self, r: NewRoute) -> Result<Uuid, ProcurementError> {
         let id = Uuid::new_v4();
-        ProcurementRepository::insert_route(&self.db_pool, id, &r.name, r.active, r.sequence, r.company_id).await?;
+        let mut tx = self.db_pool.begin().await?;
+        if let Some(company_id) = r.company_id {
+            backbone_orm::company_scope::bind_company_on(&mut tx, company_id).await?;
+        }
+        ProcurementRepository::insert_route(&mut *tx, id, &r.name, r.active, r.sequence, r.company_id).await?;
+        tx.commit().await?;
         Ok(id)
     }
 
@@ -249,8 +259,19 @@ impl ProcurementService {
     /// type company == warehouse company, whenever both sides are set) and the R13-rule
     /// destination check. The DB trigger is the backstop for raw writers; this check exists so
     /// a service caller gets the typed error instead of a constraint 500 (ADR-0015 `both`).
+    ///
+    /// The pre-check reads and the insert ride one transaction with `app.company_id` bound
+    /// BEFORE any of them — under an armed fence an unbound read of the operation type /
+    /// warehouse / location rows sees zero rows (the pre-check would 404 a legitimate rule)
+    /// and an unbound INSERT fails the RLS WITH CHECK. A shared (NULL-company) rule needs no
+    /// bind: the fence policies admit NULL-company rows on both arms.
     pub async fn create_rule(&self, r: NewRouteRule) -> Result<Uuid, ProcurementError> {
+        let mut tx = self.db_pool.begin().await?;
+        if let Some(company_id) = r.company_id {
+            backbone_orm::company_scope::bind_company_on(&mut tx, company_id).await?;
+        }
         self.check_rule_consistency(
+            &mut tx,
             r.picking_type_id,
             r.warehouse_id,
             r.company_id,
@@ -260,7 +281,7 @@ impl ProcurementService {
 
         let id = Uuid::new_v4();
         ProcurementRepository::insert_rule(
-            &self.db_pool,
+            &mut *tx,
             id,
             &r.name,
             r.sequence,
@@ -277,19 +298,22 @@ impl ProcurementService {
             r.propagate_cancel,
         )
         .await?;
+        tx.commit().await?;
         Ok(id)
     }
 
-    /// The R11 + R13-rule service pre-check. Shared by every rule write path here.
+    /// The R11 + R13-rule service pre-check. Shared by every rule write path here. Runs on the
+    /// caller's connection so the reads share the caller's company scope.
     async fn check_rule_consistency(
         &self,
+        conn: &mut sqlx::PgConnection,
         picking_type_id: Uuid,
         warehouse_id: Option<Uuid>,
         rule_company: Option<Uuid>,
         location_dest_id: Uuid,
     ) -> Result<(), ProcurementError> {
         let (pt_company, wh_company) =
-            ProcurementRepository::rule_company_refs(&self.db_pool, picking_type_id, warehouse_id)
+            ProcurementRepository::rule_company_refs(&mut *conn, picking_type_id, warehouse_id)
                 .await?;
         if pt_company.is_none() {
             return Err(ProcurementError::NotFound(picking_type_id));
@@ -318,7 +342,7 @@ impl ProcurementService {
             }
         }
         // R13-rule: never route INTO a view location.
-        if let Some(usage) = ProcurementRepository::location_usage(&self.db_pool, location_dest_id).await? {
+        if let Some(usage) = ProcurementRepository::location_usage(&mut *conn, location_dest_id).await? {
             if usage == "view" {
                 return Err(ProcurementError::RuleDestIsView { location_id: location_dest_id });
             }
@@ -436,15 +460,22 @@ impl ProcurementService {
     /// Create an orderpoint (min/max replenishment rule) — the service half of R6: a duplicate
     /// (item, location, company) coverage is the typed `orderpoint_exists` error; the partial
     /// unique index is the DB backstop a raw writer hits instead.
+    ///
+    /// The duplicate-check read and the insert ride one transaction with `app.company_id`
+    /// bound BEFORE them — under an armed fence an unbound read sees no rows (the duplicate
+    /// guard goes blind) and an unbound INSERT fails the RLS policy's WITH CHECK, so
+    /// provisioning through the fence was impossible before the bind.
     pub async fn create_orderpoint(&self, o: NewOrderpoint) -> Result<Uuid, ProcurementError> {
-        let existing = ProcurementRepository::orderpoint_exists(&self.db_pool, o.item_id, o.location_id, o.company_id).await?;
+        let mut tx = self.db_pool.begin().await?;
+        backbone_orm::company_scope::bind_company_on(&mut tx, o.company_id).await?;
+        let existing = ProcurementRepository::orderpoint_exists(&mut *tx, o.item_id, o.location_id, o.company_id).await?;
         if existing > 0 {
             return Err(ProcurementError::OrderpointExists { item_id: o.item_id, location_id: o.location_id });
         }
 
         let id = Uuid::new_v4();
         let inserted = ProcurementRepository::insert_orderpoint(
-            &self.db_pool,
+            &mut *tx,
             id,
             &o.name,
             &o.trigger,
@@ -466,6 +497,7 @@ impl ProcurementService {
             }
             return Err(e.into());
         }
+        tx.commit().await?;
         Ok(id)
     }
 
@@ -510,15 +542,26 @@ impl ProcurementService {
     /// Recompute and persist one orderpoint's stored computes (the read-model refresh a
     /// replenishment view drives for `manual` trigger rules — humans order, the computes
     /// recommend).
-    pub async fn recompute_orderpoint(&self, orderpoint_id: Uuid) -> Result<OrderpointComputes, ProcurementError> {
+    ///
+    /// The caller names its company: the scope is bound BEFORE the orderpoint read and the
+    /// fetch is scoped by `(id, company_id)`, so an armed row-level-security fence cannot
+    /// blind the read into a 404, the forecast/stamp writes ride the same bound transaction,
+    /// and a cross-company id reads as absent (fail-closed 404) on an unfenced connection.
+    pub async fn recompute_orderpoint(
+        &self,
+        company_id: Uuid,
+        orderpoint_id: Uuid,
+    ) -> Result<OrderpointComputes, ProcurementError> {
         let mut tx = self.db_pool.begin().await?;
+        backbone_orm::company_scope::bind_company_on(&mut tx, company_id).await?;
         let op = sqlx::query_as::<_, OrderpointRowDb>(
             r#"SELECT id, name, trigger::text AS trigger, item_id, location_id, warehouse_id,
                       company_id, item_min_qty, item_max_qty, route_id, qty_to_order_manual
                FROM inventory.reordering_rules
-               WHERE id = $1 AND (metadata->>'deleted_at') IS NULL"#,
+               WHERE id = $1 AND company_id = $2 AND (metadata->>'deleted_at') IS NULL"#,
         )
         .bind(orderpoint_id)
+        .bind(company_id)
         .fetch_optional(&mut *tx)
         .await?
         .ok_or(ProcurementError::NotFound(orderpoint_id))?;

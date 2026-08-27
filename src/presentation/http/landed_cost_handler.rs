@@ -187,4 +187,3 @@ pub fn create_protected_landed_cost_routes<A: AuthMiddleware + Send + Sync + 'st
             }
         }))
 }
-

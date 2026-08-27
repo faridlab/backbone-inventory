@@ -36,7 +36,7 @@ impl Seeder for SeedStockLedgerEntrySeeder {
     }
 
     fn order(&self) -> i32 {
-        16
+        23
     }
 
     async fn should_run(&self, pool: &PgPool) -> Result<bool> {

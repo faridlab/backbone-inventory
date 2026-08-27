@@ -13,6 +13,7 @@ pub enum VoucherType {
     DeliveryNote,
     StockEntry,
     StockReconciliation,
+    LandedCost,
 }
 
 impl std::fmt::Display for VoucherType {
@@ -22,6 +23,7 @@ impl std::fmt::Display for VoucherType {
             Self::DeliveryNote => write!(f, "delivery_note"),
             Self::StockEntry => write!(f, "stock_entry"),
             Self::StockReconciliation => write!(f, "stock_reconciliation"),
+            Self::LandedCost => write!(f, "landed_cost"),
         }
     }
 }
@@ -35,6 +37,7 @@ impl FromStr for VoucherType {
             "delivery_note" => Ok(Self::DeliveryNote),
             "stock_entry" => Ok(Self::StockEntry),
             "stock_reconciliation" => Ok(Self::StockReconciliation),
+            "landed_cost" => Ok(Self::LandedCost),
             _ => Err(format!("Unknown VoucherType variant: {}", s)),
         }
     }

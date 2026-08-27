@@ -248,13 +248,13 @@ async fn projection_aggregates_and_reprojects_on_cancel() {
 
     // Cancel ONE member move through the move engine — the transfer reprojects (min-rank
     // over live moves: one cancelled, one confirmed → still `confirmed`, never `cancel`).
-    svc.action_cancel(moves[0].id).await.unwrap();
+    svc.action_cancel(company, moves[0].id).await.unwrap();
     let (header, moves) = svc.fetch_picking(company, created.transfer_id).await.unwrap();
     assert_eq!(header.state, "confirmed");
     assert_eq!(moves.iter().filter(|m| m.state == "cancel").count(), 1);
 
     // Cancel the remaining member: all-cancelled → the projection reads `cancel`.
-    svc.action_cancel(moves[1].id).await.unwrap();
+    svc.action_cancel(company, moves[1].id).await.unwrap();
     let (header, _) = svc.fetch_picking(company, created.transfer_id).await.unwrap();
     assert_eq!(header.state, "cancel");
 }
@@ -657,7 +657,7 @@ async fn projection_rederives_after_every_move_transition() {
     let (h, _) = probe(tid).await;
     assert_eq!(h.state, "confirmed", "probe with the confirmed backorder live");
 
-    let a = svc.action_assign(backorder).await.unwrap();
+    let a = svc.action_assign(company, backorder).await.unwrap();
     assert_eq!(a.state, "assigned");
     let (h, _) = probe(tid).await;
     assert_eq!(h.state, "assigned", "probe after backorder assign");
@@ -677,24 +677,24 @@ async fn projection_rederives_after_every_move_transition() {
 
     // Confirm the chained member: its parent is not done, so it parks at `waiting` and the
     // projection follows it there.
-    let to = svc.action_confirm(child).await.unwrap();
+    let to = svc.action_confirm(company, child).await.unwrap();
     assert_eq!(to, "waiting");
     let (h, _) = probe(tid).await;
     assert_eq!(h.state, "waiting", "probe after the chained confirm parks at waiting");
 
     // Parent done: the waiting child is RELEASED to confirmed by the chain propagation and
     // the projection re-derives off the released child (the only live non-done member).
-    svc.action_done(backorder, BackorderPolicy::Never, &adj_gl(), &*sink).await.unwrap();
+    svc.action_done(company, backorder, BackorderPolicy::Never, &adj_gl(), &*sink).await.unwrap();
     let (h, moves) = probe(tid).await;
     assert_eq!(h.state, "confirmed", "waiting-gate release re-derives the projection");
     assert!(moves.iter().any(|m| m.id == child && m.state == "confirmed"));
 
     // Assign the child (virtual supplier source — supply is unconditionally available),
     // then validate it: every member is done, the projection reads `done` and date_done lands.
-    svc.action_assign(child).await.unwrap();
+    svc.action_assign(company, child).await.unwrap();
     let (h, _) = probe(tid).await;
     assert_eq!(h.state, "assigned", "probe after the child assign");
-    svc.action_done(child, BackorderPolicy::Never, &adj_gl(), &*sink).await.unwrap();
+    svc.action_done(company, child, BackorderPolicy::Never, &adj_gl(), &*sink).await.unwrap();
     let (h, _) = probe(tid).await;
     assert_eq!(h.state, "done", "probe after the last member lands");
     assert!(h.date_done.is_some(), "date_done is stamped by the projection");
@@ -706,7 +706,7 @@ async fn projection_rederives_after_every_move_transition() {
     let stray = svc.create_move(chained).await.unwrap();
     let (h, _) = probe(tid).await;
     assert_eq!(h.state, "draft", "the stray draft re-derives the projection down");
-    svc.action_cancel(stray).await.unwrap();
+    svc.action_cancel(company, stray).await.unwrap();
     let (h, moves) = probe(tid).await;
     assert_eq!(h.state, "done", "the cancelled member drops out of the aggregation");
     assert!(moves.iter().all(|m| m.state == "done" || m.state == "cancel"));

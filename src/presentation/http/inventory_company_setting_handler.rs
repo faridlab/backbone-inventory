@@ -185,4 +185,3 @@ pub fn create_protected_inventory_company_setting_routes<A: AuthMiddleware + Sen
             }
         }))
 }
-

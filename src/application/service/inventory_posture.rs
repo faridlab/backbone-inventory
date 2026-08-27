@@ -135,16 +135,24 @@ impl InventoryWriteService {
     /// The account-resolution chain for one inventory leg: the location's
     /// `valuation_account_id` override when set, else the door-header account the leg would
     /// use today. The documented chain, smallest-first — a location beats the header.
+    ///
+    /// The caller names its company and the override read is company-scoped: under an armed
+    /// row-level-security fence an unbound read cannot see a company-owned location's
+    /// override and would silently book the header account — the wrong ledger for a location
+    /// that carries its own valuation account.
     pub(super) async fn inventory_leg_account(
         &self,
+        company_id: Uuid,
         location_id: Uuid,
         header_account_id: Uuid,
     ) -> Result<Uuid, InventoryError> {
-        Ok(self
-            .valuation_overlay
-            .fetch_location_valuation_override(&self.db_pool, location_id)
-            .await?
-            .unwrap_or(header_account_id))
+        Ok(backbone_orm::company_scope::with_company_scope(
+            Some(company_id),
+            self.valuation_overlay
+                .fetch_location_valuation_override(&self.db_pool, location_id),
+        )
+        .await?
+        .unwrap_or(header_account_id))
     }
 
     /// The explicit account-move gate (the `_should_create_account_move` port): a posting

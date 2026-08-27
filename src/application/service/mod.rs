@@ -7,8 +7,13 @@
 pub mod error;
 pub use error::{ServiceError, ServiceResult};
 
+pub mod picking_batch_service;
 pub mod delivery_note_service;
 pub mod delivery_note_item_service;
+pub mod inventory_company_setting_service;
+pub mod landed_cost_service;
+pub mod landed_cost_line_service;
+pub mod landed_cost_adjustment_line_service;
 pub mod location_service;
 pub mod stock_move_service;
 pub mod stock_move_line_service;
@@ -20,20 +25,22 @@ pub mod reordering_rule_service;
 pub mod purchase_receipt_service;
 pub mod purchase_receipt_item_service;
 pub mod quant_service;
+pub mod scrap_service;
+pub mod scrap_reason_tag_service;
 pub mod stock_entry_service;
 pub mod stock_entry_item_service;
 pub mod stock_ledger_entry_service;
 pub mod bin_service;
 pub mod stock_reconciliation_service;
 pub mod stock_reconciliation_item_service;
+pub mod package_type_service;
+pub mod storage_category_service;
+pub mod storage_category_capacity_service;
+pub mod putaway_rule_service;
 pub mod lot_service;
 pub mod package_service;
 pub mod warehouse_service;
 pub mod stock_item_service;
-pub mod inventory_company_setting_service;
-pub mod landed_cost_service;
-pub mod landed_cost_line_service;
-pub mod landed_cost_adjustment_line_service;
 
 // <<< CUSTOM
 // Hand-authored (user-owned): domain events, the GL-posting port, the valuation engine + writes,
@@ -49,6 +56,12 @@ pub mod inventory_receipt;
 pub mod inventory_delivery;
 pub mod inventory_transfer;
 pub mod inventory_reconciliation;
+// The picking-batch satellite (SB-1): header mint, membership verbs, projection probes.
+// The batch state is a stored compute over its member pickings — this file never writes it.
+pub mod inventory_batch;
+// The scrap satellite door: draft header, process through the ONE move engine (scrapped
+// move to the loss sink), terminal done-stamp. Deferred-GL form for the HTTP surface.
+pub mod inventory_scrap;
 pub mod inventory_read;
 pub mod inventory_intake;
 pub mod inventory_cancellation;
@@ -70,8 +83,13 @@ pub mod inventory_posture;
 pub mod landed_cost_service_custom;
 // END CUSTOM
 
+pub use picking_batch_service::PickingBatchService;
 pub use delivery_note_service::DeliveryNoteService;
 pub use delivery_note_item_service::DeliveryNoteItemService;
+pub use inventory_company_setting_service::InventoryCompanySettingService;
+pub use landed_cost_service::LandedCostService;
+pub use landed_cost_line_service::LandedCostLineService;
+pub use landed_cost_adjustment_line_service::LandedCostAdjustmentLineService;
 pub use location_service::LocationService;
 pub use stock_move_service::StockMoveService;
 pub use stock_move_line_service::StockMoveLineService;
@@ -83,20 +101,22 @@ pub use reordering_rule_service::ReorderingRuleService;
 pub use purchase_receipt_service::PurchaseReceiptService;
 pub use purchase_receipt_item_service::PurchaseReceiptItemService;
 pub use quant_service::QuantService;
+pub use scrap_service::ScrapService;
+pub use scrap_reason_tag_service::ScrapReasonTagService;
 pub use stock_entry_service::StockEntryService;
 pub use stock_entry_item_service::StockEntryItemService;
 pub use stock_ledger_entry_service::StockLedgerEntryService;
 pub use bin_service::BinService;
 pub use stock_reconciliation_service::StockReconciliationService;
 pub use stock_reconciliation_item_service::StockReconciliationItemService;
+pub use package_type_service::PackageTypeService;
+pub use storage_category_service::StorageCategoryService;
+pub use storage_category_capacity_service::StorageCategoryCapacityService;
+pub use putaway_rule_service::PutawayRuleService;
 pub use lot_service::LotService;
 pub use package_service::PackageService;
 pub use warehouse_service::WarehouseService;
 pub use stock_item_service::StockItemService;
-pub use inventory_company_setting_service::InventoryCompanySettingService;
-pub use landed_cost_service::LandedCostService;
-pub use landed_cost_line_service::LandedCostLineService;
-pub use landed_cost_adjustment_line_service::LandedCostAdjustmentLineService;
 // <<< CUSTOM
 pub use inventory_events::{
     InventoryEvent, InventoryEventSink, OrderpointTriggered, StockDelivered, StockMoved,

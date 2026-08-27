@@ -216,6 +216,11 @@ models:
         attributes: ["@foreign_key(Transfer.id)"]
         description: "This transfer is a return of (self-ref)"
 
+      batch_id:
+        type: uuid?
+        attributes: ["@foreign_key(PickingBatch.id)"]
+        description: "The picking batch/wave this transfer is a member of (SB-1: the batch's state projects from its members' states through this column — written only by the batch membership verbs)"
+
       metadata:
         type: Metadata
         attributes: ["@audit_metadata"]
@@ -227,6 +232,11 @@ models:
         attributes: ["@one_to_many"]
         description: "The grouped moves — the transfer's state projects from these (T1)"
         inverse: picking
+      batch:
+        type: PickingBatch?
+        attributes: ["@many_to_one"]
+        description: "The batch/wave this transfer is a member of (the batch projects from its members — SB-1)"
+        inverse: pickings
       move_lines:
         type: StockMoveLine[]
         attributes: ["@one_to_many"]
@@ -252,6 +262,9 @@ models:
         fields: [backorder_id]
       - type: index
         fields: [return_id]
+      - type: index
+        fields: [batch_id]
+        description: "Batch membership lookups (the SB-1 projection input)"
       - type: index
         fields: [company_id]
 

@@ -295,7 +295,7 @@ impl InventoryWriteService {
                     .ok_or(InventoryError::LandedCostNoValuationAccount { move_id: lc_id })?;
                 let line = self.move_lines.fetch_line(&mut conn, line_id).await?
                     .ok_or(InventoryError::LandedCostNoValuationAccount { move_id: lc_id })?;
-                let acct = self.inventory_leg_account(line.location_dest_id, receipt_inventory_account_id).await?;
+                let acct = self.inventory_leg_account(hdr.company_id, line.location_dest_id, receipt_inventory_account_id).await?;
                 push_amount(&mut debits, acct, *delta);
             }
             // Credit legs: per cost line, its worksheet shares scaled by the snapshotted
@@ -481,7 +481,7 @@ impl InventoryWriteService {
         for t in &targets {
             let Some(d) = deltas.iter().find(|d| d.move_line_id == t.move_line_id) else { continue };
             if d.delta.is_zero() { continue }
-            let acct = self.inventory_leg_account(t.dest_location_id, receipt_inventory_account_id).await?;
+            let acct = self.inventory_leg_account(hdr.company_id, t.dest_location_id, receipt_inventory_account_id).await?;
             push_amount(&mut debits, acct, d.delta);
         }
 

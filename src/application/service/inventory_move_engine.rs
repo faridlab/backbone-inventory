@@ -178,6 +178,13 @@ impl InventoryWriteService {
         }
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
+        // Bind the company scope BEFORE any location read. The row-level-security fence hides
+        // every location whose company_id differs from app.company_id (shared rows with no
+        // company stay visible), so an unbound read cannot see the move's own company
+        // locations and every mint would refuse with location_not_found under an armed fence.
+        // Binding is transaction-local: set_config(..., true) scopes it to this transaction,
+        // so it cannot leak onto the pooled connection after commit.
+        company_scope::bind_company_on(&mut tx, m.company_id).await?;
         let locs = self.moves.fetch_move_locations(&mut tx, m.location_id, m.location_dest_id).await?;
         let (src, dst) = match locs {
             (Some(s), Some(d)) => (s, d),
@@ -198,8 +205,6 @@ impl InventoryWriteService {
                 }
             }
         }
-        // Bind after fetch and company check — FAIL CLOSED when companies mismatch
-        company_scope::bind_company_on(&mut tx, m.company_id).await?;
         self.moves.insert_move(&mut tx, &NewMoveRow {
             id,
             name: &m.name,
@@ -241,13 +246,20 @@ impl InventoryWriteService {
     /// (spec §1: `waiting` is the state a chained move sits in until its parents land).
     /// `procure_method` gates supply: `make_to_order` / `mts_else_mto` moves are minted by the
     /// procurement (rule) engine, not here — this method only owns the state gate.
-    pub async fn action_confirm(&self, move_id: Uuid) -> Result<String, InventoryError> {
+    ///
+    /// The caller names its company: the scope is bound BEFORE the move read, and the fetch is
+    /// scoped by `(id, company_id)`. Under an armed row-level-security fence a read that
+    /// preceded the bind would see zero rows and every legitimate move would 404 here; the
+    /// explicit predicate also makes a cross-company id read as absent (fail-closed 404) on an
+    /// unfenced connection.
+    pub async fn action_confirm(&self, company_id: Uuid, move_id: Uuid) -> Result<String, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        let mv = self.moves.fetch_move(&mut tx, move_id).await?.ok_or(InventoryError::NotFound(move_id))?;
+        company_scope::bind_company_on(&mut tx, company_id).await?;
+        let mv = self.moves.fetch_move_for_company(&mut tx, company_id, move_id).await?
+            .ok_or(InventoryError::NotFound(move_id))?;
         if mv.state != "draft" {
             return Err(InventoryError::WrongMoveState { move_id, action: "confirm", current: mv.state });
         }
-        company_scope::bind_company_on(&mut tx, mv.company_id).await?;
         let to = self.confirm_core(&mut tx, &mv).await?;
         let company = mv.company_id;
         tx.commit().await?;
@@ -292,13 +304,18 @@ impl InventoryWriteService {
     /// `reserved_quantity` is written under each quant's `FOR UPDATE` (competing reservations
     /// serialize there — one winner per unit of stock, R22/R25), a mirror move-line is minted per
     /// reserved quant grain, and the move state aggregates the mirror.
-    pub async fn action_assign(&self, move_id: Uuid) -> Result<MoveAssignOutcome, InventoryError> {
+    ///
+    /// The caller names its company; the scope is bound before the move read and the fetch is
+    /// scoped by `(id, company_id)` — an armed fence cannot blind this verb's own fetch, and a
+    /// cross-company id reads as absent (fail-closed 404) on an unfenced connection.
+    pub async fn action_assign(&self, company_id: Uuid, move_id: Uuid) -> Result<MoveAssignOutcome, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        let mv = self.moves.fetch_move(&mut tx, move_id).await?.ok_or(InventoryError::NotFound(move_id))?;
+        company_scope::bind_company_on(&mut tx, company_id).await?;
+        let mv = self.moves.fetch_move_for_company(&mut tx, company_id, move_id).await?
+            .ok_or(InventoryError::NotFound(move_id))?;
         if mv.state != "confirmed" && mv.state != "partially_available" {
             return Err(InventoryError::WrongMoveState { move_id, action: "assign", current: mv.state });
         }
-        company_scope::bind_company_on(&mut tx, mv.company_id).await?;
         let (to, total) = self.assign_core(&mut tx, &mv).await?;
         let company = mv.company_id;
         let picking = mv.picking_id;
@@ -410,10 +427,15 @@ impl InventoryWriteService {
     /// Release every reservation the move holds (spec §1: cancel frees reservations first; assign
     /// retries also release-then-re.reserve). The mirror lines zero out; the authoritative
     /// `reserved_quantity` drops by exactly what the lines held.
-    pub async fn unreserve_move(&self, move_id: Uuid) -> Result<Decimal, InventoryError> {
+    ///
+    /// The caller names its company; the scope is bound before the move read and the fetch is
+    /// scoped by `(id, company_id)` — an armed fence cannot blind this verb's own fetch, and a
+    /// cross-company id reads as absent (fail-closed 404) on an unfenced connection.
+    pub async fn unreserve_move(&self, company_id: Uuid, move_id: Uuid) -> Result<Decimal, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        let mv = self.moves.fetch_move(&mut tx, move_id).await?.ok_or(InventoryError::NotFound(move_id))?;
-        company_scope::bind_company_on(&mut tx, mv.company_id).await?;
+        company_scope::bind_company_on(&mut tx, company_id).await?;
+        let mv = self.moves.fetch_move_for_company(&mut tx, company_id, move_id).await?
+            .ok_or(InventoryError::NotFound(move_id))?;
         let released = self.unreserve_lines(&mut tx, &mv).await?;
         tx.commit().await?;
         Ok(released)
@@ -455,20 +477,26 @@ impl InventoryWriteService {
     /// The mutation core (spec §4). See the module docs above for the full pipeline; the guards,
     /// the two-step quant sync, the V7-ordered valuation, the chain propagation, the backorder
     /// split and the projection all live here.
+    ///
+    /// The caller names its company; the scope is bound before the move read and the fetch is
+    /// scoped by `(id, company_id)` — an armed fence cannot blind this verb's own fetch, and a
+    /// cross-company id reads as absent (fail-closed 404) on an unfenced connection.
     pub async fn action_done(
         &self,
+        company_id: Uuid,
         move_id: Uuid,
         backorder: BackorderPolicy,
         gl: &MoveGlDirective,
         sink: &dyn GlPostSink,
     ) -> Result<MoveDoneOutcome, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        let mv = self.moves.fetch_move(&mut tx, move_id).await?.ok_or(InventoryError::NotFound(move_id))?;
+        company_scope::bind_company_on(&mut tx, company_id).await?;
+        let mv = self.moves.fetch_move_for_company(&mut tx, company_id, move_id).await?
+            .ok_or(InventoryError::NotFound(move_id))?;
         match mv.state.as_str() {
             "assigned" | "partially_available" | "confirmed" => {}
             other => return Err(InventoryError::WrongMoveState { move_id, action: "done", current: other.into() }),
         }
-        company_scope::bind_company_on(&mut tx, mv.company_id).await?;
 
         let lines = self.move_lines.fetch_lines_for_move(&mut tx, move_id).await?;
         if lines.is_empty() {
@@ -699,14 +727,19 @@ impl InventoryWriteService {
 
     /// `* → cancel` (spec §1): frees the reservation first, then propagates to the chained
     /// children (`move_dest_ids`) unless `propagate_cancel=false` — never into a done move.
-    pub async fn action_cancel(&self, move_id: Uuid) -> Result<Decimal, InventoryError> {
+    ///
+    /// The caller names its company; the scope is bound before the move read and the fetch is
+    /// scoped by `(id, company_id)` — an armed fence cannot blind this verb's own fetch, and a
+    /// cross-company id reads as absent (fail-closed 404) on an unfenced connection.
+    pub async fn action_cancel(&self, company_id: Uuid, move_id: Uuid) -> Result<Decimal, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        let mv = self.moves.fetch_move(&mut tx, move_id).await?.ok_or(InventoryError::NotFound(move_id))?;
+        company_scope::bind_company_on(&mut tx, company_id).await?;
+        let mv = self.moves.fetch_move_for_company(&mut tx, company_id, move_id).await?
+            .ok_or(InventoryError::NotFound(move_id))?;
         match mv.state.as_str() {
             "draft" | "waiting" | "confirmed" | "partially_available" | "assigned" => {}
             other => return Err(InventoryError::WrongMoveState { move_id, action: "cancel", current: other.into() }),
         }
-        company_scope::bind_company_on(&mut tx, mv.company_id).await?;
         let released = self.unreserve_lines(&mut tx, &mv).await?;
         let ok = self.moves.transition_state(&mut tx, move_id, mv.state.as_str(), "cancel").await?;
         if !ok {
@@ -752,17 +785,22 @@ impl InventoryWriteService {
     ///
     /// On a fresh rejection the move parks in `failed` again and the error surfaces, as in
     /// `_action_done`.
+    ///
+    /// The caller names its company; the scope is bound before the move read and the fetch is
+    /// scoped by `(id, company_id)` — an armed fence cannot blind this verb's own fetch, and a
+    /// cross-company id reads as absent (fail-closed 404) on an unfenced connection.
     pub async fn repost_move_gl(
         &self,
+        company_id: Uuid,
         move_id: Uuid,
         gl: &MoveGlDirective,
         sink: &dyn GlPostSink,
     ) -> Result<SubmitOutcome, InventoryError> {
         let mv = {
             let mut tx = self.db_pool.begin().await?;
-            let mv = self.moves.fetch_move(&mut tx, move_id).await?
+            company_scope::bind_company_on(&mut tx, company_id).await?;
+            let mv = self.moves.fetch_move_for_company(&mut tx, company_id, move_id).await?
                 .ok_or(InventoryError::NotFound(move_id))?;
-            company_scope::bind_company_on(&mut tx, mv.company_id).await?;
             tx.commit().await?;
             mv
         };

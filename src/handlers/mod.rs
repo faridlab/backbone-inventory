@@ -9,8 +9,13 @@
 use std::sync::Arc;
 
 // Import all services
+use crate::application::service::PickingBatchService;
 use crate::application::service::DeliveryNoteService;
 use crate::application::service::DeliveryNoteItemService;
+use crate::application::service::InventoryCompanySettingService;
+use crate::application::service::LandedCostService;
+use crate::application::service::LandedCostLineService;
+use crate::application::service::LandedCostAdjustmentLineService;
 use crate::application::service::LocationService;
 use crate::application::service::StockMoveService;
 use crate::application::service::StockMoveLineService;
@@ -22,12 +27,18 @@ use crate::application::service::ReorderingRuleService;
 use crate::application::service::PurchaseReceiptService;
 use crate::application::service::PurchaseReceiptItemService;
 use crate::application::service::QuantService;
+use crate::application::service::ScrapService;
+use crate::application::service::ScrapReasonTagService;
 use crate::application::service::StockEntryService;
 use crate::application::service::StockEntryItemService;
 use crate::application::service::StockLedgerEntryService;
 use crate::application::service::BinService;
 use crate::application::service::StockReconciliationService;
 use crate::application::service::StockReconciliationItemService;
+use crate::application::service::PackageTypeService;
+use crate::application::service::StorageCategoryService;
+use crate::application::service::StorageCategoryCapacityService;
+use crate::application::service::PutawayRuleService;
 use crate::application::service::LotService;
 use crate::application::service::PackageService;
 use crate::application::service::WarehouseService;
@@ -51,10 +62,20 @@ use crate::application::service::StockItemService;
 /// ```
 #[derive(Clone)]
 pub struct AppState {
+    /// PickingBatch service
+    pub picking_batch_service: Arc<PickingBatchService>,
     /// DeliveryNote service
     pub delivery_note_service: Arc<DeliveryNoteService>,
     /// DeliveryNoteItem service
     pub delivery_note_item_service: Arc<DeliveryNoteItemService>,
+    /// InventoryCompanySetting service
+    pub inventory_company_setting_service: Arc<InventoryCompanySettingService>,
+    /// LandedCost service
+    pub landed_cost_service: Arc<LandedCostService>,
+    /// LandedCostLine service
+    pub landed_cost_line_service: Arc<LandedCostLineService>,
+    /// LandedCostAdjustmentLine service
+    pub landed_cost_adjustment_line_service: Arc<LandedCostAdjustmentLineService>,
     /// Location service
     pub location_service: Arc<LocationService>,
     /// StockMove service
@@ -77,6 +98,10 @@ pub struct AppState {
     pub purchase_receipt_item_service: Arc<PurchaseReceiptItemService>,
     /// Quant service
     pub quant_service: Arc<QuantService>,
+    /// Scrap service
+    pub scrap_service: Arc<ScrapService>,
+    /// ScrapReasonTag service
+    pub scrap_reason_tag_service: Arc<ScrapReasonTagService>,
     /// StockEntry service
     pub stock_entry_service: Arc<StockEntryService>,
     /// StockEntryItem service
@@ -89,6 +114,14 @@ pub struct AppState {
     pub stock_reconciliation_service: Arc<StockReconciliationService>,
     /// StockReconciliationItem service
     pub stock_reconciliation_item_service: Arc<StockReconciliationItemService>,
+    /// PackageType service
+    pub package_type_service: Arc<PackageTypeService>,
+    /// StorageCategory service
+    pub storage_category_service: Arc<StorageCategoryService>,
+    /// StorageCategoryCapacity service
+    pub storage_category_capacity_service: Arc<StorageCategoryCapacityService>,
+    /// PutawayRule service
+    pub putaway_rule_service: Arc<PutawayRuleService>,
     /// Lot service
     pub lot_service: Arc<LotService>,
     /// Package service
@@ -102,8 +135,13 @@ pub struct AppState {
 impl AppState {
     /// Create a new AppState with all services.
     pub fn new(
+        picking_batch_service: Arc<PickingBatchService>,
         delivery_note_service: Arc<DeliveryNoteService>,
         delivery_note_item_service: Arc<DeliveryNoteItemService>,
+        inventory_company_setting_service: Arc<InventoryCompanySettingService>,
+        landed_cost_service: Arc<LandedCostService>,
+        landed_cost_line_service: Arc<LandedCostLineService>,
+        landed_cost_adjustment_line_service: Arc<LandedCostAdjustmentLineService>,
         location_service: Arc<LocationService>,
         stock_move_service: Arc<StockMoveService>,
         stock_move_line_service: Arc<StockMoveLineService>,
@@ -115,20 +153,31 @@ impl AppState {
         purchase_receipt_service: Arc<PurchaseReceiptService>,
         purchase_receipt_item_service: Arc<PurchaseReceiptItemService>,
         quant_service: Arc<QuantService>,
+        scrap_service: Arc<ScrapService>,
+        scrap_reason_tag_service: Arc<ScrapReasonTagService>,
         stock_entry_service: Arc<StockEntryService>,
         stock_entry_item_service: Arc<StockEntryItemService>,
         stock_ledger_entry_service: Arc<StockLedgerEntryService>,
         bin_service: Arc<BinService>,
         stock_reconciliation_service: Arc<StockReconciliationService>,
         stock_reconciliation_item_service: Arc<StockReconciliationItemService>,
+        package_type_service: Arc<PackageTypeService>,
+        storage_category_service: Arc<StorageCategoryService>,
+        storage_category_capacity_service: Arc<StorageCategoryCapacityService>,
+        putaway_rule_service: Arc<PutawayRuleService>,
         lot_service: Arc<LotService>,
         package_service: Arc<PackageService>,
         warehouse_service: Arc<WarehouseService>,
         stock_item_service: Arc<StockItemService>
     ) -> Self {
         Self {
+            picking_batch_service,
             delivery_note_service,
             delivery_note_item_service,
+            inventory_company_setting_service,
+            landed_cost_service,
+            landed_cost_line_service,
+            landed_cost_adjustment_line_service,
             location_service,
             stock_move_service,
             stock_move_line_service,
@@ -140,12 +189,18 @@ impl AppState {
             purchase_receipt_service,
             purchase_receipt_item_service,
             quant_service,
+            scrap_service,
+            scrap_reason_tag_service,
             stock_entry_service,
             stock_entry_item_service,
             stock_ledger_entry_service,
             bin_service,
             stock_reconciliation_service,
             stock_reconciliation_item_service,
+            package_type_service,
+            storage_category_service,
+            storage_category_capacity_service,
+            putaway_rule_service,
             lot_service,
             package_service,
             warehouse_service,
@@ -156,8 +211,13 @@ impl AppState {
     /// Create AppState from module instance.
     pub fn from_module(module: &crate::InventoryModule) -> Self {
         Self {
+            picking_batch_service: module.picking_batch_service.clone(),
             delivery_note_service: module.delivery_note_service.clone(),
             delivery_note_item_service: module.delivery_note_item_service.clone(),
+            inventory_company_setting_service: module.inventory_company_setting_service.clone(),
+            landed_cost_service: module.landed_cost_service.clone(),
+            landed_cost_line_service: module.landed_cost_line_service.clone(),
+            landed_cost_adjustment_line_service: module.landed_cost_adjustment_line_service.clone(),
             location_service: module.location_service.clone(),
             stock_move_service: module.stock_move_service.clone(),
             stock_move_line_service: module.stock_move_line_service.clone(),
@@ -169,12 +229,18 @@ impl AppState {
             purchase_receipt_service: module.purchase_receipt_service.clone(),
             purchase_receipt_item_service: module.purchase_receipt_item_service.clone(),
             quant_service: module.quant_service.clone(),
+            scrap_service: module.scrap_service.clone(),
+            scrap_reason_tag_service: module.scrap_reason_tag_service.clone(),
             stock_entry_service: module.stock_entry_service.clone(),
             stock_entry_item_service: module.stock_entry_item_service.clone(),
             stock_ledger_entry_service: module.stock_ledger_entry_service.clone(),
             bin_service: module.bin_service.clone(),
             stock_reconciliation_service: module.stock_reconciliation_service.clone(),
             stock_reconciliation_item_service: module.stock_reconciliation_item_service.clone(),
+            package_type_service: module.package_type_service.clone(),
+            storage_category_service: module.storage_category_service.clone(),
+            storage_category_capacity_service: module.storage_category_capacity_service.clone(),
+            putaway_rule_service: module.putaway_rule_service.clone(),
             lot_service: module.lot_service.clone(),
             package_service: module.package_service.clone(),
             warehouse_service: module.warehouse_service.clone(),
@@ -188,8 +254,13 @@ impl AppState {
 /// Allows incremental construction of AppState.
 #[derive(Default)]
 pub struct AppStateBuilder {
+    picking_batch_service: Option<Arc<PickingBatchService>>,
     delivery_note_service: Option<Arc<DeliveryNoteService>>,
     delivery_note_item_service: Option<Arc<DeliveryNoteItemService>>,
+    inventory_company_setting_service: Option<Arc<InventoryCompanySettingService>>,
+    landed_cost_service: Option<Arc<LandedCostService>>,
+    landed_cost_line_service: Option<Arc<LandedCostLineService>>,
+    landed_cost_adjustment_line_service: Option<Arc<LandedCostAdjustmentLineService>>,
     location_service: Option<Arc<LocationService>>,
     stock_move_service: Option<Arc<StockMoveService>>,
     stock_move_line_service: Option<Arc<StockMoveLineService>>,
@@ -201,12 +272,18 @@ pub struct AppStateBuilder {
     purchase_receipt_service: Option<Arc<PurchaseReceiptService>>,
     purchase_receipt_item_service: Option<Arc<PurchaseReceiptItemService>>,
     quant_service: Option<Arc<QuantService>>,
+    scrap_service: Option<Arc<ScrapService>>,
+    scrap_reason_tag_service: Option<Arc<ScrapReasonTagService>>,
     stock_entry_service: Option<Arc<StockEntryService>>,
     stock_entry_item_service: Option<Arc<StockEntryItemService>>,
     stock_ledger_entry_service: Option<Arc<StockLedgerEntryService>>,
     bin_service: Option<Arc<BinService>>,
     stock_reconciliation_service: Option<Arc<StockReconciliationService>>,
     stock_reconciliation_item_service: Option<Arc<StockReconciliationItemService>>,
+    package_type_service: Option<Arc<PackageTypeService>>,
+    storage_category_service: Option<Arc<StorageCategoryService>>,
+    storage_category_capacity_service: Option<Arc<StorageCategoryCapacityService>>,
+    putaway_rule_service: Option<Arc<PutawayRuleService>>,
     lot_service: Option<Arc<LotService>>,
     package_service: Option<Arc<PackageService>>,
     warehouse_service: Option<Arc<WarehouseService>>,
@@ -219,6 +296,12 @@ impl AppStateBuilder {
         Self::default()
     }
 
+    /// Set the PickingBatch service.
+    pub fn with_picking_batch_service(mut self, service: Arc<PickingBatchService>) -> Self {
+        self.picking_batch_service = Some(service);
+        self
+    }
+
     /// Set the DeliveryNote service.
     pub fn with_delivery_note_service(mut self, service: Arc<DeliveryNoteService>) -> Self {
         self.delivery_note_service = Some(service);
@@ -228,6 +311,30 @@ impl AppStateBuilder {
     /// Set the DeliveryNoteItem service.
     pub fn with_delivery_note_item_service(mut self, service: Arc<DeliveryNoteItemService>) -> Self {
         self.delivery_note_item_service = Some(service);
+        self
+    }
+
+    /// Set the InventoryCompanySetting service.
+    pub fn with_inventory_company_setting_service(mut self, service: Arc<InventoryCompanySettingService>) -> Self {
+        self.inventory_company_setting_service = Some(service);
+        self
+    }
+
+    /// Set the LandedCost service.
+    pub fn with_landed_cost_service(mut self, service: Arc<LandedCostService>) -> Self {
+        self.landed_cost_service = Some(service);
+        self
+    }
+
+    /// Set the LandedCostLine service.
+    pub fn with_landed_cost_line_service(mut self, service: Arc<LandedCostLineService>) -> Self {
+        self.landed_cost_line_service = Some(service);
+        self
+    }
+
+    /// Set the LandedCostAdjustmentLine service.
+    pub fn with_landed_cost_adjustment_line_service(mut self, service: Arc<LandedCostAdjustmentLineService>) -> Self {
+        self.landed_cost_adjustment_line_service = Some(service);
         self
     }
 
@@ -297,6 +404,18 @@ impl AppStateBuilder {
         self
     }
 
+    /// Set the Scrap service.
+    pub fn with_scrap_service(mut self, service: Arc<ScrapService>) -> Self {
+        self.scrap_service = Some(service);
+        self
+    }
+
+    /// Set the ScrapReasonTag service.
+    pub fn with_scrap_reason_tag_service(mut self, service: Arc<ScrapReasonTagService>) -> Self {
+        self.scrap_reason_tag_service = Some(service);
+        self
+    }
+
     /// Set the StockEntry service.
     pub fn with_stock_entry_service(mut self, service: Arc<StockEntryService>) -> Self {
         self.stock_entry_service = Some(service);
@@ -333,6 +452,30 @@ impl AppStateBuilder {
         self
     }
 
+    /// Set the PackageType service.
+    pub fn with_package_type_service(mut self, service: Arc<PackageTypeService>) -> Self {
+        self.package_type_service = Some(service);
+        self
+    }
+
+    /// Set the StorageCategory service.
+    pub fn with_storage_category_service(mut self, service: Arc<StorageCategoryService>) -> Self {
+        self.storage_category_service = Some(service);
+        self
+    }
+
+    /// Set the StorageCategoryCapacity service.
+    pub fn with_storage_category_capacity_service(mut self, service: Arc<StorageCategoryCapacityService>) -> Self {
+        self.storage_category_capacity_service = Some(service);
+        self
+    }
+
+    /// Set the PutawayRule service.
+    pub fn with_putaway_rule_service(mut self, service: Arc<PutawayRuleService>) -> Self {
+        self.putaway_rule_service = Some(service);
+        self
+    }
+
     /// Set the Lot service.
     pub fn with_lot_service(mut self, service: Arc<LotService>) -> Self {
         self.lot_service = Some(service);
@@ -364,8 +507,13 @@ impl AppStateBuilder {
     /// Panics if any required service is not set.
     pub fn build(self) -> AppState {
         AppState {
+            picking_batch_service: self.picking_batch_service.expect("picking_batch_service is required"),
             delivery_note_service: self.delivery_note_service.expect("delivery_note_service is required"),
             delivery_note_item_service: self.delivery_note_item_service.expect("delivery_note_item_service is required"),
+            inventory_company_setting_service: self.inventory_company_setting_service.expect("inventory_company_setting_service is required"),
+            landed_cost_service: self.landed_cost_service.expect("landed_cost_service is required"),
+            landed_cost_line_service: self.landed_cost_line_service.expect("landed_cost_line_service is required"),
+            landed_cost_adjustment_line_service: self.landed_cost_adjustment_line_service.expect("landed_cost_adjustment_line_service is required"),
             location_service: self.location_service.expect("location_service is required"),
             stock_move_service: self.stock_move_service.expect("stock_move_service is required"),
             stock_move_line_service: self.stock_move_line_service.expect("stock_move_line_service is required"),
@@ -377,12 +525,18 @@ impl AppStateBuilder {
             purchase_receipt_service: self.purchase_receipt_service.expect("purchase_receipt_service is required"),
             purchase_receipt_item_service: self.purchase_receipt_item_service.expect("purchase_receipt_item_service is required"),
             quant_service: self.quant_service.expect("quant_service is required"),
+            scrap_service: self.scrap_service.expect("scrap_service is required"),
+            scrap_reason_tag_service: self.scrap_reason_tag_service.expect("scrap_reason_tag_service is required"),
             stock_entry_service: self.stock_entry_service.expect("stock_entry_service is required"),
             stock_entry_item_service: self.stock_entry_item_service.expect("stock_entry_item_service is required"),
             stock_ledger_entry_service: self.stock_ledger_entry_service.expect("stock_ledger_entry_service is required"),
             bin_service: self.bin_service.expect("bin_service is required"),
             stock_reconciliation_service: self.stock_reconciliation_service.expect("stock_reconciliation_service is required"),
             stock_reconciliation_item_service: self.stock_reconciliation_item_service.expect("stock_reconciliation_item_service is required"),
+            package_type_service: self.package_type_service.expect("package_type_service is required"),
+            storage_category_service: self.storage_category_service.expect("storage_category_service is required"),
+            storage_category_capacity_service: self.storage_category_capacity_service.expect("storage_category_capacity_service is required"),
+            putaway_rule_service: self.putaway_rule_service.expect("putaway_rule_service is required"),
             lot_service: self.lot_service.expect("lot_service is required"),
             package_service: self.package_service.expect("package_service is required"),
             warehouse_service: self.warehouse_service.expect("warehouse_service is required"),

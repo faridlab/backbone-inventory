@@ -117,7 +117,7 @@ impl InventoryWriteService {
         let (customer_loc, stock_loc) = self.door_move_endpoints(company, warehouse, "customer").await?;
         // The inventory credit leg resolves the same location valuation-account override the
         // receipt path uses (the chain: location override → header account).
-        let inv_acct = self.inventory_leg_account(stock_loc, inv_acct).await?;
+        let inv_acct = self.inventory_leg_account(company, stock_loc, inv_acct).await?;
 
         // ---- all-or-nothing availability pre-check, under the Bin locks -----------------------
         // Same posture the voucher path always had: EVERY line's demand must be coverable
@@ -182,19 +182,19 @@ impl InventoryWriteService {
                     continue;
                 }
             };
-            let state = self.advance_move_to_assigned(mid).await?;
+            let state = self.advance_move_to_assigned(company, mid).await?;
             if state != "assigned" {
                 // The all-or-nothing posture: a line the reservation cannot cover WHOLE
                 // refuses the delivery. Release whatever the partial assign took; no stock
                 // moved, no reservation held, the voucher stays draft (retryable).
-                self.unreserve_move(mid).await?;
+                self.unreserve_move(company, mid).await?;
                 let on_hand = self.quants.fetch_on_hand(&self.db_pool, company, it.item_id, stock_loc).await?;
                 return Err(InventoryError::InsufficientStock {
                     item_id: it.item_id, warehouse_id: warehouse,
                     available: on_hand.on_hand_qty, requested: it.quantity,
                 });
             }
-            let outcome = self.action_done(mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
+            let outcome = self.action_done(company, mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
             // The engine's OUT leg IS the line's COGS (average or residual-flush — the same
             // arithmetic the voucher path always used); snapshot it on the voucher row.
             let cogs = outcome.out_value;
@@ -279,7 +279,7 @@ impl InventoryWriteService {
         }
         let debit_acct = self.delivery_debit_account(h.company_id, &posture, h.cogs_account_id)?;
         let (_, stock_loc) = self.door_move_endpoints(h.company_id, h.warehouse_id, "customer").await?;
-        let inv_acct = self.inventory_leg_account(stock_loc, h.inventory_account_id).await?;
+        let inv_acct = self.inventory_leg_account(h.company_id, stock_loc, h.inventory_account_id).await?;
         let amt = h.total_cogs;
         let env = AccountingPostEnvelope {
             idempotency_key: id.to_string(), company_id: h.company_id, branch_id: h.branch_id,

@@ -36,7 +36,7 @@ impl Seeder for SeedLocationSeeder {
     }
 
     fn order(&self) -> i32 {
-        3
+        8
     }
 
     async fn should_run(&self, pool: &PgPool) -> Result<bool> {

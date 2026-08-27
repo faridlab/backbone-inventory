@@ -21,6 +21,8 @@ use backbone_orm::company_scope;
 
 use crate::domain::entity::StockMove;
 
+use super::picking_batch_projection_repository::PickingBatchProjectionRepository;
+
 /// Table name for StockMove entities
 pub const TABLE_NAME: &str = "inventory.stock_moves";
 
@@ -157,6 +159,33 @@ impl StockMoveRepository {
                WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
         )
         .bind(move_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+        Ok(row.map(move_row_of))
+    }
+
+    /// Fetch one move scoped to a company (`WHERE id = $1 AND company_id = $2`). The state
+    /// verbs' fetch: the caller binds the company scope on the transaction BEFORE this read,
+    /// and the explicit `company_id` predicate keeps the cross-company 404 fail-closed even on
+    /// an unfenced (superuser/migration) connection — the row of another company reads as
+    /// absent, never as operable.
+    pub async fn fetch_move_for_company(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        company_id: Uuid,
+        move_id: Uuid,
+    ) -> Result<Option<MoveRow>, sqlx::Error> {
+        let row = sqlx::query(
+            r#"SELECT id, name, state::text AS state, posting_state::text AS posting_state, date, item_id, demand_qty, quantity,
+                      price_unit, procure_method::text AS procure_method, picking_id, origin, rule_id,
+                      location_id, location_dest_id, partner_id, company_id, warehouse_id,
+                      orderpoint_id, move_orig_ids, move_dest_ids, is_inventory, scrapped,
+                      propagate_cancel, forced_value
+               FROM inventory.stock_moves
+               WHERE id=$1 AND company_id=$2 AND (metadata->>'deleted_at') IS NULL"#,
+        )
+        .bind(move_id)
+        .bind(company_id)
         .fetch_optional(&mut *conn)
         .await?;
         Ok(row.map(move_row_of))
@@ -497,6 +526,16 @@ impl StockMoveRepository {
         .bind(picking_id)
         .fetch_optional(&mut *conn)
         .await?;
+        // SB-1 cascade: the picking's state just changed, so its batch's stored compute
+        // must re-derive in the SAME transaction — the batch never lags its members. The
+        // projection SQL lives on the batch repository (its single owner); the batch
+        // repository is stateless, so a throwaway instance borrows it here. No-ops when
+        // the picking belongs to no batch.
+        if row.is_some() {
+            PickingBatchProjectionRepository::default()
+                .reproject_batch_of_picking(conn, picking_id)
+                .await?;
+        }
         Ok(row.map(|r| r.get::<String, _>("state")))
     }
 }

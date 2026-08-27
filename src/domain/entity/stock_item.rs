@@ -58,6 +58,7 @@ pub struct StockItem {
     pub has_batch: bool,
     pub valuation_method: ValuationMethod,
     pub reorder_level: Decimal,
+    pub weight_per_unit: Decimal,
     #[serde(default)]
     #[sqlx(json)]
     pub metadata: AuditMetadata,
@@ -70,7 +71,7 @@ impl StockItem {
     }
 
     /// Create a new StockItem with required fields
-    pub fn new(item_id: Uuid, company_id: Uuid, stock_uom: String, is_stock_item: bool, has_batch: bool, valuation_method: ValuationMethod, reorder_level: Decimal) -> Self {
+    pub fn new(item_id: Uuid, company_id: Uuid, stock_uom: String, is_stock_item: bool, has_batch: bool, valuation_method: ValuationMethod, reorder_level: Decimal, weight_per_unit: Decimal) -> Self {
         Self {
             id: Uuid::new_v4(),
             item_id,
@@ -80,6 +81,7 @@ impl StockItem {
             has_batch,
             valuation_method,
             reorder_level,
+            weight_per_unit,
             metadata: AuditMetadata::default(),
         }
     }
@@ -164,6 +166,9 @@ impl StockItem {
                 "reorder_level" => {
                     if let Ok(v) = serde_json::from_value(value) { self.reorder_level = v; }
                 }
+                "weight_per_unit" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.weight_per_unit = v; }
+                }
                 _ => {} // ignore unknown fields
             }
         }
@@ -244,6 +249,7 @@ pub struct StockItemBuilder {
     has_batch: Option<bool>,
     valuation_method: Option<ValuationMethod>,
     reorder_level: Option<Decimal>,
+    weight_per_unit: Option<Decimal>,
 }
 
 impl StockItemBuilder {
@@ -289,6 +295,12 @@ impl StockItemBuilder {
         self
     }
 
+    /// Set the weight_per_unit field (default: `Decimal::from(0)`)
+    pub fn weight_per_unit(mut self, value: Decimal) -> Self {
+        self.weight_per_unit = Some(value);
+        self
+    }
+
     /// Build the StockItem entity
     ///
     /// Returns Err if any required field without a default is missing.
@@ -306,6 +318,7 @@ impl StockItemBuilder {
             has_batch: self.has_batch.unwrap_or(false),
             valuation_method: self.valuation_method.unwrap_or_default(),
             reorder_level: self.reorder_level.unwrap_or(Decimal::from(0)),
+            weight_per_unit: self.weight_per_unit.unwrap_or(Decimal::from(0)),
             metadata: AuditMetadata::default(),
         })
     }

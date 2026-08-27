@@ -155,8 +155,8 @@ async fn lifecycle_confirm_assign_done() {
     let mv = w.create_move(new_move(company, item, stock, customer, "6")).await.unwrap();
     assert_eq!(move_state(&pool, mv).await, "draft", "create lands draft — no state at insert (spec §1)");
 
-    assert_eq!(w.action_confirm(mv).await.unwrap(), "confirmed");
-    let a = w.action_assign(mv).await.unwrap();
+    assert_eq!(w.action_confirm(company, mv).await.unwrap(), "confirmed");
+    let a = w.action_assign(company, mv).await.unwrap();
     assert_eq!(a.state, "assigned", "10 on hand covers demand 6");
     assert_eq!(a.reserved_qty, d("6"));
     // Triangle: authoritative quant reserved=6 (mirror line minted), available = 10-6 = 4 (a READ).
@@ -167,7 +167,7 @@ async fn lifecycle_confirm_assign_done() {
     assert_eq!(avail.available_qty, d("4"), "T2: available = quantity - reserved as a read");
     assert_eq!(avail.on_hand_qty, d("10"));
 
-    let out = w.action_done(mv, BackorderPolicy::Always, &out_gl(), &StubGl).await.unwrap();
+    let out = w.action_done(company, mv, BackorderPolicy::Always, &out_gl(), &StubGl).await.unwrap();
     assert_eq!(out.done_qty, d("6"));
     assert!(out.backorder_move_id.is_none(), "full validate mints no backorder");
     assert_eq!(out.sle_count, 1, "OUT leg only (customer destination holds no bin)");
@@ -200,12 +200,12 @@ async fn competing_reservations_one_counter() {
 
     let a = w.create_move(new_move(company, item, stock, customer, "6")).await.unwrap();
     let b = w.create_move(new_move(company, item, stock, customer, "6")).await.unwrap();
-    w.action_confirm(a).await.unwrap();
-    w.action_confirm(b).await.unwrap();
+    w.action_confirm(company, a).await.unwrap();
+    w.action_confirm(company, b).await.unwrap();
 
-    let oa = w.action_assign(a).await.unwrap();
+    let oa = w.action_assign(company, a).await.unwrap();
     assert_eq!(oa.state, "assigned");
-    let ob = w.action_assign(b).await.unwrap();
+    let ob = w.action_assign(company, b).await.unwrap();
     assert_eq!(ob.state, "partially_available", "only 4 remain free — never an over-reserve");
     assert_eq!(ob.reserved_qty, d("4"));
 
@@ -214,7 +214,7 @@ async fn competing_reservations_one_counter() {
     assert_eq!(q, d("10"));
 
     // Done on A: the mirror self-heal leaves B's 4 reserved on the quant.
-    w.action_done(a, BackorderPolicy::Never, &no_gl(), &StubGl).await.unwrap();
+    w.action_done(company, a, BackorderPolicy::Never, &no_gl(), &StubGl).await.unwrap();
     let (q, r) = quant_at(&pool, company, item, stock).await;
     assert_eq!((q, r), (d("4"), d("4")), "A consumed 6 physically; B's live line still holds 4");
 }
@@ -233,13 +233,13 @@ async fn backorder_split_on_partial_done() {
     seed_bin(&pool, company, item, wh, "10", "100").await;
 
     let mv = w.create_move(new_move(company, item, stock, customer, "10")).await.unwrap();
-    w.action_confirm(mv).await.unwrap();
-    w.action_assign(mv).await.unwrap();
+    w.action_confirm(company, mv).await.unwrap();
+    w.action_assign(company, mv).await.unwrap();
     // The operator validates only 6 of the reserved 10 (the picking's done quantity).
     sqlx::query("UPDATE inventory.stock_move_lines SET quantity=6 WHERE move_id=$1")
         .bind(mv).execute(&pool).await.unwrap();
 
-    let out = w.action_done(mv, BackorderPolicy::Always, &no_gl(), &StubGl).await.unwrap();
+    let out = w.action_done(company, mv, BackorderPolicy::Always, &no_gl(), &StubGl).await.unwrap();
     assert_eq!(out.done_qty, d("6"));
     let child = out.backorder_move_id.expect("backorder minted");
     let (demand, state, origs): (Decimal, String, Vec<Uuid>) = sqlx::query_as(
@@ -262,13 +262,13 @@ async fn backorder_split_on_partial_done() {
     // Policy Never leaves the remainder unbackordered. (Release the backorder's hold first —
     // under the reserve-on-mint contract it owns every free unit at the location, and the Never
     // probe below needs reservable stock.)
-    w.unreserve_move(child).await.unwrap();
+    w.unreserve_move(company, child).await.unwrap();
     let mv2 = w.create_move(new_move(company, item, stock, customer, "2")).await.unwrap();
-    w.action_confirm(mv2).await.unwrap();
-    w.action_assign(mv2).await.unwrap();
+    w.action_confirm(company, mv2).await.unwrap();
+    w.action_assign(company, mv2).await.unwrap();
     sqlx::query("UPDATE inventory.stock_move_lines SET quantity=1 WHERE move_id=$1")
         .bind(mv2).execute(&pool).await.unwrap();
-    let out2 = w.action_done(mv2, BackorderPolicy::Never, &no_gl(), &StubGl).await.unwrap();
+    let out2 = w.action_done(company, mv2, BackorderPolicy::Never, &no_gl(), &StubGl).await.unwrap();
     assert!(out2.backorder_move_id.is_none());
 }
 
@@ -291,9 +291,9 @@ async fn v7_out_valued_before_in_after() {
     seed_bin(&pool, company, item, wh2, "5", "60").await;
 
     let mv = w.create_move(new_move(company, item, src, dst, "4")).await.unwrap();
-    w.action_confirm(mv).await.unwrap();
-    w.action_assign(mv).await.unwrap();
-    let out = w.action_done(mv, BackorderPolicy::Never, &out_gl(), &StubGl).await.unwrap();
+    w.action_confirm(company, mv).await.unwrap();
+    w.action_assign(company, mv).await.unwrap();
+    let out = w.action_done(company, mv, BackorderPolicy::Never, &out_gl(), &StubGl).await.unwrap();
     assert_eq!(out.sle_count, 2, "paired OUT + IN legs");
     assert!(!out.gl_posted, "internal cross-warehouse move posts no GL (value-neutral)");
 
@@ -330,12 +330,12 @@ async fn inbound_move_receipt_shape() {
     let mut input = new_move(company, item, supplier, stock, "8");
     input.price_unit = d("25");
     let mv = w.create_move(input).await.unwrap();
-    w.action_confirm(mv).await.unwrap();
-    let a = w.action_assign(mv).await.unwrap();
+    w.action_confirm(company, mv).await.unwrap();
+    let a = w.action_assign(company, mv).await.unwrap();
     assert_eq!(a.state, "assigned", "incoming supply needs no reservation");
     assert_eq!(a.reserved_qty, d("8"));
 
-    let out = w.action_done(mv, BackorderPolicy::Never, &out_gl(), &StubGl).await.unwrap();
+    let out = w.action_done(company, mv, BackorderPolicy::Never, &out_gl(), &StubGl).await.unwrap();
     assert_eq!(out.done_qty, d("8"));
     assert_eq!(out.sle_count, 1, "IN leg only");
     assert!(out.gl_posted, "receipt shape: Dr Inventory / Cr GR/IR");
@@ -366,10 +366,10 @@ async fn waiting_gate_releases_when_parents_done() {
     child_input.move_orig_ids = vec![parent];
     let child = w.create_move(child_input).await.unwrap();
 
-    assert_eq!(w.action_confirm(parent).await.unwrap(), "confirmed");
-    assert_eq!(w.action_confirm(child).await.unwrap(), "waiting", "parent not done — child waits");
-    w.action_assign(parent).await.unwrap();
-    w.action_done(parent, BackorderPolicy::Never, &no_gl(), &StubGl).await.unwrap();
+    assert_eq!(w.action_confirm(company, parent).await.unwrap(), "confirmed");
+    assert_eq!(w.action_confirm(company, child).await.unwrap(), "waiting", "parent not done — child waits");
+    w.action_assign(company, parent).await.unwrap();
+    w.action_done(company, parent, BackorderPolicy::Never, &no_gl(), &StubGl).await.unwrap();
     assert_eq!(move_state(&pool, child).await, "confirmed", "all parents done — child released");
 }
 
@@ -385,9 +385,9 @@ async fn cancel_releases_reservation() {
     seed_quant(&pool, company, item, stock, "10").await;
 
     let mv = w.create_move(new_move(company, item, stock, customer, "6")).await.unwrap();
-    w.action_confirm(mv).await.unwrap();
-    w.action_assign(mv).await.unwrap();
-    let released = w.action_cancel(mv).await.unwrap();
+    w.action_confirm(company, mv).await.unwrap();
+    w.action_assign(company, mv).await.unwrap();
+    let released = w.action_cancel(company, mv).await.unwrap();
     assert_eq!(released, d("6"));
     assert_eq!(move_state(&pool, mv).await, "cancel");
     let (q, r) = quant_at(&pool, company, item, stock).await;
@@ -422,14 +422,14 @@ async fn guards_reject_bad_transitions() {
 
     // Guarded machine: confirm a non-draft move; done with no lines.
     let mv = w.create_move(new_move(company, item, stock, customer, "1")).await.unwrap();
-    let err = w.action_assign(mv).await.unwrap_err();
+    let err = w.action_assign(company, mv).await.unwrap_err();
     assert!(matches!(err, InventoryError::WrongMoveState { .. }), "assign on draft is refused");
-    w.action_confirm(mv).await.unwrap();
-    let err = w.action_confirm(mv).await.unwrap_err();
+    w.action_confirm(company, mv).await.unwrap();
+    let err = w.action_confirm(company, mv).await.unwrap_err();
     assert!(matches!(err, InventoryError::WrongMoveState { .. }), "confirm twice is refused");
-    let err = w.action_done(mv, BackorderPolicy::Never, &no_gl(), &StubGl).await.unwrap_err();
+    let err = w.action_done(company, mv, BackorderPolicy::Never, &no_gl(), &StubGl).await.unwrap_err();
     assert!(matches!(err, InventoryError::MoveLinesRequired { .. }), "R24: done needs lines");
-    let err = w.action_done(mv, BackorderPolicy::Never, &no_gl(), &StubGl).await.unwrap_err();
+    let err = w.action_done(company, mv, BackorderPolicy::Never, &no_gl(), &StubGl).await.unwrap_err();
     assert!(matches!(err, InventoryError::MoveLinesRequired { .. }));
 }
 
@@ -454,13 +454,13 @@ async fn competing_reservations_exactly_one_winner() {
     // Sequential: A claims the full 6 first.
     let a = w.create_move(new_move(company, item, stock, customer, "6")).await.unwrap();
     let b = w.create_move(new_move(company, item, stock, customer, "6")).await.unwrap();
-    w.action_confirm(a).await.unwrap();
-    w.action_confirm(b).await.unwrap();
+    w.action_confirm(company, a).await.unwrap();
+    w.action_confirm(company, b).await.unwrap();
 
-    let oa = w.action_assign(a).await.unwrap();
+    let oa = w.action_assign(company, a).await.unwrap();
     assert_eq!((oa.state.as_str(), oa.reserved_qty), ("assigned", d("6")), "the winner takes all 6");
 
-    let ob = w.action_assign(b).await.unwrap();
+    let ob = w.action_assign(company, b).await.unwrap();
     assert_eq!((ob.state.as_str(), ob.reserved_qty), ("confirmed", d("0")),
         "the loser sees insufficient available: nothing free to reserve, state stays confirmed");
 
@@ -487,9 +487,9 @@ async fn competing_reservations_exactly_one_winner() {
         .bind(company).bind(item).bind(stock).execute(&pool).await.unwrap();
     let c = w.create_move(new_move(company, item, stock, customer, "6")).await.unwrap();
     let e = w.create_move(new_move(company, item, stock, customer, "6")).await.unwrap();
-    w.action_confirm(c).await.unwrap();
-    w.action_confirm(e).await.unwrap();
-    let (oc, oe) = tokio::join!(w.action_assign(c), w.action_assign(e));
+    w.action_confirm(company, c).await.unwrap();
+    w.action_confirm(company, e).await.unwrap();
+    let (oc, oe) = tokio::join!(w.action_assign(company, c), w.action_assign(company, e));
     let (oc, oe) = (oc.unwrap(), oe.unwrap());
     let assigned: Vec<&str> = [&oc, &oe].iter().map(|o| o.state.as_str()).filter(|s| *s == "assigned").collect();
     assert_eq!(assigned.len(), 1, "exactly one winner even under the race: {:?}", (&oc.state, &oe.state));

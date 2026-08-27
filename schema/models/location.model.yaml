@@ -95,6 +95,11 @@ models:
         attributes: ["@exclude_from_foreign_key_check"]
         description: "Per-location valuation account override — when set, inventory GL legs that touch this location resolve to it ahead of the door-header account (smallest-first override: location beats document header) # logical FK to accounting.Account.id"
 
+      storage_category_id:
+        type: uuid?
+        attributes: ["@foreign_key(StorageCategory.id)"]
+        description: "Storage-category capacity constraint — the source a putaway rule's T12 derived copy reads"
+
       metadata:
         type: Metadata
         attributes: ["@audit_metadata"]
@@ -117,6 +122,9 @@ models:
         description: "Internal-location filtering"
       - type: index
         fields: [warehouse_id]
+      - type: index
+        fields: [storage_category_id]
+        description: "Storage-capacity joins (the T12 derivation source)"
       - type: index
         fields: [company_id]
         description: "Derived company filter (NULL = shared row, readable by all)"

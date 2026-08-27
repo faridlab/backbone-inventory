@@ -40,6 +40,12 @@ use super::{
     // view for a human to order against; the computes recommend, writes go through the
     // service surface (later passes expose the ordering verbs).
     create_route_read_routes, create_route_rule_read_routes, create_reordering_rule_read_routes,
+    // Satellite/master-data reads: the batch + scrap documents and the package/storage/
+    // putaway vocabulary. Writes for the vocabulary stay on their validated surface; the
+    // batch and scrap documents write only through the verbs above.
+    create_picking_batch_read_routes, create_scrap_read_routes, create_scrap_reason_tag_read_routes,
+    create_package_type_read_routes, create_storage_category_read_routes,
+    create_storage_category_capacity_read_routes, create_putaway_rule_read_routes,
 };
 
 #[derive(Debug, Serialize)]
@@ -226,6 +232,171 @@ async fn cancel_landed_cost(
     }
 }
 
+// ── picking-batch surface (SB-1 — the batch state is a PROJECTION of its members) ──
+//
+// No verb here writes a batch state: `create` mints a draft header, the membership verbs
+// move the `batch_id` pointer (the recompute that follows derives the state), and the probe
+// READS it. Same posture as the picking surface above — the only batch-state writer in the
+// module is the projection recompute.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchHeaderBody {
+    id: Uuid,
+    name: String,
+    /// The PROJECTED state (a read — never an assertion).
+    state: String,
+    is_wave: bool,
+    had_members: bool,
+    scheduled_date: chrono::DateTime<chrono::Utc>,
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchMemberBody { id: Uuid, name: String, state: String }
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchProbeBody { batch: BatchHeaderBody, members: Vec<BatchMemberBody> }
+fn batch_header_body(h: crate::infrastructure::persistence::BatchHeaderRow) -> BatchHeaderBody {
+    BatchHeaderBody {
+        id: h.id, name: h.name, state: h.state, is_wave: h.is_wave,
+        had_members: h.had_members, scheduled_date: h.scheduled_date,
+    }
+}
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateBatchBody {
+    name: String,
+    #[serde(default)] is_wave: bool,
+}
+async fn create_batch(
+    State(svc): State<Arc<InventoryWriteService>>,
+    tenant: CompanyContext,
+    Json(b): Json<CreateBatchBody>,
+) -> axum::response::Response {
+    match svc.create_batch(tenant.company_id, b.name, b.is_wave, None).await {
+        Ok(h) => (StatusCode::CREATED, Json(batch_header_body(h))).into_response(),
+        Err(e) => err(e),
+    }
+}
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchMemberBodyIn { picking_id: Uuid }
+async fn add_batch_member(
+    State(svc): State<Arc<InventoryWriteService>>,
+    tenant: CompanyContext,
+    axum::extract::Path(batch_id): axum::extract::Path<Uuid>,
+    Json(b): Json<BatchMemberBodyIn>,
+) -> axum::response::Response {
+    match svc.add_picking_to_batch(tenant.company_id, batch_id, b.picking_id).await {
+        Ok(h) => (StatusCode::OK, Json(batch_header_body(h))).into_response(),
+        Err(e) => err(e),
+    }
+}
+async fn remove_batch_member(
+    State(svc): State<Arc<InventoryWriteService>>,
+    tenant: CompanyContext,
+    axum::extract::Path((batch_id, picking_id)): axum::extract::Path<(Uuid, Uuid)>,
+) -> axum::response::Response {
+    match svc.remove_picking_from_batch(tenant.company_id, batch_id, picking_id).await {
+        Ok(h) => (StatusCode::OK, Json(batch_header_body(h))).into_response(),
+        Err(e) => err(e),
+    }
+}
+async fn get_batch(
+    State(svc): State<Arc<InventoryWriteService>>,
+    tenant: CompanyContext,
+    axum::extract::Path(batch_id): axum::extract::Path<Uuid>,
+) -> axum::response::Response {
+    match svc.fetch_batch(tenant.company_id, batch_id).await {
+        Ok((h, members)) => (StatusCode::OK, Json(BatchProbeBody {
+            batch: batch_header_body(h),
+            members: members.into_iter().map(|m| BatchMemberBody {
+                id: m.id, name: m.name, state: m.state,
+            }).collect(),
+        })).into_response(),
+        Err(e) => err(e),
+    }
+}
+
+// ── scrap surface (the door rides the ONE move engine; deferred GL on HTTP) ──
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScrapBody {
+    id: Uuid,
+    name: String,
+    state: String,
+    origin: Option<String>,
+    item_id: Uuid,
+    scrap_qty: Decimal,
+    location_id: Uuid,
+    scrap_location_id: Uuid,
+    move_id: Option<Uuid>,
+}
+fn scrap_body(r: crate::infrastructure::persistence::ScrapRow) -> ScrapBody {
+    ScrapBody {
+        id: r.id, name: r.name, state: r.state, origin: r.origin, item_id: r.item_id,
+        scrap_qty: r.scrap_qty, location_id: r.location_id,
+        scrap_location_id: r.scrap_location_id, move_id: r.move_id,
+    }
+}
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateScrapBody {
+    item_id: Uuid,
+    scrap_qty: Decimal,
+    location_id: Uuid,
+    #[serde(default)] scrap_location_id: Option<Uuid>,
+    #[serde(default)] lot_id: Option<Uuid>,
+    #[serde(default)] package_id: Option<Uuid>,
+    #[serde(default)] owner_id: Option<Uuid>,
+    #[serde(default)] picking_id: Option<Uuid>,
+    #[serde(default)] origin: Option<String>,
+    #[serde(default)] scrap_reason_tag_ids: Vec<Uuid>,
+}
+async fn create_scrap(
+    State(svc): State<Arc<InventoryWriteService>>,
+    tenant: CompanyContext,
+    Json(b): Json<CreateScrapBody>,
+) -> axum::response::Response {
+    let s = crate::application::service::inventory_scrap::NewScrap {
+        company_id: tenant.company_id,
+        item_id: b.item_id,
+        scrap_qty: b.scrap_qty,
+        location_id: b.location_id,
+        scrap_location_id: b.scrap_location_id,
+        lot_id: b.lot_id,
+        package_id: b.package_id,
+        owner_id: b.owner_id,
+        picking_id: b.picking_id,
+        origin: b.origin,
+        scrap_reason_tag_ids: b.scrap_reason_tag_ids,
+    };
+    match svc.create_scrap(s).await {
+        Ok(r) => (StatusCode::CREATED, Json(scrap_body(r))).into_response(),
+        Err(e) => err(e),
+    }
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScrapProcessedBody { scrap_id: Uuid, move_id: Uuid }
+async fn process_scrap(
+    State(svc): State<Arc<InventoryWriteService>>,
+    tenant: CompanyContext,
+    axum::extract::Path(scrap_id): axum::extract::Path<Uuid>,
+) -> axum::response::Response {
+    // The deferred shape: the physical movement lands whole; the GL leg stays for a
+    // service-driven repost (the composing service's sink is not available here).
+    match svc.process_scrap_deferred(tenant.company_id, scrap_id).await {
+        Ok(out) => (StatusCode::OK, Json(ScrapProcessedBody {
+            scrap_id: out.scrap_id, move_id: out.move_id,
+        })).into_response(),
+        Err(e) => err(e),
+    }
+}
+// NOTE: there is deliberately no hand-written `GET /scraps/:id` here. The generated scrap
+// read surface (mounted above via `create_scrap_read_routes`) already owns that path, and
+// axum refuses two handlers on one method+path. Its DTO carries everything the door view
+// would (state, move_id, both locations), so a second route would only re-state it; the
+// scrap door's own surface is the mint + process verbs below.
 fn write_routes(svc: Arc<InventoryWriteService>, verifier: CompanyVerifier) -> Router {
     Router::new()
         .route("/warehouses", post(create_warehouse))
@@ -235,14 +406,23 @@ fn write_routes(svc: Arc<InventoryWriteService>, verifier: CompanyVerifier) -> R
         // revaluation + GL leg armed `pending`); the GL post itself needs the composing
         // service's `GlPostSink` and stays service/job-driven like voucher submit.
         .route("/landed-costs", post(create_landed_cost))
-        .route("/landed-costs/{id}/validate", post(validate_landed_cost))
-        .route("/landed-costs/{id}/cancel", post(cancel_landed_cost))
+        .route("/landed-costs/:id/validate", post(validate_landed_cost))
+        .route("/landed-costs/:id/cancel", post(cancel_landed_cost))
         // Picking mint + count staging (the projection/adjustment write surfaces that post no
         // GL). `validate_picking` / `apply_inventory` need the composing service's `GlPostSink`
         // (the GL-posting contract), so they stay service/job-driven like voucher submit —
         // proven by the seam tests, never exposed as bare HTTP.
         .route("/pickings", post(create_picking))
         .route("/counts", post(stage_count))
+        // Picking-batch membership (SB-1): mints a draft grouping point and moves the
+        // membership pointer — the batch state derives from the members, never written here.
+        .route("/picking-batches", post(create_batch))
+        .route("/picking-batches/:id/pickings", post(add_batch_member))
+        .route("/picking-batches/:id/pickings/:picking_id", axum::routing::delete(remove_batch_member))
+        // Scrap door: mint stays draft; process is the deferred shape (physical movement
+        // lands whole, GL leg stays for the service-driven repost).
+        .route("/scraps", post(create_scrap))
+        .route("/scraps/:id/process", post(process_scrap))
         // Every write above is tenant-scoped: `company_auth` rejects a request whose token is absent,
         // invalid, or carries no `company_id`, so a handler only ever runs with a proven tenant.
         //
@@ -416,14 +596,18 @@ fn read_routes(svc: Arc<InventoryReadService>) -> Router {
     Router::new().route("/availability", axum::routing::get(get_availability)).with_state(svc)
 }
 
-/// The projection/adjustment PROBES (tenant-fenced reads): the picking's projected state
-/// and the pending-count worklist. Same `company_auth` + `route_layer` posture as the
-/// writes — these reads take the tenant from the token, so a caller cannot probe another
-/// company's transfers or staged counts.
+/// The projection/adjustment PROBES (tenant-fenced reads): the picking's projected state,
+/// the batch projection (header + member states), and the pending-count worklist. Same
+/// `company_auth` + `route_layer` posture as the writes — these reads take the tenant from
+/// the token, so a caller cannot probe another company's transfers or staged counts.
 fn probe_routes(svc: Arc<InventoryWriteService>, verifier: CompanyVerifier) -> Router {
     Router::new()
-        .route("/pickings/{id}", axum::routing::get(get_picking))
+        .route("/pickings/:id", axum::routing::get(get_picking))
         .route("/counts", axum::routing::get(get_staged_counts))
+        // The hyphenated batch path is this door's alone (the generated picking-batch read
+        // surface mounts at the underscore form `/picking_batches`), so the projection probe
+        // owns it: the batch header WITH its member pickings' states.
+        .route("/picking-batches/:id", axum::routing::get(get_batch))
         .route_layer(from_fn_with_state(verifier, company_auth))
         .with_state(svc)
 }
@@ -499,6 +683,16 @@ pub fn create_guarded_inventory_routes(
         .merge(create_route_read_routes(m.route_service.clone()))
         .merge(create_route_rule_read_routes(m.route_rule_service.clone()))
         .merge(create_reordering_rule_read_routes(m.reordering_rule_service.clone()))
+        // Satellite + master-data reads (batch/scrap documents; package/storage/putaway
+        // vocabulary): same tenant fence. The DB-level guards (uniques, CHECKs, the T12
+        // trigger) backstop every writer on these tables.
+        .merge(create_picking_batch_read_routes(m.picking_batch_service.clone()))
+        .merge(create_scrap_read_routes(m.scrap_service.clone()))
+        .merge(create_scrap_reason_tag_read_routes(m.scrap_reason_tag_service.clone()))
+        .merge(create_package_type_read_routes(m.package_type_service.clone()))
+        .merge(create_storage_category_read_routes(m.storage_category_service.clone()))
+        .merge(create_storage_category_capacity_read_routes(m.storage_category_capacity_service.clone()))
+        .merge(create_putaway_rule_read_routes(m.putaway_rule_service.clone()))
         .route_layer(from_fn_with_state(verifier.clone(), company_auth));
     Router::new()
         .merge(entity_reads)

@@ -1,0 +1,130 @@
+# =============================================================================
+# Domain: Inventory
+# Entity: PickingBatch (Odoo `stock.picking.batch`)
+# =============================================================================
+# The picking-batch satellite: a wave/batch document that groups transfers so a
+# picker works them as one unit. Membership is one-directional — a transfer
+# belongs to at most one batch (`transfers.batch_id`, the membership column the
+# verbs on the batch service write).
+#
+# CRITICAL (spec misc-features.md SB, flag SB-1, ADR-0016): PickingBatch.state
+# is a STORED COMPUTE PROJECTED from its member pickings — never a hand-driven
+# state machine and has NO state_machines entry anywhere. The projection bands
+# onto the member TransferState vocabulary:
+#     draft     — any live member still draft/confirmed (not ready to pick)
+#     waiting   — every live member at least waiting
+#     ready     — every live member at least assigned (the wave can run)
+#     done      — every live member done
+#     cancel    — no live member remains (all cancelled), OR the batch was
+#                 emptied after having had members (SB-1 auto-cancel-empty)
+# The engine's picking recompute cascades the batch recompute on every
+# member-state change; the membership verbs (add/remove) reproject on every
+# membership write. The entity is mounted read_only over HTTP so no generic
+# write path can hand-set the projection.
+#
+# Company fence (ADR-0014): a batch is a TRANSACTION — strict. company_id is
+# NOT NULL and every member must carry the same company (the add verb checks;
+# a DB trigger backstops — the same `enforcement: both` pair the R11 rule
+# guard uses).
+# =============================================================================
+
+models:
+  # ===========================================================================
+  # Entity: PickingBatch — a wave of transfers worked as one unit
+  # ===========================================================================
+  - name: PickingBatch
+    collection: picking_batches
+    read_only: true
+    description: "A batch/wave of pickings worked as one unit. state is a stored compute projected from its member pickings (SB-1, ADR-0016) — never a hand-driven state machine; the member pickings own the lifecycle"
+
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique batch identifier"
+
+      name:
+        type: string
+        attributes: ["@required", "@max(40)", "@default(\"/\")"]
+        description: "Reference (sequence-filled; unique per company — the R3 posture the transfer carries)"
+
+      note:
+        type: string?
+        attributes: ["@max(2000)"]
+        description: "Free-form notes"
+
+      state:
+        type: PickingBatchState
+        attributes: ["@default(draft)"]
+        lifecycle: projection
+        description: "PROJECTED from the member pickings' states (SB-1, ADR-0016): done when every live member is done; ready when every live member is at least assigned; waiting when every live member is at least waiting; draft when any live member is still draft/confirmed; cancel when no live member remains or the batch was emptied after having grouped members. NO per-batch state machine exists — reprojected on every member-state change and every membership write"
+
+      is_wave:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "Marks a wave batch (pick-to-light / zone waves) versus an ordinary batch"
+
+      user_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "The operator responsible for the batch # logical FK to sapiens.User.id"
+
+      scheduled_date:
+        type: datetime
+        attributes: ["@default(now)"]
+        description: "Scheduled time"
+
+      had_members:
+        type: bool
+        attributes: ["@default(false)"]
+        description: "True once the batch has ever grouped a picking — the SB-1 discriminator: a batch that never grouped anything stays draft when empty, a batch emptied after grouping auto-cancels (set only by the membership write path, never a free write)"
+
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "STRICT transaction fence; every member picking carries the same company # logical FK to organization.Company.id"
+
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+
+    relations:
+      pickings:
+        type: Transfer[]
+        attributes: ["@one_to_many"]
+        description: "The member pickings — the batch's state projects from these (SB-1)"
+        inverse: batch
+
+    indexes:
+      - type: unique
+        fields: [name, company_id]
+        where: "deleted_at IS NULL"
+        description: "Batch reference unique per company (the R3 posture)"
+      - type: index
+        fields: [state]
+        description: "The projected value is still indexed (hot filter)"
+      - type: index
+        fields: [user_id]
+      - type: index
+        fields: [company_id]
+
+# =============================================================================
+# Enums
+# =============================================================================
+
+enums:
+  - name: PickingBatchState
+    description: "stock.picking.batch.state — a STORED COMPUTE projected from the member pickings' states, never hand-set (SB-1, ADR-0016)"
+    variants:
+      - name: draft
+        description: "Any live member still draft/confirmed (not ready to pick), or the batch groups nothing yet"
+        default: true
+      - name: waiting
+        description: "Every live member at least waiting"
+      - name: ready
+        description: "Every live member at least assigned (the wave can run)"
+      - name: done
+        description: "Every live member done"
+      - name: cancel
+        description: "No live member remains (all cancelled) or the batch was emptied after grouping members (SB-1 auto-cancel-empty)"

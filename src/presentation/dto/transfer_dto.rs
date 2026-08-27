@@ -74,6 +74,8 @@ pub struct CreateTransferDto {
     pub backorder_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "return_id")]
     pub return_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "batch_id")]
+    pub batch_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -128,6 +130,8 @@ pub struct UpdateTransferDto {
     pub backorder_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "return_id")]
     pub return_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "batch_id")]
+    pub batch_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -185,12 +189,14 @@ pub struct PatchTransferDto {
     pub backorder_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "return_id")]
     pub return_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "batch_id")]
+    pub batch_id: Option<Uuid>,
 }
 
 impl PatchTransferDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.name.is_some() || self.origin.is_some() || self.note.is_some() || self.priority.is_some() || self.picking_type_id.is_some() || self.location_id.is_some() || self.location_dest_id.is_some() || self.partner_id.is_some() || self.company_id.is_some() || self.move_type.is_some() || self.scheduled_date.is_some() || self.date_done.is_some() || self.state.is_some() || self.is_locked.is_some() || self.backorder_id.is_some() || self.return_id.is_some()
+        self.name.is_some() || self.origin.is_some() || self.note.is_some() || self.priority.is_some() || self.picking_type_id.is_some() || self.location_id.is_some() || self.location_dest_id.is_some() || self.partner_id.is_some() || self.company_id.is_some() || self.move_type.is_some() || self.scheduled_date.is_some() || self.date_done.is_some() || self.state.is_some() || self.is_locked.is_some() || self.backorder_id.is_some() || self.return_id.is_some() || self.batch_id.is_some()
     }
 }
 
@@ -231,6 +237,7 @@ pub struct TransferResponseDto {
     pub is_locked: bool,
     pub backorder_id: Option<Uuid>,
     pub return_id: Option<Uuid>,
+    pub batch_id: Option<Uuid>,
     pub metadata: AuditMetadata,
 }
 
@@ -318,6 +325,7 @@ impl From<Transfer> for TransferResponseDto {
             is_locked: entity.is_locked,
             backorder_id: entity.backorder_id,
             return_id: entity.return_id,
+            batch_id: entity.batch_id,
             metadata: entity.metadata,
         }
     }
@@ -356,6 +364,7 @@ impl From<CreateTransferDto> for Transfer {
             is_locked: dto.is_locked,
             backorder_id: dto.backorder_id,
             return_id: dto.return_id,
+            batch_id: dto.batch_id,
             metadata: AuditMetadata::default(),
         }
     }
@@ -381,6 +390,7 @@ impl From<&Transfer> for TransferResponseDto {
             is_locked: entity.is_locked.clone(),
             backorder_id: entity.backorder_id.clone(),
             return_id: entity.return_id.clone(),
+            batch_id: entity.batch_id.clone(),
             metadata: entity.metadata.clone(),
         }
     }
@@ -410,6 +420,7 @@ impl backbone_core::ApplyUpdateDto<UpdateTransferDto> for Transfer {
         self.is_locked = dto.is_locked;
         self.backorder_id = dto.backorder_id;
         self.return_id = dto.return_id;
+        self.batch_id = dto.batch_id;
         Ok(self)
     }
 }

@@ -36,7 +36,7 @@ impl Seeder for SeedStockMoveLineSeeder {
     }
 
     fn order(&self) -> i32 {
-        5
+        10
     }
 
     async fn should_run(&self, pool: &PgPool) -> Result<bool> {

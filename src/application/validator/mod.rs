@@ -5,8 +5,13 @@
 pub mod shared_types;
 pub use shared_types::{ValidationError, ValidationErrors, ValidationResult, EntityValidator};
 
+pub mod picking_batch_validator;
 pub mod delivery_note_validator;
 pub mod delivery_note_item_validator;
+pub mod inventory_company_setting_validator;
+pub mod landed_cost_validator;
+pub mod landed_cost_line_validator;
+pub mod landed_cost_adjustment_line_validator;
 pub mod location_validator;
 pub mod stock_move_validator;
 pub mod stock_move_line_validator;
@@ -18,23 +23,30 @@ pub mod reordering_rule_validator;
 pub mod purchase_receipt_validator;
 pub mod purchase_receipt_item_validator;
 pub mod quant_validator;
+pub mod scrap_validator;
+pub mod scrap_reason_tag_validator;
 pub mod stock_entry_validator;
 pub mod stock_entry_item_validator;
 pub mod stock_ledger_entry_validator;
 pub mod bin_validator;
 pub mod stock_reconciliation_validator;
 pub mod stock_reconciliation_item_validator;
+pub mod package_type_validator;
+pub mod storage_category_validator;
+pub mod storage_category_capacity_validator;
+pub mod putaway_rule_validator;
 pub mod lot_validator;
 pub mod package_validator;
 pub mod warehouse_validator;
 pub mod stock_item_validator;
-pub mod inventory_company_setting_validator;
-pub mod landed_cost_validator;
-pub mod landed_cost_line_validator;
-pub mod landed_cost_adjustment_line_validator;
 
+pub use picking_batch_validator::{PickingBatchValidator, picking_batch_validator};
 pub use delivery_note_validator::{DeliveryNoteValidator, delivery_note_validator};
 pub use delivery_note_item_validator::{DeliveryNoteItemValidator, delivery_note_item_validator};
+pub use inventory_company_setting_validator::{InventoryCompanySettingValidator, inventory_company_setting_validator};
+pub use landed_cost_validator::{LandedCostValidator, landed_cost_validator};
+pub use landed_cost_line_validator::{LandedCostLineValidator, landed_cost_line_validator};
+pub use landed_cost_adjustment_line_validator::{LandedCostAdjustmentLineValidator, landed_cost_adjustment_line_validator};
 pub use location_validator::{LocationValidator, location_validator};
 pub use stock_move_validator::{StockMoveValidator, stock_move_validator};
 pub use stock_move_line_validator::{StockMoveLineValidator, stock_move_line_validator};
@@ -46,20 +58,22 @@ pub use reordering_rule_validator::{ReorderingRuleValidator, reordering_rule_val
 pub use purchase_receipt_validator::{PurchaseReceiptValidator, purchase_receipt_validator};
 pub use purchase_receipt_item_validator::{PurchaseReceiptItemValidator, purchase_receipt_item_validator};
 pub use quant_validator::{QuantValidator, quant_validator};
+pub use scrap_validator::{ScrapValidator, scrap_validator};
+pub use scrap_reason_tag_validator::{ScrapReasonTagValidator, scrap_reason_tag_validator};
 pub use stock_entry_validator::{StockEntryValidator, stock_entry_validator};
 pub use stock_entry_item_validator::{StockEntryItemValidator, stock_entry_item_validator};
 pub use stock_ledger_entry_validator::{StockLedgerEntryValidator, stock_ledger_entry_validator};
 pub use bin_validator::{BinValidator, bin_validator};
 pub use stock_reconciliation_validator::{StockReconciliationValidator, stock_reconciliation_validator};
 pub use stock_reconciliation_item_validator::{StockReconciliationItemValidator, stock_reconciliation_item_validator};
+pub use package_type_validator::{PackageTypeValidator, package_type_validator};
+pub use storage_category_validator::{StorageCategoryValidator, storage_category_validator};
+pub use storage_category_capacity_validator::{StorageCategoryCapacityValidator, storage_category_capacity_validator};
+pub use putaway_rule_validator::{PutawayRuleValidator, putaway_rule_validator};
 pub use lot_validator::{LotValidator, lot_validator};
 pub use package_validator::{PackageValidator, package_validator};
 pub use warehouse_validator::{WarehouseValidator, warehouse_validator};
 pub use stock_item_validator::{StockItemValidator, stock_item_validator};
-pub use inventory_company_setting_validator::{InventoryCompanySettingValidator, inventory_company_setting_validator};
-pub use landed_cost_validator::{LandedCostValidator, landed_cost_validator};
-pub use landed_cost_line_validator::{LandedCostLineValidator, landed_cost_line_validator};
-pub use landed_cost_adjustment_line_validator::{LandedCostAdjustmentLineValidator, landed_cost_adjustment_line_validator};
 
 // <<< CUSTOM
 // END CUSTOM

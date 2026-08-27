@@ -194,13 +194,13 @@ impl InventoryWriteService {
                 scrapped: false,
                 forced_value: None, // ordinary demand: the valuation core derives the carry
             }).await?;
-            self.action_confirm(mid).await?;
+            self.action_confirm(p.company_id, mid).await?;
             // The operation type's reservation posture: `at_confirm` (the generated default)
             // reserves what is available right away — the picking projects to
             // assigned / partially_available / confirmed accordingly. `manual` / `by_date`
             // leave reservation to the scheduler or the operator.
             if op.reservation_method == "at_confirm" {
-                let _ = self.action_assign(mid).await?;
+                let _ = self.action_assign(p.company_id, mid).await?;
             }
             move_ids.push(mid);
         }
@@ -366,7 +366,7 @@ impl InventoryWriteService {
                 return Err(InventoryError::WrongMoveState { move_id: mid, action: "validate", current: mv.state.clone() });
             }
             self.prepare_move_for_validate(&mv).await?;
-            outcomes.push(self.action_done(mid, op_backorder, gl, sink).await?);
+            outcomes.push(self.action_done(company_id, mid, op_backorder, gl, sink).await?);
         }
         let header = self.fetch_picking(company_id, transfer_id).await?;
         Ok(PickingValidated {
@@ -412,8 +412,9 @@ impl InventoryWriteService {
     /// Get a live move ready for `_action_done`: heal the source quant surface when the
     /// stock predates the converged model, then make sure the move HAS lines (R24) — an
     /// `assign` pass for internal sources (the reservation mirror), a minted demand line for
-    /// everything else.
-    async fn prepare_move_for_validate(
+    /// everything else. `pub(super)`: the scrap door drives the same preparation for its
+    /// move (a scrap's source is always an internal stock location).
+    pub(super) async fn prepare_move_for_validate(
         &self,
         mv: &crate::infrastructure::persistence::MoveRow,
     ) -> Result<(), InventoryError> {
@@ -444,7 +445,7 @@ impl InventoryWriteService {
             // split mints the unreserved remainder as its own draft move on the same
             // picking. A move with nothing reservable stays lineless and the done verb
             // refuses it loudly (R24) — the transfer stays open below `done`.
-            self.action_assign(mv.id).await?;
+            self.action_assign(mv.company_id, mv.id).await?;
         } else {
             self.mint_demand_line(mv, mv.demand_qty).await?;
         }
@@ -559,11 +560,11 @@ impl InventoryWriteService {
                 scrapped: false,
                 forced_value: None, // ordinary demand: the valuation core derives the carry
             }).await?;
-            self.action_confirm(mid).await?;
+            self.action_confirm(t.company_id, mid).await?;
             // Reserve from the (healed) source quant — mints the execution line — then
             // validate. The voucher door stays all-or-nothing per line: no backorder.
             self.prepare_move_for_validate(&(self.fetch_move_row(t.company_id, mid).await?)).await?;
-            self.action_done(mid, BackorderPolicy::Never, &MoveGlDirective::default(), &ValueNeutralDoorSink).await?;
+            self.action_done(t.company_id, mid, BackorderPolicy::Never, &MoveGlDirective::default(), &ValueNeutralDoorSink).await?;
         }
         self.sink.publish(InventoryEvent::StockMoved(StockMoved {
             entry_id: id, company_id: t.company_id,

@@ -6,8 +6,13 @@
 
 pub use backbone_core::{Specification, AndSpecification, OrSpecification, NotSpecification};
 
+pub mod picking_batch_specification;
 pub mod delivery_note_specification;
 pub mod delivery_note_item_specification;
+pub mod inventory_company_setting_specification;
+pub mod landed_cost_specification;
+pub mod landed_cost_line_specification;
+pub mod landed_cost_adjustment_line_specification;
 pub mod location_specification;
 pub mod stock_move_specification;
 pub mod stock_move_line_specification;
@@ -19,20 +24,22 @@ pub mod reordering_rule_specification;
 pub mod purchase_receipt_specification;
 pub mod purchase_receipt_item_specification;
 pub mod quant_specification;
+pub mod scrap_specification;
+pub mod scrap_reason_tag_specification;
 pub mod stock_entry_specification;
 pub mod stock_entry_item_specification;
 pub mod stock_ledger_entry_specification;
 pub mod bin_specification;
 pub mod stock_reconciliation_specification;
 pub mod stock_reconciliation_item_specification;
+pub mod package_type_specification;
+pub mod storage_category_specification;
+pub mod storage_category_capacity_specification;
+pub mod putaway_rule_specification;
 pub mod lot_specification;
 pub mod package_specification;
 pub mod warehouse_specification;
 pub mod stock_item_specification;
-pub mod inventory_company_setting_specification;
-pub mod landed_cost_specification;
-pub mod landed_cost_line_specification;
-pub mod landed_cost_adjustment_line_specification;
 
 // <<< CUSTOM
 // END CUSTOM

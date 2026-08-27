@@ -53,12 +53,14 @@ pub struct LocationFilter {
     pub barcode: Option<String>,
     pub company_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
+    pub valuation_account_id: Option<Uuid>,
+    pub storage_category_id: Option<Uuid>,
 }
 
 impl LocationFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.name.is_some() || self.complete_name.is_some() || self.active.is_some() || self.usage.is_some() || self.location_id.is_some() || self.parent_path.is_some() || self.barcode.is_some() || self.company_id.is_some() || self.warehouse_id.is_some()
+        self.name.is_some() || self.complete_name.is_some() || self.active.is_some() || self.usage.is_some() || self.location_id.is_some() || self.parent_path.is_some() || self.barcode.is_some() || self.company_id.is_some() || self.warehouse_id.is_some() || self.valuation_account_id.is_some() || self.storage_category_id.is_some()
     }
 }
 

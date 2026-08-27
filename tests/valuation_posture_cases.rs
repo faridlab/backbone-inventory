@@ -382,9 +382,9 @@ async fn periodic_policy_suppresses_realtime_posts() {
         warehouse_id: Some(wh), orderpoint_id: None, move_orig_ids: vec![], move_dest_ids: vec![],
         is_inventory: false, scrapped: false, forced_value: None,
     }).await.unwrap();
-    w.action_confirm(mid).await.unwrap();
-    w.action_assign(mid).await.unwrap();
-    w.action_done(mid, BackorderPolicy::Never, &gl, &rec).await.unwrap();
+    w.action_confirm(company, mid).await.unwrap();
+    w.action_assign(company, mid).await.unwrap();
+    w.action_done(company, mid, BackorderPolicy::Never, &gl, &rec).await.unwrap();
     let mps: String = sqlx::query_scalar("SELECT posting_state::text FROM inventory.stock_moves WHERE id=$1")
         .bind(mid).fetch_one(&pool).await.unwrap();
     assert_eq!(mps, "not_applicable", "P5: the engine leg never armed under periodic");

@@ -304,14 +304,14 @@ impl InventoryWriteService {
         // Sequence the verbs, re-reading the state between them: the engine owns the state
         // (this method never asserts it), and the assign step is what mints the execution
         // line the done verb requires (R24 at move grain).
-        let mut state = self.move_state_of(move_id).await?;
+        let mut state = self.move_state_of(company_id, move_id).await?;
         if state == "draft" {
-            self.action_confirm(move_id).await?;
-            state = self.move_state_of(move_id).await?;
+            self.action_confirm(company_id, move_id).await?;
+            state = self.move_state_of(company_id, move_id).await?;
         }
         if state == "confirmed" || state == "partially_available" {
-            self.action_assign(move_id).await?;
-            state = self.move_state_of(move_id).await?;
+            self.action_assign(company_id, move_id).await?;
+            state = self.move_state_of(company_id, move_id).await?;
         }
         if state != "assigned" {
             // An adjustment must land WHOLE: a partial draw would leave the on-hand short of
@@ -320,7 +320,7 @@ impl InventoryWriteService {
                 move_id, action: "apply", current: state,
             });
         }
-        self.action_done(move_id, BackorderPolicy::Never, gl, sink).await?;
+        self.action_done(company_id, move_id, BackorderPolicy::Never, gl, sink).await?;
 
         // -- consume the staging (the gate drops AFTER the move landed) ---------------------
         {
