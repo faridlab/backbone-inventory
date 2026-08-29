@@ -255,3 +255,11 @@ user_owned:
   # defect class. Gated on INVENTORY_FENCE_DSN; skips with a printed reason when
   # the fence DSN is absent.
   - "tests/engine_fence_probes.rs"
+  # The service-delivery tracking policy on the product surface (the four-rung
+  # ladder + its two project anchors on stock_items). Hand-written because the
+  # generator does not rewrite existing table migrations.
+  - "migrations/20260829120000_service_tracking_columns.up.sql"
+  - "migrations/20260829120000_service_tracking_columns.down.sql"
+  # Service-tracking column probes: default-manual posture, per-rung round-trip
+  # through the entity mapping, and the enum's DB-level rejection of unknown rungs.
+  - "tests/service_tracking_probes.rs"

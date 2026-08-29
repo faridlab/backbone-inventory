@@ -5,6 +5,7 @@ use uuid::Uuid;
 use rust_decimal::Decimal;
 
 use super::ValuationMethod;
+use super::ServiceTrackingType;
 use super::AuditMetadata;
 
 /// Strongly-typed ID for StockItem
@@ -59,6 +60,9 @@ pub struct StockItem {
     pub valuation_method: ValuationMethod,
     pub reorder_level: Decimal,
     pub weight_per_unit: Decimal,
+    pub service_tracking: ServiceTrackingType,
+    pub service_project_id: Option<Uuid>,
+    pub service_project_template_id: Option<Uuid>,
     #[serde(default)]
     #[sqlx(json)]
     pub metadata: AuditMetadata,
@@ -71,7 +75,7 @@ impl StockItem {
     }
 
     /// Create a new StockItem with required fields
-    pub fn new(item_id: Uuid, company_id: Uuid, stock_uom: String, is_stock_item: bool, has_batch: bool, valuation_method: ValuationMethod, reorder_level: Decimal, weight_per_unit: Decimal) -> Self {
+    pub fn new(item_id: Uuid, company_id: Uuid, stock_uom: String, is_stock_item: bool, has_batch: bool, valuation_method: ValuationMethod, reorder_level: Decimal, weight_per_unit: Decimal, service_tracking: ServiceTrackingType) -> Self {
         Self {
             id: Uuid::new_v4(),
             item_id,
@@ -82,6 +86,9 @@ impl StockItem {
             valuation_method,
             reorder_level,
             weight_per_unit,
+            service_tracking,
+            service_project_id: None,
+            service_project_template_id: None,
             metadata: AuditMetadata::default(),
         }
     }
@@ -138,6 +145,22 @@ impl StockItem {
 
 
     // ==========================================================
+    // Fluent Setters (with_* for optional fields)
+    // ==========================================================
+
+    /// Set the service_project_id field (chainable)
+    pub fn with_service_project_id(mut self, value: Uuid) -> Self {
+        self.service_project_id = Some(value);
+        self
+    }
+
+    /// Set the service_project_template_id field (chainable)
+    pub fn with_service_project_template_id(mut self, value: Uuid) -> Self {
+        self.service_project_template_id = Some(value);
+        self
+    }
+
+    // ==========================================================
     // Partial Update
     // ==========================================================
 
@@ -168,6 +191,15 @@ impl StockItem {
                 }
                 "weight_per_unit" => {
                     if let Ok(v) = serde_json::from_value(value) { self.weight_per_unit = v; }
+                }
+                "service_tracking" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.service_tracking = v; }
+                }
+                "service_project_id" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.service_project_id = v; }
+                }
+                "service_project_template_id" => {
+                    if let Ok(v) = serde_json::from_value(value) { self.service_project_template_id = v; }
                 }
                 _ => {} // ignore unknown fields
             }
@@ -225,7 +257,10 @@ impl backbone_orm::EntityRepoMeta for StockItem {
         m.insert("id".to_string(), "uuid".to_string());
         m.insert("item_id".to_string(), "uuid".to_string());
         m.insert("company_id".to_string(), "uuid".to_string());
+        m.insert("service_project_id".to_string(), "uuid".to_string());
+        m.insert("service_project_template_id".to_string(), "uuid".to_string());
         m.insert("valuation_method".to_string(), "valuation_method".to_string());
+        m.insert("service_tracking".to_string(), "service_tracking_type".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
@@ -250,6 +285,9 @@ pub struct StockItemBuilder {
     valuation_method: Option<ValuationMethod>,
     reorder_level: Option<Decimal>,
     weight_per_unit: Option<Decimal>,
+    service_tracking: Option<ServiceTrackingType>,
+    service_project_id: Option<Uuid>,
+    service_project_template_id: Option<Uuid>,
 }
 
 impl StockItemBuilder {
@@ -301,6 +339,24 @@ impl StockItemBuilder {
         self
     }
 
+    /// Set the service_tracking field (default: `ServiceTrackingType::default()`)
+    pub fn service_tracking(mut self, value: ServiceTrackingType) -> Self {
+        self.service_tracking = Some(value);
+        self
+    }
+
+    /// Set the service_project_id field (optional)
+    pub fn service_project_id(mut self, value: Uuid) -> Self {
+        self.service_project_id = Some(value);
+        self
+    }
+
+    /// Set the service_project_template_id field (optional)
+    pub fn service_project_template_id(mut self, value: Uuid) -> Self {
+        self.service_project_template_id = Some(value);
+        self
+    }
+
     /// Build the StockItem entity
     ///
     /// Returns Err if any required field without a default is missing.
@@ -319,6 +375,9 @@ impl StockItemBuilder {
             valuation_method: self.valuation_method.unwrap_or_default(),
             reorder_level: self.reorder_level.unwrap_or(Decimal::from(0)),
             weight_per_unit: self.weight_per_unit.unwrap_or(Decimal::from(0)),
+            service_tracking: self.service_tracking.unwrap_or_default(),
+            service_project_id: self.service_project_id,
+            service_project_template_id: self.service_project_template_id,
             metadata: AuditMetadata::default(),
         })
     }

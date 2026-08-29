@@ -2182,6 +2182,9 @@ pub struct StockItemDto {
     pub valuation_method: ValuationMethod,
     pub reorder_level: Decimal,
     pub weight_per_unit: Decimal,
+    pub service_tracking: ServiceTrackingType,
+    pub service_project_id: Option<Uuid>,
+    pub service_project_template_id: Option<Uuid>,
     pub metadata: serde_json::Value,
 }
 

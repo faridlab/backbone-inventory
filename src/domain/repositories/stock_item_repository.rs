@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use anyhow::Result;
 use uuid::Uuid;
 
-use crate::domain::entity::{StockItem, ValuationMethod};
+use crate::domain::entity::{StockItem, ServiceTrackingType, ValuationMethod};
 
 /// Pagination parameters for list queries
 #[derive(Debug, Clone, Default)]
@@ -50,12 +50,15 @@ pub struct StockItemFilter {
     pub is_stock_item: Option<bool>,
     pub has_batch: Option<bool>,
     pub valuation_method: Option<ValuationMethod>,
+    pub service_tracking: Option<ServiceTrackingType>,
+    pub service_project_id: Option<Uuid>,
+    pub service_project_template_id: Option<Uuid>,
 }
 
 impl StockItemFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.item_id.is_some() || self.company_id.is_some() || self.stock_uom.is_some() || self.is_stock_item.is_some() || self.has_batch.is_some() || self.valuation_method.is_some()
+        self.item_id.is_some() || self.company_id.is_some() || self.stock_uom.is_some() || self.is_stock_item.is_some() || self.has_batch.is_some() || self.valuation_method.is_some() || self.service_tracking.is_some() || self.service_project_id.is_some() || self.service_project_template_id.is_some()
     }
 }
 

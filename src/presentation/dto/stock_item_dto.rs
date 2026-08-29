@@ -19,6 +19,7 @@ use validator::Validate;
 
 use crate::domain::entity::StockItem;
 use crate::domain::entity::AuditMetadata;
+use crate::domain::entity::ServiceTrackingType;
 use crate::domain::entity::ValuationMethod;
 
 // =============================================================================
@@ -56,6 +57,12 @@ pub struct CreateStockItemDto {
     pub reorder_level: Decimal,
     #[serde(alias = "weight_per_unit")]
     pub weight_per_unit: Decimal,
+    #[serde(alias = "service_tracking")]
+    pub service_tracking: ServiceTrackingType,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "service_project_id")]
+    pub service_project_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "service_project_template_id")]
+    pub service_project_template_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -93,6 +100,12 @@ pub struct UpdateStockItemDto {
     pub reorder_level: Decimal,
     #[serde(alias = "weight_per_unit")]
     pub weight_per_unit: Decimal,
+    #[serde(alias = "service_tracking")]
+    pub service_tracking: ServiceTrackingType,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "service_project_id")]
+    pub service_project_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "service_project_template_id")]
+    pub service_project_template_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -130,12 +143,18 @@ pub struct PatchStockItemDto {
     pub reorder_level: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "weight_per_unit")]
     pub weight_per_unit: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "service_tracking")]
+    pub service_tracking: Option<ServiceTrackingType>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "service_project_id")]
+    pub service_project_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none", alias = "service_project_template_id")]
+    pub service_project_template_id: Option<Uuid>,
 }
 
 impl PatchStockItemDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.item_id.is_some() || self.company_id.is_some() || self.stock_uom.is_some() || self.is_stock_item.is_some() || self.has_batch.is_some() || self.valuation_method.is_some() || self.reorder_level.is_some() || self.weight_per_unit.is_some()
+        self.item_id.is_some() || self.company_id.is_some() || self.stock_uom.is_some() || self.is_stock_item.is_some() || self.has_batch.is_some() || self.valuation_method.is_some() || self.reorder_level.is_some() || self.weight_per_unit.is_some() || self.service_tracking.is_some() || self.service_project_id.is_some() || self.service_project_template_id.is_some()
     }
 }
 
@@ -166,6 +185,9 @@ pub struct StockItemResponseDto {
     pub valuation_method: ValuationMethod,
     pub reorder_level: Decimal,
     pub weight_per_unit: Decimal,
+    pub service_tracking: ServiceTrackingType,
+    pub service_project_id: Option<Uuid>,
+    pub service_project_template_id: Option<Uuid>,
     pub metadata: AuditMetadata,
 }
 
@@ -245,6 +267,9 @@ impl From<StockItem> for StockItemResponseDto {
             valuation_method: entity.valuation_method,
             reorder_level: entity.reorder_level,
             weight_per_unit: entity.weight_per_unit,
+            service_tracking: entity.service_tracking,
+            service_project_id: entity.service_project_id,
+            service_project_template_id: entity.service_project_template_id,
             metadata: entity.metadata,
         }
     }
@@ -275,6 +300,9 @@ impl From<CreateStockItemDto> for StockItem {
             valuation_method: dto.valuation_method,
             reorder_level: dto.reorder_level,
             weight_per_unit: dto.weight_per_unit,
+            service_tracking: dto.service_tracking,
+            service_project_id: dto.service_project_id,
+            service_project_template_id: dto.service_project_template_id,
             metadata: AuditMetadata::default(),
         }
     }
@@ -292,6 +320,9 @@ impl From<&StockItem> for StockItemResponseDto {
             valuation_method: entity.valuation_method.clone(),
             reorder_level: entity.reorder_level.clone(),
             weight_per_unit: entity.weight_per_unit.clone(),
+            service_tracking: entity.service_tracking.clone(),
+            service_project_id: entity.service_project_id.clone(),
+            service_project_template_id: entity.service_project_template_id.clone(),
             metadata: entity.metadata.clone(),
         }
     }
@@ -313,6 +344,9 @@ impl backbone_core::ApplyUpdateDto<UpdateStockItemDto> for StockItem {
         self.valuation_method = dto.valuation_method;
         self.reorder_level = dto.reorder_level;
         self.weight_per_unit = dto.weight_per_unit;
+        self.service_tracking = dto.service_tracking;
+        self.service_project_id = dto.service_project_id;
+        self.service_project_template_id = dto.service_project_template_id;
         Ok(self)
     }
 }

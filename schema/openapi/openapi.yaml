@@ -19332,6 +19332,7 @@ components:
         - valuation_method
         - reorder_level
         - weight_per_unit
+        - service_tracking
         - metadata
       properties:
         id:
@@ -19356,6 +19357,16 @@ components:
           type: string
         weight_per_unit:
           type: string
+        service_tracking:
+          type: string
+        service_project_id:
+          nullable: true
+          type: string
+          format: uuid
+        service_project_template_id:
+          nullable: true
+          type: string
+          format: uuid
         metadata:
           type: object
 
@@ -19383,6 +19394,7 @@ components:
         - valuation_method
         - reorder_level
         - weight_per_unit
+        - service_tracking
         - metadata
       properties:
         item_id:
@@ -19404,6 +19416,16 @@ components:
           type: string
         weight_per_unit:
           type: string
+        service_tracking:
+          type: string
+        service_project_id:
+          nullable: true
+          type: string
+          format: uuid
+        service_project_template_id:
+          nullable: true
+          type: string
+          format: uuid
         metadata:
           type: object
 
@@ -19418,6 +19440,7 @@ components:
         - valuation_method
         - reorder_level
         - weight_per_unit
+        - service_tracking
         - metadata
       properties:
         item_id:
@@ -19439,6 +19462,16 @@ components:
           type: string
         weight_per_unit:
           type: string
+        service_tracking:
+          type: string
+        service_project_id:
+          nullable: true
+          type: string
+          format: uuid
+        service_project_template_id:
+          nullable: true
+          type: string
+          format: uuid
         metadata:
           type: object
 
@@ -19464,6 +19497,16 @@ components:
           type: string
         weight_per_unit:
           type: string
+        service_tracking:
+          type: string
+        service_project_id:
+          nullable: true
+          type: string
+          format: uuid
+        service_project_template_id:
+          nullable: true
+          type: string
+          format: uuid
         metadata:
           type: object
 

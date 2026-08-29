@@ -64,6 +64,7 @@ pub mod storage_allow_new_product;
 pub mod putaway_sublocation;
 pub mod warehouse_type;
 pub mod valuation_method;
+pub mod service_tracking_type;
 
 // Re-exports
 pub use picking_batch::PickingBatch;
@@ -196,6 +197,7 @@ pub use storage_allow_new_product::StorageAllowNewProduct;
 pub use putaway_sublocation::PutawaySublocation;
 pub use warehouse_type::WarehouseType;
 pub use valuation_method::ValuationMethod;
+pub use service_tracking_type::ServiceTrackingType;
 
 // ==========================================================================
 // Entity Trait
