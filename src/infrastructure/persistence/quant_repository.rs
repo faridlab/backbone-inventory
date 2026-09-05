@@ -337,6 +337,62 @@ impl QuantRepository {
             quant_count: row.get("quant_count"),
         })
     }
+
+    /// One warehouse-scope availability row (the shop-pivot read): SUM(quantity) /
+    /// SUM(reserved_quantity) over every quant whose location belongs to the pivot warehouse and
+    /// holds stock (usage `internal`). `available` is NOT read off the stored
+    /// `available_quantity` column — the caller computes `on_hand − reserved` per call, so the
+    /// number is fresh off the reservation triangle regardless of any stored-compute staleness.
+    ///
+    /// Batch over `item_ids = ANY($2)`; items with no quant rows in the warehouse are simply
+    /// absent from the result (the caller projects them as zeroed, unavailable rows — an
+    /// unreceived item is unavailable, not an error). Pool-based, explicitly company-fenced by
+    /// argument, and run through `company_scope` so the read rides the RLS fence (ADR-0008).
+    pub async fn fetch_warehouse_on_hand(
+        &self,
+        pool: &PgPool,
+        company_id: Uuid,
+        item_ids: &[Uuid],
+        warehouse_id: Uuid,
+    ) -> Result<Vec<QuantWarehouseRow>, sqlx::Error> {
+        let rows = backbone_orm::company_scope::fetch_all_rows_scoped(
+            pool,
+            sqlx::query(
+                r#"SELECT
+                       q.item_id AS item_id,
+                       COALESCE(SUM(q.quantity), 0) AS on_hand_qty,
+                       COALESCE(SUM(q.reserved_quantity), 0) AS reserved_qty
+                   FROM inventory.stock_quants q
+                   JOIN inventory.locations l ON l.id = q.location_id
+                   WHERE q.company_id = $1
+                     AND q.item_id = ANY($2)
+                     AND l.warehouse_id = $3
+                     AND l.usage = 'internal'::location_usage
+                     AND (q.metadata->>'deleted_at') IS NULL
+                     AND (l.metadata->>'deleted_at') IS NULL
+                   GROUP BY q.item_id"#,
+            )
+            .bind(company_id)
+            .bind(item_ids)
+            .bind(warehouse_id),
+        )
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| QuantWarehouseRow {
+                item_id: r.get("item_id"),
+                on_hand_qty: r.get("on_hand_qty"),
+                reserved_qty: r.get("reserved_qty"),
+            })
+            .collect())
+    }
+}
+
+/// One item's warehouse-scope on-hand pair (the shop-pivot availability read).
+pub struct QuantWarehouseRow {
+    pub item_id: Uuid,
+    pub on_hand_qty: Decimal,
+    pub reserved_qty: Decimal,
 }
 
 fn quant_row_of(r: sqlx::postgres::PgRow) -> QuantRow {

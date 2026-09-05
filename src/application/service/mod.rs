@@ -63,6 +63,10 @@ pub mod inventory_batch;
 // move to the loss sink), terminal done-stamp. Deferred-GL form for the HTTP surface.
 pub mod inventory_scrap;
 pub mod inventory_read;
+// The two-scope availability read (display vs checkout) at one warehouse pivot, computed
+// fresh per call off the quant reservation triangle — plus the AvailabilityScopePort
+// contract (refusing default) a composing service fills.
+pub mod availability_scope;
 pub mod inventory_intake;
 pub mod inventory_cancellation;
 // The converged stock-move engine (_action_confirm / _action_assign / _action_done /
@@ -130,6 +134,10 @@ pub use inventory_write_service::{
     NewStockItem, NewTransfer, NewWarehouse, ReceiptLine, ReconLine, SubmitOutcome,
 };
 pub use inventory_read::{AvailabilityView, InventoryReadService, QuantAvailability, StockBalance};
+pub use availability_scope::{
+    AvailabilityScopeError, AvailabilityScopePort, AvailabilityScopeRead, CheckoutDemand,
+    CheckoutFreeQty, RefusingAvailabilityScopePort, ScopedAvailability, SoldOutVerdict,
+};
 pub use inventory_intake::{
     DeliveryIntake, DeliveryRequestLine, DeliveryRequested, ReceiptExpected, ReceiptRequestLine,
 };

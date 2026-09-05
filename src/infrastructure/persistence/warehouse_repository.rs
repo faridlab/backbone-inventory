@@ -9,7 +9,7 @@
 //! All standard CRUD methods are available via `Deref`.
 
 use anyhow::Result;
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use backbone_orm::company_scope;
@@ -80,6 +80,34 @@ impl WarehouseRepository {
         )
         .await?;
         Ok(())
+    }
+
+    /// Resolve a warehouse-pivot candidate: does this warehouse exist, belong to the company, and
+    /// is it a concrete stock warehouse (not a grouping node)? Backs the availability scope read's
+    /// fail-loud pivot validation — a typo'd or foreign warehouse id must refuse typed, never
+    /// project a silently-empty (all-sold-out) storefront. `Ok(None)` = no such live warehouse for
+    /// this company; `Some(is_group)` = found, with the grouping flag for the caller to refuse.
+    ///
+    /// Pool-based, explicitly company-fenced by argument, and run through `company_scope` so the
+    /// read rides the RLS fence (ADR-0008).
+    pub async fn fetch_pivot_warehouse(
+        &self,
+        pool: &PgPool,
+        company_id: Uuid,
+        warehouse_id: Uuid,
+    ) -> Result<Option<bool>, sqlx::Error> {
+        let row = company_scope::fetch_optional_row_scoped(
+            pool,
+            sqlx::query(
+                r#"SELECT is_group FROM inventory.warehouses
+                   WHERE id = $1 AND company_id = $2
+                     AND (metadata->>'deleted_at') IS NULL"#,
+            )
+            .bind(warehouse_id)
+            .bind(company_id),
+        )
+        .await?;
+        Ok(row.map(|r| r.get("is_group")))
     }
 }
 

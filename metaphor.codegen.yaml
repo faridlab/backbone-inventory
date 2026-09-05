@@ -31,6 +31,10 @@ user_owned:
   - "src/application/service/inventory_reconciliation.rs"
   - "src/application/service/inventory_read.rs"
   - "src/application/service/inventory_intake.rs"
+  # The two-scope availability read (display vs checkout) at one warehouse pivot: the
+  # AvailabilityScopePort contract with its refusing default, the database-backed read,
+  # and the DTOs. Pure reads over the quant reservation triangle — nothing persisted.
+  - "src/application/service/availability_scope.rs"
   # The converged stock-move engine (_action_confirm / _action_assign / _action_done /
   # _action_cancel) over quant-grain reservation — the stock-convergence service layer.
   - "src/application/service/inventory_move_engine.rs"
@@ -263,3 +267,7 @@ user_owned:
   # Service-tracking column probes: default-manual posture, per-rung round-trip
   # through the entity mapping, and the enum's DB-level rejection of unknown rungs.
   - "tests/service_tracking_probes.rs"
+  # Availability-scope probes: the all-variants sold-out verdict, display-vs-checkout
+  # scope freshness per call, the no-all-warehouses-fallback pivot refusal, and the
+  # no-materialized-readiness-state schema assertion.
+  - "tests/availability_scope_probes.rs"
