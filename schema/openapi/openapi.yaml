@@ -19184,7 +19184,7 @@ components:
       type: object
       required:
         - id
-        - company_id
+        - org_unit_id
         - code
         - name
         - warehouse_type
@@ -19194,7 +19194,7 @@ components:
         id:
           type: string
           format: uuid
-        company_id:
+        org_unit_id:
           type: string
           format: uuid
         code:
@@ -19230,14 +19230,14 @@ components:
     CreateWarehouseRequest:
       type: object
       required:
-        - company_id
+        - org_unit_id
         - code
         - name
         - warehouse_type
         - is_group
         - metadata
       properties:
-        company_id:
+        org_unit_id:
           type: string
           format: uuid
         code:
@@ -19260,14 +19260,14 @@ components:
     UpdateWarehouseRequest:
       type: object
       required:
-        - company_id
+        - org_unit_id
         - code
         - name
         - warehouse_type
         - is_group
         - metadata
       properties:
-        company_id:
+        org_unit_id:
           type: string
           format: uuid
         code:
@@ -19290,7 +19290,7 @@ components:
     PatchWarehouseRequest:
       type: object
       properties:
-        company_id:
+        org_unit_id:
           type: string
           format: uuid
         code:

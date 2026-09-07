@@ -13,6 +13,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use backbone_orm::company_scope;
+use backbone_orm::org_scope;
 
 use crate::domain::entity::Warehouse;
 
@@ -43,9 +44,11 @@ impl WarehouseRepository {
 ///
 /// Mirrors the raw column shape rather than the `Warehouse` entity: `warehouse_type` is cast at the
 /// DB (`$5::warehouse_type`) so a bad value fails as a DB error, not a deserialize panic.
+/// `org_unit_id` is the owning org-tree node (ADR-0028) — a company or branch node; the table's
+/// kind-guard trigger rejects anything else.
 pub struct NewWarehouseRow<'a> {
     pub id: Uuid,
-    pub company_id: Uuid,
+    pub org_unit_id: Uuid,
     pub code: &'a str,
     pub name: &'a str,
     pub warehouse_type: &'a str,
@@ -57,9 +60,11 @@ pub struct NewWarehouseRow<'a> {
 impl WarehouseRepository {
     /// Register a warehouse.
     ///
-    /// A write outside any transaction: takes the pool and runs `execute_scoped` so the RLS fence
-    /// (ADR-0008) applies. The caller wraps this in `with_company_scope(Some(company))` — the
-    /// company is on the DTO, and that scope satisfies the INSERT's WITH CHECK fence.
+    /// A write outside any transaction: takes the pool and runs `execute_unit_scoped` so the
+    /// org-unit RLS fence (ADR-0028) applies — inside a request scope the query rides the
+    /// request connection (both fence variables already set); outside one, the row's own node
+    /// satisfies the INSERT's WITH CHECK. The write-path kind guard (trigger) rejects an
+    /// `org_unit_id` that is not a company/branch node.
     ///
     /// Returns the raw `sqlx::Error` deliberately: the caller inspects it for a unique violation to
     /// turn a duplicate warehouse code into a domain error.
@@ -68,43 +73,47 @@ impl WarehouseRepository {
         pool: &PgPool,
         w: &NewWarehouseRow<'_>,
     ) -> Result<(), sqlx::Error> {
-        company_scope::execute_scoped(
+        org_scope::execute_unit_scoped(
             pool,
+            w.org_unit_id,
             sqlx::query(
                 r#"INSERT INTO inventory.warehouses
-                    (id, company_id, code, name, warehouse_type, parent_warehouse_id, is_group)
+                    (id, org_unit_id, code, name, warehouse_type, parent_warehouse_id, is_group)
                    VALUES ($1,$2,$3,$4,$5::warehouse_type,$6,$7)"#,
             )
-            .bind(w.id).bind(w.company_id).bind(w.code).bind(w.name).bind(w.warehouse_type)
+            .bind(w.id).bind(w.org_unit_id).bind(w.code).bind(w.name).bind(w.warehouse_type)
             .bind(w.parent_warehouse_id).bind(w.is_group),
         )
         .await?;
         Ok(())
     }
 
-    /// Resolve a warehouse-pivot candidate: does this warehouse exist, belong to the company, and
-    /// is it a concrete stock warehouse (not a grouping node)? Backs the availability scope read's
-    /// fail-loud pivot validation — a typo'd or foreign warehouse id must refuse typed, never
-    /// project a silently-empty (all-sold-out) storefront. `Ok(None)` = no such live warehouse for
-    /// this company; `Some(is_group)` = found, with the grouping flag for the caller to refuse.
+    /// Resolve a warehouse-pivot candidate: does this warehouse exist, belong to the given org
+    /// unit, and is it a concrete stock warehouse (not a grouping node)? Backs the availability
+    /// scope read's fail-loud pivot validation — a typo'd or foreign warehouse id must refuse
+    /// typed, never project a silently-empty (all-sold-out) storefront. `Ok(None)` = no such live
+    /// warehouse for this unit; `Some(is_group)` = found, with the grouping flag for the caller
+    /// to refuse.
     ///
-    /// Pool-based, explicitly company-fenced by argument, and run through `company_scope` so the
-    /// read rides the RLS fence (ADR-0008).
+    /// The equality asserts the caller's acting unit (company-node ids are UUID-stable with the
+    /// legacy company ids, so existing callers pass a valid node id unchanged). Whether a
+    /// warehouse in a DESCENDANT unit is visible at all is decided by the session's entitlement
+    /// fence (`app.scope_unit_ids`), not by this equality.
     pub async fn fetch_pivot_warehouse(
         &self,
         pool: &PgPool,
-        company_id: Uuid,
+        org_unit_id: Uuid,
         warehouse_id: Uuid,
     ) -> Result<Option<bool>, sqlx::Error> {
         let row = company_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
                 r#"SELECT is_group FROM inventory.warehouses
-                   WHERE id = $1 AND company_id = $2
+                   WHERE id = $1 AND org_unit_id = $2
                      AND (metadata->>'deleted_at') IS NULL"#,
             )
             .bind(warehouse_id)
-            .bind(company_id),
+            .bind(org_unit_id),
         )
         .await?;
         Ok(row.map(|r| r.get("is_group")))

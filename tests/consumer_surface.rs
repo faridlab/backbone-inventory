@@ -54,7 +54,7 @@ async fn availability_reflects_received_stock() {
     let w = InventoryWriteService::new(pool.clone());
     let read = InventoryReadService::new(pool.clone());
     let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
-    let wh = w.create_warehouse(NewWarehouse { company_id: company, code: uq("WH"), name: uq("Main"), warehouse_type: None, parent_warehouse_id: None, is_group: false }).await.unwrap();
+    let wh = w.create_warehouse(NewWarehouse { org_unit_id: company, code: uq("WH"), name: uq("Main"), warehouse_type: None, parent_warehouse_id: None, is_group: false }).await.unwrap();
 
     // Before any receipt: an un-stocked item is available 0 (not an error).
     let a0: AvailabilityView = read.availability(company, item, wh).await.unwrap();
@@ -86,7 +86,7 @@ async fn delivery_requested_creates_draft_linked_to_order() {
     let w = InventoryWriteService::new(pool.clone());
     let intake = DeliveryIntake::new(pool.clone());
     let (company, item, so) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
-    let wh = w.create_warehouse(NewWarehouse { company_id: company, code: uq("WH"), name: uq("Main"), warehouse_type: None, parent_warehouse_id: None, is_group: false }).await.unwrap();
+    let wh = w.create_warehouse(NewWarehouse { org_unit_id: company, code: uq("WH"), name: uq("Main"), warehouse_type: None, parent_warehouse_id: None, is_group: false }).await.unwrap();
 
     let did = intake.on_delivery_requested(DeliveryRequested {
         delivery_number: uq("DN"), company_id: company, branch_id: None, customer_id: Uuid::new_v4(),

@@ -73,7 +73,7 @@ struct CreateWarehouseBody {
 }
 async fn create_warehouse(State(svc): State<Arc<InventoryWriteService>>, tenant: CompanyContext, Json(b): Json<CreateWarehouseBody>) -> axum::response::Response {
     match svc.create_warehouse(NewWarehouse {
-        company_id: tenant.company_id, code: b.code, name: b.name, warehouse_type: b.warehouse_type,
+        org_unit_id: tenant.company_id, code: b.code, name: b.name, warehouse_type: b.warehouse_type,
         parent_warehouse_id: b.parent_warehouse_id, is_group: b.is_group,
     }).await {
         Ok(id) => (StatusCode::CREATED, Json(IdResponse { id })).into_response(),

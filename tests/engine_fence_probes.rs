@@ -290,7 +290,7 @@ async fn fenced_lifecycle_confirm_assign_done_writes_real_rows() {
 
     let wh = w
         .create_warehouse(NewWarehouse {
-            company_id: company,
+            org_unit_id: company,
             code: uq("WH"),
             name: uq("Main"),
             warehouse_type: None,
@@ -374,7 +374,7 @@ async fn fenced_cancel_releases_the_reservation() {
 
     let wh = w
         .create_warehouse(NewWarehouse {
-            company_id: company,
+            org_unit_id: company,
             code: uq("WH"),
             name: uq("Main"),
             warehouse_type: None,
@@ -429,7 +429,7 @@ async fn fenced_recompute_orderpoint_stamps_the_computes() {
 
     let wh = InventoryWriteService::new(pool.clone())
         .create_warehouse(NewWarehouse {
-            company_id: company,
+            org_unit_id: company,
             code: uq("WH"),
             name: uq("Main"),
             warehouse_type: None,
@@ -519,7 +519,7 @@ async fn fenced_receipt_picks_up_the_location_valuation_override() {
 
     let wh = w
         .create_warehouse(NewWarehouse {
-            company_id: company,
+            org_unit_id: company,
             code: uq("WH"),
             name: uq("Main"),
             warehouse_type: None,
@@ -628,7 +628,7 @@ async fn fenced_unreserve_returns_the_reservation_to_available() {
 
     let wh = w
         .create_warehouse(NewWarehouse {
-            company_id: company,
+            org_unit_id: company,
             code: uq("WH"),
             name: uq("Main"),
             warehouse_type: None,
@@ -739,7 +739,7 @@ async fn fenced_repost_gl_redrives_idempotently() {
 
     let wh = w
         .create_warehouse(NewWarehouse {
-            company_id: company,
+            org_unit_id: company,
             code: uq("WH"),
             name: uq("Main"),
             warehouse_type: None,
@@ -862,7 +862,7 @@ async fn fenced_procurement_provisions_through_the_crud_path() {
 
     let wh = InventoryWriteService::new(pool.clone())
         .create_warehouse(NewWarehouse {
-            company_id: company,
+            org_unit_id: company,
             code: uq("WH"),
             name: uq("Main"),
             warehouse_type: None,

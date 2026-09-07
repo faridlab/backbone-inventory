@@ -105,7 +105,7 @@ fn uq(p: &str) -> String { format!("{p}-{}", &Uuid::new_v4().simple().to_string(
 
 async fn warehouse(svc: &InventoryWriteService, company: Uuid) -> Uuid {
     svc.create_warehouse(NewWarehouse {
-        company_id: company, code: uq("WH"), name: uq("Main"),
+        org_unit_id: company, code: uq("WH"), name: uq("Main"),
         warehouse_type: None, parent_warehouse_id: None, is_group: false,
     }).await.unwrap()
 }

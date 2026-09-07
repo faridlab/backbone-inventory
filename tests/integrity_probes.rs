@@ -225,11 +225,11 @@ async fn bin_ties_to_sle_after_mixed_workload() {
     let w = InventoryWriteService::new(pool.clone());
     let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
     let wh1 = w.create_warehouse(NewWarehouse {
-        company_id: company, code: uq("WH"), name: "A".into(),
+        org_unit_id: company, code: uq("WH"), name: "A".into(),
         warehouse_type: None, parent_warehouse_id: None, is_group: false,
     }).await.unwrap();
     let wh2 = w.create_warehouse(NewWarehouse {
-        company_id: company, code: uq("WH"), name: "B".into(),
+        org_unit_id: company, code: uq("WH"), name: "B".into(),
         warehouse_type: None, parent_warehouse_id: None, is_group: false,
     }).await.unwrap();
 

@@ -19,19 +19,17 @@ impl InventoryWriteService {
     pub async fn create_warehouse(&self, w: NewWarehouse) -> Result<Uuid, InventoryError> {
         let id = Uuid::new_v4();
         let wt = w.warehouse_type.unwrap_or_else(|| "stock".into());
-        // RLS scope (ADR-0008): company on the DTO.
-        let r = company_scope::with_company_scope(
-            Some(w.company_id),
-            self.warehouses.insert_warehouse(&self.db_pool, &NewWarehouseRow {
-                id,
-                company_id: w.company_id,
-                code: &w.code,
-                name: &w.name,
-                warehouse_type: &wt,
-                parent_warehouse_id: w.parent_warehouse_id,
-                is_group: w.is_group,
-            }),
-        ).await;
+        // Org-unit RLS fence (ADR-0028): the owning node is on the DTO; the repository binds it
+        // on the statement (or rides the request connection when a session scope is open).
+        let r = self.warehouses.insert_warehouse(&self.db_pool, &NewWarehouseRow {
+            id,
+            org_unit_id: w.org_unit_id,
+            code: &w.code,
+            name: &w.name,
+            warehouse_type: &wt,
+            parent_warehouse_id: w.parent_warehouse_id,
+            is_group: w.is_group,
+        }).await;
         match r {
             Ok(_) => Ok(id),
             Err(e) if is_dup(&e) => Err(InventoryError::DuplicateNumber(w.code)),

@@ -2114,7 +2114,7 @@ impl From<WarehouseId> for Uuid {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WarehouseDto {
     pub id: WarehouseId,
-    pub company_id: Uuid,
+    pub org_unit_id: Uuid,
     pub code: String,
     pub name: String,
     pub warehouse_type: WarehouseType,

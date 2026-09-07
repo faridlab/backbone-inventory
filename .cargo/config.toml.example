@@ -4,3 +4,15 @@
 
 [patch."https://github.com/faridlab/backbone-accounting"]
 backbone-accounting = { path = "../backbone-accounting" }
+
+# To build against the LOCAL backbone-framework checkout instead of the pinned git tag, add a
+# framework block alongside the accounting one. Note the pins' tag must still RESOLVE (the tag
+# has to exist on GitHub), so this only works for released tags — use it to test a tag that has
+# been cut locally but not yet pushed only together with temporarily pointing the pins at the
+# nearest released tag. Keep .cargo/config.toml gitignored; restore Cargo.lock before committing.
+# [patch."https://github.com/faridlab/backbone-framework"]
+# backbone-core = { path = "../backbone-framework/backbone-core" }
+# backbone-orm = { path = "../backbone-framework/backbone-orm" }
+# backbone-auth = { path = "../backbone-framework/backbone-auth" }
+# backbone-messaging = { path = "../backbone-framework/backbone-messaging" }
+# backbone-gl-posting = { path = "../backbone-framework/backbone-gl-posting" }

@@ -62,7 +62,10 @@ pub(super) fn rate6(v: Decimal) -> Decimal {
 
 #[derive(Debug, Clone)]
 pub struct NewWarehouse {
-    pub company_id: Uuid,
+    /// Owning org-tree node (ADR-0028): a company or branch node — company-node ids are
+    /// UUID-stable with the legacy company ids, so a caller holding a company id passes it
+    /// unchanged.
+    pub org_unit_id: Uuid,
     pub code: String,
     pub name: String,
     pub warehouse_type: Option<String>,

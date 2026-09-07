@@ -9,7 +9,7 @@
 models:
   - name: Warehouse
     collection: warehouses
-    description: "A per-company storage location (tree). Group nodes hold no stock."
+    description: "A storage location (tree) scoped to an org-tree node. Group nodes hold no stock. Org-scoped per ADR-0028: warehouses hang off a company or branch node; the fence is the session's entitlement-union over org_unit ids."
 
     fields:
       id:
@@ -17,10 +17,10 @@ models:
         attributes: ["@id", "@default(uuid)"]
         description: "Unique warehouse identifier"
 
-      company_id:
+      org_unit_id:
         type: uuid
         attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "Owning company # logical FK to organization.Company.id"
+        description: "Owning org-tree node # logical FK to organization.OrgUnit.id; must be a company or branch node (write-path trigger + service validator reject root/unknown ids)"
 
       code:
         type: string
@@ -54,12 +54,14 @@ models:
 
     indexes:
       - type: unique
-        fields: [company_id, code]
+        fields: [org_unit_id, code]
         where: "deleted_at IS NULL"
       - type: unique
-        fields: [company_id, name]
+        fields: [org_unit_id, name]
         where: "deleted_at IS NULL"
-        description: "R1 — warehouse name unique per company (the code half and the name half are both unique)"
+        description: "R1 — warehouse name unique per org node (the code half and the name half are both unique)"
+      - type: index
+        fields: [org_unit_id]
       - type: index
         fields: [parent_warehouse_id]
 

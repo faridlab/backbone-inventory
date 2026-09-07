@@ -60,7 +60,7 @@ async fn pool() -> PgPool {
 }
 async fn warehouse(w: &InventoryWriteService, company: Uuid, is_group: bool) -> Uuid {
     w.create_warehouse(NewWarehouse {
-        company_id: company,
+        org_unit_id: company,
         code: uq("WH"),
         name: uq("Main"),
         warehouse_type: None,
