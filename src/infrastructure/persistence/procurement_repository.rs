@@ -187,7 +187,11 @@ impl ProcurementRepository {
     }
 
     /// The R11 reference companies: `(operation-type company, warehouse company)` for a rule.
-    /// Both nullable — shared operation types / no warehouse on the rule.
+    /// Both nullable — shared operation types / no warehouse on the rule. The warehouse's
+    /// company is the company owning its org-tree node: warehouses key on `org_unit_id`
+    /// (a company or branch node), so the reference walks up to the nearest company-kind
+    /// node — the id every legacy `company_id` reference already points at, since the org
+    /// spine backfilled companies as nodes preserving their ids.
     pub async fn rule_company_refs<'e, E>(
         executor: E,
         picking_type_id: Uuid,
@@ -199,8 +203,21 @@ impl ProcurementRepository {
         let row = sqlx::query(
             r#"SELECT (SELECT company_id FROM inventory.operation_types
                        WHERE id = $1 AND (metadata->>'deleted_at') IS NULL) AS pt_company,
-                      (SELECT company_id FROM inventory.warehouses
-                       WHERE id = $2 AND (metadata->>'deleted_at') IS NULL) AS wh_company"#,
+                      (SELECT cw.id
+                         FROM inventory.warehouses wh
+                         JOIN LATERAL (
+                             WITH RECURSIVE up AS (
+                                 SELECT u.id, u.parent_id, u.kind
+                                 FROM organization.org_units u
+                                 WHERE u.id = wh.org_unit_id
+                                 UNION ALL
+                                 SELECT u.id, u.parent_id, u.kind
+                                 FROM organization.org_units u
+                                 JOIN up ON u.id = up.parent_id
+                             )
+                             SELECT id FROM up WHERE kind = 'company' LIMIT 1
+                         ) cw ON true
+                        WHERE wh.id = $2 AND (wh.metadata->>'deleted_at') IS NULL) AS wh_company"#,
         )
         .bind(picking_type_id)
         .bind(warehouse_id)

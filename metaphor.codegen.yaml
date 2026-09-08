@@ -264,6 +264,13 @@ user_owned:
   # generator does not rewrite existing table migrations.
   - "migrations/20260829120000_service_tracking_columns.up.sql"
   - "migrations/20260829120000_service_tracking_columns.down.sql"
+  # R11 trigger fix riding the warehouses org-node re-key: the rule-consistency
+  # trigger still read the dropped warehouses.company_id, so every route_rules
+  # write failed inside the trigger. Re-resolves the warehouse's company as the
+  # nearest company-kind org node. Hand-written because the generator does not
+  # rewrite existing migrations.
+  - "migrations/20260908120000_route_rule_company_org_node.up.sql"
+  - "migrations/20260908120000_route_rule_company_org_node.down.sql"
   # Service-tracking column probes: default-manual posture, per-rung round-trip
   # through the entity mapping, and the enum's DB-level rejection of unknown rungs.
   - "tests/service_tracking_probes.rs"
