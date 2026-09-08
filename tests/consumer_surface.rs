@@ -19,6 +19,8 @@ use backbone_inventory::application::service::inventory_gl::{
     AccountingPostEnvelope, GlPostAck, GlPostRejected, GlPostSink,
 };
 
+mod common;
+
 struct StubGl;
 #[async_trait::async_trait]
 impl GlPostSink for StubGl {
@@ -53,7 +55,8 @@ async fn availability_reflects_received_stock() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
     let read = InventoryReadService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = w.create_warehouse(NewWarehouse { org_unit_id: company, code: uq("WH"), name: uq("Main"), warehouse_type: None, parent_warehouse_id: None, is_group: false }).await.unwrap();
 
     // Before any receipt: an un-stocked item is available 0 (not an error).
@@ -85,7 +88,9 @@ async fn delivery_requested_creates_draft_linked_to_order() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
     let intake = DeliveryIntake::new(pool.clone());
-    let (company, item, so) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
+    let so = Uuid::new_v4();
     let wh = w.create_warehouse(NewWarehouse { org_unit_id: company, code: uq("WH"), name: uq("Main"), warehouse_type: None, parent_warehouse_id: None, is_group: false }).await.unwrap();
 
     let did = intake.on_delivery_requested(DeliveryRequested {

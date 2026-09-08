@@ -38,6 +38,8 @@ use backbone_inventory::application::service::procurement_service::{
     MovePipeline, MovePipelineError, NewOrderpoint, NewRoute, NewRouteRule, ProcurementRequest,
     ProcurementService,
 };
+
+mod common;
 use backbone_inventory::application::service::inventory_write_service::InventoryWriteService;
 use backbone_inventory::domain::entity::{GlPostingState, MoveState, Priority, ProcureMethod, StockMove};
 use backbone_inventory::infrastructure::jobs::{run_scheduler_with, SchedulerBatching};
@@ -89,7 +91,7 @@ async fn loc(
 
 async fn warehouse(conn: &mut PgConnection, company: Uuid) -> Uuid {
     let id = Uuid::new_v4();
-    sqlx::query("INSERT INTO inventory.warehouses (id, company_id, code, name) VALUES ($1, $2, $3, $4)")
+    sqlx::query("INSERT INTO inventory.warehouses (id, org_unit_id, code, name) VALUES ($1, $2, $3, $4)")
         .bind(id)
         .bind(company)
         .bind(uq("WH"))
@@ -268,7 +270,7 @@ impl StubPipeline {
 async fn r11_rule_company_consistency_service_and_trigger() {
     let pool = pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let (co_a, co_b) = (Uuid::new_v4(), Uuid::new_v4());
+    let (co_a, co_b) = (common::fresh_company(&pool).await, common::fresh_company(&pool).await);
     let src = loc(&mut conn, "SUP", "supplier", None, co_a).await;
     let dst = loc(&mut conn, "STK", "internal", None, co_a).await;
     let _wh_a = warehouse(&mut conn, co_a).await;
@@ -320,7 +322,7 @@ async fn r11_rule_company_consistency_service_and_trigger() {
     // A company-less (shared) rule may not bridge two companies: operation type of company B
     // against a warehouse of company A is still a mismatch.
     let wh_b_of_a = Uuid::new_v4();
-    sqlx::query("INSERT INTO inventory.warehouses (id, company_id, code, name) VALUES ($1, $2, $3, $4)")
+    sqlx::query("INSERT INTO inventory.warehouses (id, org_unit_id, code, name) VALUES ($1, $2, $3, $4)")
         .bind(wh_b_of_a)
         .bind(co_a) // warehouse belongs to A
         .bind(uq("WHX"))
@@ -377,7 +379,7 @@ async fn r11_rule_company_consistency_service_and_trigger() {
 async fn r6_orderpoint_unique_per_item_location_company() {
     let pool = pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let (co_a, co_b) = (Uuid::new_v4(), Uuid::new_v4());
+    let (co_a, co_b) = (common::fresh_company(&pool).await, common::fresh_company(&pool).await);
     let stock = loc(&mut conn, "STK", "internal", None, co_a).await;
     let wh_a = warehouse(&mut conn, co_a).await;
     let wh_b = warehouse(&mut conn, co_b).await;
@@ -434,7 +436,7 @@ async fn r6_orderpoint_unique_per_item_location_company() {
 async fn ss6_search_rule_highest_sequence_and_visibility() {
     let pool = pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let (co_a, co_b) = (Uuid::new_v4(), Uuid::new_v4());
+    let (co_a, co_b) = (common::fresh_company(&pool).await, common::fresh_company(&pool).await);
     let parent = loc(&mut conn, "PAR", "internal", None, co_a).await;
     let demand = loc(&mut conn, "DEM", "internal", Some(format!("{parent}/")), co_a).await;
     let other = loc(&mut conn, "OTH", "internal", None, co_a).await;
@@ -492,7 +494,7 @@ async fn ss6_search_rule_highest_sequence_and_visibility() {
 async fn t11_forecast_and_to_order_computes() {
     let pool = pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let co = Uuid::new_v4();
+    let co = common::fresh_company(&pool).await;
     let stock = loc(&mut conn, "STK", "internal", None, co).await;
     let child = loc(&mut conn, "SUB", "internal", Some(format!("{stock}/")), co).await;
     let sup = loc(&mut conn, "SUP", "supplier", None, co).await;
@@ -564,7 +566,7 @@ async fn t11_forecast_and_to_order_computes() {
 async fn ss7_scheduler_reorder_assign_housekeep() {
     let pool = pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let co = Uuid::new_v4();
+    let co = common::fresh_company(&pool).await;
     let stock = loc(&mut conn, "STK", "internal", None, co).await;
     let sup = loc(&mut conn, "SUP", "supplier", None, co).await;
     let wh = warehouse(&mut conn, co).await;
@@ -722,7 +724,7 @@ async fn ss7_scheduler_reorder_assign_housekeep() {
 async fn run_procurement_selects_rule_and_mints_pull() {
     let pool = pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let co = Uuid::new_v4();
+    let co = common::fresh_company(&pool).await;
     let stock = loc(&mut conn, "STK", "internal", None, co).await;
     let sup = loc(&mut conn, "SUP", "supplier", None, co).await;
     let nowhere = loc(&mut conn, "NOW", "internal", None, co).await;
@@ -792,7 +794,7 @@ async fn run_procurement_selects_rule_and_mints_pull() {
 async fn run_push_mints_and_links_the_chain() {
     let pool = pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let co = Uuid::new_v4();
+    let co = common::fresh_company(&pool).await;
     let stock = loc(&mut conn, "STK", "internal", None, co).await;
     let shelf = loc(&mut conn, "SHF", "internal", Some(format!("{stock}/")), co).await;
     let sup = loc(&mut conn, "SUP", "supplier", None, co).await;
@@ -880,7 +882,7 @@ async fn run_push_mints_and_links_the_chain() {
 async fn scheduler_claim_excludes_manual_and_snoozed_orderpoints() {
     let pool = pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let co = Uuid::new_v4();
+    let co = common::fresh_company(&pool).await;
     let stock = loc(&mut conn, "STK", "internal", None, co).await;
     let wh = warehouse(&mut conn, co).await;
     drop(conn);
@@ -934,7 +936,7 @@ impl GlPostSink for NullGlSink {
 /// `(company, stock location, demand location, operation type, rule, procurement service)`.
 async fn sale_shape(pool: &PgPool) -> (Uuid, Uuid, Uuid, Uuid, Uuid, ProcurementService) {
     let mut conn = pool.acquire().await.unwrap();
-    let co = Uuid::new_v4();
+    let co = common::fresh_company(&pool).await;
     let stock = loc(&mut conn, "STK", "internal", None, co).await;
     let cust = loc(&mut conn, "CUST", "customer", None, co).await;
     let pt = op_type(&mut conn, co, stock, cust).await;

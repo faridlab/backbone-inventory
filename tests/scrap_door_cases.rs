@@ -29,6 +29,8 @@ use backbone_inventory::application::service::inventory_write_service::{
     InventoryError, InventoryWriteService, NewWarehouse,
 };
 
+mod common;
+
 struct CountingSink { posts: AtomicUsize }
 #[async_trait::async_trait]
 impl GlPostSink for CountingSink {
@@ -116,7 +118,7 @@ async fn on_hand(pool: &PgPool, company: Uuid, item: Uuid, location: Uuid) -> De
 async fn scrap_processes_through_the_engine_once() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
     let item = Uuid::new_v4();
@@ -172,7 +174,7 @@ async fn scrap_processes_through_the_engine_once() {
 async fn scrap_deferred_lands_without_gl() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
     let item = Uuid::new_v4();
@@ -204,7 +206,7 @@ async fn scrap_deferred_lands_without_gl() {
 async fn scrap_mint_guards() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
     let view = loc(&pool, company, "view", None).await;
@@ -383,7 +385,7 @@ async fn storage_capacity_target_xor() {
 #[tokio::test]
 async fn scrap_positive_qty_check() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let svc = InventoryWriteService::new(pool.clone());
     let wh = warehouse(&svc, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
@@ -403,7 +405,7 @@ async fn scrap_positive_qty_check() {
 #[tokio::test]
 async fn t12_putaway_storage_category_derivation() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let svc = InventoryWriteService::new(pool.clone());
     let wh = warehouse(&svc, company).await;
     let in_loc = loc(&pool, company, "internal", Some(wh)).await;
@@ -453,8 +455,8 @@ async fn t12_putaway_storage_category_derivation() {
 #[tokio::test]
 async fn batch_member_company_guard_trigger() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
-    let other = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
+    let other = common::fresh_company(&pool).await;
     let svc = InventoryWriteService::new(pool.clone());
 
     let batch = svc.create_batch(company, uq("BATCH"), false, None).await.unwrap();

@@ -18,6 +18,8 @@ use uuid::Uuid;
 use backbone_inventory::presentation::http::create_guarded_inventory_routes;
 use backbone_inventory::InventoryModule;
 
+mod common;
+
 const SECRET: &[u8] = b"inventory-integrity-probe-secret";
 
 #[derive(Serialize)]
@@ -96,7 +98,7 @@ fn uq(p: &str) -> String { format!("{p}-{}", &uuid::Uuid::new_v4().simple().to_s
 async fn guarded_surface_has_no_direct_sle_or_bin_writes() {
     let pool = pool().await;
     let m = module(&pool).await;
-    let company = uuid::Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let (s, _) = req_as(app(&pool, &m), company, "POST", "/stock-ledger-entries", Some("{}".into())).await;
     assert!(!s.is_success(), "no direct SLE write; got {s}");
     let (s2, _) = req_as(app(&pool, &m), company, "POST", "/bins/bulk", Some("[]".into())).await;
@@ -120,7 +122,7 @@ async fn guarded_create_warehouse_ok() {
     let pool = pool().await;
     let m = module(&pool).await;
     let body = format!(r#"{{"code":"{}","name":"Main"}}"#, uq("WH"));
-    let (s, _) = req_as(app(&pool, &m), uuid::Uuid::new_v4(), "POST", "/warehouses", Some(body)).await;
+    let (s, _) = req_as(app(&pool, &m), common::fresh_company(&pool).await, "POST", "/warehouses", Some(body)).await;
     assert_eq!(s, StatusCode::CREATED);
 }
 
@@ -178,22 +180,25 @@ async fn guarded_intake_rejects_unauthenticated() {
 async fn body_company_id_cannot_override_the_token_tenant() {
     let pool = pool().await;
     let m = module(&pool).await;
-    let token_company = uuid::Uuid::new_v4();
+    // The token's company claim doubles as an org node id (a company's node id IS its
+    // legacy company id since the spine backfill), so the token tenant must be a REAL
+    // node for the warehouse kind guard to accept the write.
+    let token_company = common::fresh_company(&pool).await;
     let attacker_company = uuid::Uuid::new_v4();
     let code = uq("WH");
     let body = format!(
-        r#"{{"companyId":"{}","code":"{}","name":"Main"}}"#, attacker_company, code);
+        r#"{{"orgUnitId":"{}","code":"{}","name":"Main"}}"#, attacker_company, code);
     let (s, _) = req_as(app(&pool, &m), token_company, "POST", "/warehouses", Some(body)).await;
     assert_eq!(s, StatusCode::CREATED);
 
     let persisted: Uuid =
-        sqlx::query_scalar("SELECT company_id FROM inventory.warehouses WHERE code = $1")
+        sqlx::query_scalar("SELECT org_unit_id FROM inventory.warehouses WHERE code = $1")
             .bind(&code)
             .fetch_one(&pool)
             .await
             .expect("warehouse row");
     assert_eq!(persisted, token_company, "tenant must come from the token, not the body");
-    assert_ne!(persisted, attacker_company, "the body's companyId must be ignored");
+    assert_ne!(persisted, attacker_company, "the body's orgUnitId must be ignored");
 }
 
 // IIP-5 (council 2026-07-29): the Bin running balance must tie to the append-only SLE for EVERY
@@ -223,7 +228,8 @@ async fn bin_ties_to_sle_after_mixed_workload() {
 
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh1 = w.create_warehouse(NewWarehouse {
         org_unit_id: company, code: uq("WH"), name: "A".into(),
         warehouse_type: None, parent_warehouse_id: None, is_group: false,

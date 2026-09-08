@@ -85,6 +85,8 @@ impl Recorder {
 
 // --- scaffolding ---------------------------------------------------------------------------------
 
+mod common;
+
 fn d(s: &str) -> Decimal { Decimal::from_str_exact(s).unwrap() }
 fn day() -> chrono::NaiveDate { chrono::NaiveDate::from_ymd_opt(2026, 8, 26).unwrap() }
 fn uq(p: &str) -> String { format!("{p}-{}", &Uuid::new_v4().simple().to_string()[..8]) }
@@ -172,7 +174,7 @@ async fn voucher_state(pool: &PgPool, table: &str, id: Uuid) -> (String, String)
 #[tokio::test]
 async fn absent_settings_row_posts_todays_shapes() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     // NOTE: no inventory_company_settings row — the runtime defaults must equal today.
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
@@ -196,7 +198,7 @@ async fn absent_settings_row_posts_todays_shapes() {
 #[tokio::test]
 async fn anglo_posture_swaps_delivery_debit_to_interim() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let wh = warehouse(&w, company).await;
@@ -224,7 +226,7 @@ async fn anglo_posture_swaps_delivery_debit_to_interim() {
 #[tokio::test]
 async fn anglo_posture_without_interim_account_fails_closed() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let wh = warehouse(&w, company).await;
@@ -256,7 +258,7 @@ async fn anglo_posture_without_interim_account_fails_closed() {
 #[tokio::test]
 async fn posture_is_identical_across_submit_repost_and_cancel() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let wh = warehouse(&w, company).await;
@@ -307,7 +309,7 @@ async fn posture_is_identical_across_submit_repost_and_cancel() {
 #[tokio::test]
 async fn periodic_policy_suppresses_realtime_posts() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let wh = warehouse(&w, company).await;
@@ -396,7 +398,7 @@ async fn periodic_policy_suppresses_realtime_posts() {
 #[tokio::test]
 async fn location_valuation_override_wins_over_header_account() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let wh = warehouse(&w, company).await;
@@ -427,7 +429,7 @@ async fn location_valuation_override_wins_over_header_account() {
 #[tokio::test]
 async fn zero_value_zero_qty_voucher_posts_nothing() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let wh = warehouse(&w, company).await;

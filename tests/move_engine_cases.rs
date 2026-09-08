@@ -20,6 +20,8 @@ use backbone_inventory::application::service::inventory_write_service::{
     InventoryError, InventoryWriteService, NewWarehouse,
 };
 
+mod common;
+
 struct StubGl;
 #[async_trait::async_trait]
 impl GlPostSink for StubGl {
@@ -145,7 +147,8 @@ async fn bin_at(pool: &PgPool, company: Uuid, item: Uuid, wh: Uuid) -> (Decimal,
 async fn lifecycle_confirm_assign_done() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
     let customer = loc(&pool, company, "customer", None).await;
@@ -191,7 +194,8 @@ async fn lifecycle_confirm_assign_done() {
 async fn competing_reservations_one_counter() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
     let customer = loc(&pool, company, "customer", None).await;
@@ -225,7 +229,8 @@ async fn competing_reservations_one_counter() {
 async fn backorder_split_on_partial_done() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
     let customer = loc(&pool, company, "customer", None).await;
@@ -279,7 +284,8 @@ async fn backorder_split_on_partial_done() {
 async fn v7_out_valued_before_in_after() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh1 = warehouse(&w, company).await;
     let wh2 = warehouse(&w, company).await;
     let src = loc(&pool, company, "internal", Some(wh1)).await;
@@ -322,7 +328,8 @@ async fn v7_out_valued_before_in_after() {
 async fn inbound_move_receipt_shape() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
     let supplier = loc(&pool, company, "supplier", None).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
@@ -352,7 +359,8 @@ async fn inbound_move_receipt_shape() {
 async fn waiting_gate_releases_when_parents_done() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh1 = warehouse(&w, company).await;
     let wh2 = warehouse(&w, company).await;
     let src = loc(&pool, company, "internal", Some(wh1)).await;
@@ -378,7 +386,8 @@ async fn waiting_gate_releases_when_parents_done() {
 async fn cancel_releases_reservation() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
     let customer = loc(&pool, company, "customer", None).await;
@@ -400,7 +409,8 @@ async fn cancel_releases_reservation() {
 async fn guards_reject_bad_transitions() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
     let customer = loc(&pool, company, "customer", None).await;
@@ -444,7 +454,8 @@ async fn guards_reject_bad_transitions() {
 async fn competing_reservations_exactly_one_winner() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
     let customer = loc(&pool, company, "customer", None).await;

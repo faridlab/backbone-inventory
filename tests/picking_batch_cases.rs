@@ -24,6 +24,8 @@ use backbone_inventory::application::service::inventory_write_service::{
     InventoryError, InventoryWriteService, NewWarehouse,
 };
 
+mod common;
+
 struct CountingSink { posts: AtomicUsize }
 #[async_trait::async_trait]
 impl GlPostSink for CountingSink {
@@ -139,7 +141,7 @@ async fn member_picking(
 async fn batch_state_derives_from_members() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
 
     // A fresh batch has never grouped a picking: it reads `draft`.
@@ -189,7 +191,7 @@ async fn batch_state_derives_from_members() {
 async fn engine_cascade_reprojects_the_batch() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let batch_id = svc.create_batch(company, uq("BATCH"), true, None).await.unwrap().id;
 
@@ -220,7 +222,7 @@ async fn engine_cascade_reprojects_the_batch() {
 async fn all_members_cancelled_cancels_the_batch() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let batch_id = svc.create_batch(company, uq("BATCH"), false, None).await.unwrap().id;
 
@@ -247,7 +249,7 @@ async fn all_members_cancelled_cancels_the_batch() {
 async fn emptying_the_batch_auto_cancels() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let batch_id = svc.create_batch(company, uq("BATCH"), false, None).await.unwrap().id;
 
@@ -273,7 +275,7 @@ async fn emptying_the_batch_auto_cancels() {
 async fn waiting_member_holds_batch_at_waiting() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let batch_id = svc.create_batch(company, uq("BATCH"), false, None).await.unwrap().id;
 
@@ -312,7 +314,7 @@ async fn waiting_member_holds_batch_at_waiting() {
 async fn batch_name_unique_per_company() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let name = uq("BATCH");
     svc.create_batch(company, name.clone(), false, None).await.unwrap();
     let err = svc.create_batch(company, name.clone(), false, None).await.unwrap_err();
@@ -326,8 +328,8 @@ async fn batch_name_unique_per_company() {
 async fn cross_company_refusals() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let other = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
+    let other = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let wh_other = warehouse(&svc, other).await;
     let batch_id = svc.create_batch(company, uq("BATCH"), false, None).await.unwrap().id;
@@ -354,7 +356,7 @@ async fn cross_company_refusals() {
 async fn membership_guards() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let batch_id = svc.create_batch(company, uq("BATCH"), false, None).await.unwrap().id;
     let second_batch = svc.create_batch(company, uq("BATCH"), false, None).await.unwrap().id;

@@ -45,6 +45,8 @@ impl GlPostSink for CountingSink {
 }
 fn counting_sink() -> Arc<CountingSink> { Arc::new(CountingSink { posts: AtomicUsize::new(0) }) }
 
+mod common;
+
 fn d(s: &str) -> Decimal { Decimal::from_str_exact(s).unwrap() }
 fn uq(p: &str) -> String { format!("{p}-{}", &Uuid::new_v4().simple().to_string()[..8]) }
 async fn pool() -> PgPool {
@@ -157,7 +159,7 @@ fn picking(name: &str, company: Uuid, op: Uuid, src: Uuid, dst: Uuid, lines: Vec
 async fn picking_projects_confirm_assign_and_done() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let supplier = loc(&pool, company, "supplier", None).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
@@ -201,7 +203,7 @@ async fn picking_projects_confirm_assign_and_done() {
 async fn r3_picking_name_unique_per_company() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let supplier = loc(&pool, company, "supplier", None).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
@@ -214,7 +216,7 @@ async fn r3_picking_name_unique_per_company() {
     assert!(matches!(err, InventoryError::DuplicateNumber(_)), "got {err:?}");
 
     // A different company may reuse the name (uniqueness is per company).
-    let other = Uuid::new_v4();
+    let other = common::fresh_company(&pool).await;
     let wh2 = warehouse(&svc, other).await;
     let stock2 = loc(&pool, other, "internal", Some(wh2)).await;
     let supplier2 = loc(&pool, other, "supplier", None).await;
@@ -229,7 +231,7 @@ async fn r3_picking_name_unique_per_company() {
 async fn projection_aggregates_and_reprojects_on_cancel() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let supplier = loc(&pool, company, "supplier", None).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
@@ -265,7 +267,7 @@ async fn projection_aggregates_and_reprojects_on_cancel() {
 async fn partial_validate_keeps_projection_open_via_backorder() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
     let customer = loc(&pool, company, "customer", None).await;
@@ -308,7 +310,7 @@ async fn partial_validate_keeps_projection_open_via_backorder() {
 async fn stage_and_apply_count_up_mints_is_inventory_move() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
     let item = Uuid::new_v4();
@@ -363,7 +365,7 @@ async fn stage_and_apply_count_up_mints_is_inventory_move() {
 async fn apply_count_down_reverses_leg() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
     let item = Uuid::new_v4();
@@ -387,7 +389,7 @@ async fn apply_count_down_reverses_leg() {
 async fn reapply_is_a_noop() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
     let item = Uuid::new_v4();
@@ -413,7 +415,7 @@ async fn reapply_is_a_noop() {
 async fn move_between_count_and_apply_is_a_loud_conflict() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
     let item = Uuid::new_v4();
@@ -451,7 +453,7 @@ async fn move_between_count_and_apply_is_a_loud_conflict() {
 async fn reserved_quant_refuses_counts() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
     let item = Uuid::new_v4();
@@ -487,7 +489,7 @@ async fn reserved_quant_refuses_counts() {
 async fn reconciliation_converges_onto_the_door() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     // The warehouse's stock location (what the voucher door resolves to) carries the stock.
     let stock = loc(&pool, company, "internal", Some(wh)).await;
@@ -545,7 +547,7 @@ async fn reconciliation_converges_onto_the_door() {
 async fn zero_diff_recon_posts_no_gl() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
     let item = Uuid::new_v4();
@@ -580,7 +582,7 @@ async fn zero_diff_recon_posts_no_gl() {
 async fn counted_rate_is_refused() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let item = Uuid::new_v4();
 
@@ -610,7 +612,7 @@ async fn counted_rate_is_refused() {
 async fn projection_rederives_after_every_move_transition() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
     let customer = loc(&pool, company, "customer", None).await;

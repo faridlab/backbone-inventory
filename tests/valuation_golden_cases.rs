@@ -23,6 +23,8 @@ impl GlPostSink for StubGl {
     }
 }
 
+mod common;
+
 fn d(s: &str) -> Decimal { Decimal::from_str_exact(s).unwrap() }
 fn day() -> chrono::NaiveDate { chrono::NaiveDate::from_ymd_opt(2026, 7, 4).unwrap() }
 fn uq(p: &str) -> String { format!("{p}-{}", &Uuid::new_v4().simple().to_string()[..8]) }
@@ -59,7 +61,8 @@ async fn receipt(w: &InventoryWriteService, company: Uuid, wh: Uuid, item: Uuid,
 async fn moving_average_blends_on_receipt() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
     receipt(&w, company, wh, item, "10", "100").await;
     receipt(&w, company, wh, item, "10", "120").await;
@@ -74,7 +77,8 @@ async fn moving_average_blends_on_receipt() {
 async fn delivery_consumes_average_rate_unchanged() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
     receipt(&w, company, wh, item, "10", "100").await;
     receipt(&w, company, wh, item, "10", "120").await; // qty 20, rate 110, value 2200
@@ -103,7 +107,8 @@ async fn delivery_consumes_average_rate_unchanged() {
 async fn sle_append_integrity() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
     receipt(&w, company, wh, item, "10", "100").await;
     receipt(&w, company, wh, item, "10", "120").await;
@@ -126,7 +131,8 @@ async fn sle_append_integrity() {
 async fn insufficient_stock_rejected() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
     receipt(&w, company, wh, item, "3", "100").await;
     let did = w.create_delivery_note(NewDelivery {
@@ -147,7 +153,8 @@ async fn insufficient_stock_rejected() {
 async fn transfer_conserves_value() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh1 = warehouse(&w, company).await;
     let wh2 = warehouse(&w, company).await;
     receipt(&w, company, wh1, item, "10", "100").await; // wh1: 10 @ 100 = 1000
@@ -167,7 +174,8 @@ async fn transfer_conserves_value() {
 async fn reconciliation_computes_signed_difference() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
     receipt(&w, company, wh, item, "10", "100").await; // qty 10, value 1000, rate 100
     let rid = w.submit_reconciliation(NewReconciliation {
@@ -188,7 +196,8 @@ async fn reconciliation_computes_signed_difference() {
 async fn validation_gates() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
     let e = w.create_purchase_receipt(NewReceipt {
         receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
@@ -210,7 +219,8 @@ async fn validation_gates() {
 async fn concurrent_deliveries_do_not_oversell() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
     receipt(&w, company, wh, item, "10", "100").await; // 10 on hand
     // two deliveries of 6 (total 12 > 10)
@@ -246,7 +256,8 @@ async fn concurrent_deliveries_do_not_oversell() {
 async fn residual_flushes_to_zero_at_empty() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
     // Receipt A 1@10.00 (value 10.00) + Receipt B 2@10.005 (value 20.01) → qty 3, value 30.01, rate 10.003333.
     receipt(&w, company, wh, item, "1", "10.00").await;
@@ -278,7 +289,8 @@ async fn residual_flushes_to_zero_at_empty() {
 async fn cancel_receipt_reverses_inflow() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
     let r1 = receipt(&w, company, wh, item, "10", "100").await; // 10 @ 100
     receipt(&w, company, wh, item, "10", "120").await;          // blended: 20 @ 110, value 2200
@@ -302,7 +314,8 @@ async fn cancel_receipt_reverses_inflow() {
 async fn cancel_delivery_restores_bin_and_is_idempotent() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
     receipt(&w, company, wh, item, "10", "100").await; // 10 @ 100, value 1000
     let did = w.create_delivery_note(NewDelivery {

@@ -83,6 +83,8 @@ impl Recorder {
 
 // --- scaffolding -----------------------------------------------------------------------------------
 
+mod common;
+
 fn d(s: &str) -> Decimal { Decimal::from_str_exact(s).unwrap() }
 fn day() -> chrono::NaiveDate { chrono::NaiveDate::from_ymd_opt(2026, 8, 26).unwrap() }
 fn uq(p: &str) -> String { format!("{p}-{}", &Uuid::new_v4().simple().to_string()[..8]) }
@@ -218,7 +220,7 @@ fn share_of(rows: &[WsRow], item: Uuid) -> Decimal {
 #[tokio::test]
 async fn l1_split_by_quantity() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let a = accts();
@@ -247,7 +249,7 @@ async fn l1_split_by_quantity() {
 #[tokio::test]
 async fn l2_split_by_value() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let a = accts();
@@ -265,7 +267,7 @@ async fn l2_split_by_value() {
 #[tokio::test]
 async fn l3_split_by_weight() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let a = accts();
@@ -286,7 +288,7 @@ async fn l3_split_by_weight() {
 #[tokio::test]
 async fn l4_zero_denominator_is_loud_with_no_fallback() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let a = accts();
@@ -333,7 +335,7 @@ async fn l4_zero_denominator_is_loud_with_no_fallback() {
 #[tokio::test]
 async fn l5_half_up_and_last_line_eats_the_diff() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let a = accts();
@@ -368,7 +370,7 @@ async fn l5_half_up_and_last_line_eats_the_diff() {
 #[tokio::test]
 async fn l6_worksheet_rebuild_is_destructive_and_deterministic() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let a = accts();
@@ -411,7 +413,7 @@ async fn l6_worksheet_rebuild_is_destructive_and_deterministic() {
 #[tokio::test]
 async fn l7_only_the_remaining_share_revalues_no_cogs_true_up() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let a = accts();
@@ -461,7 +463,7 @@ async fn l7_only_the_remaining_share_revalues_no_cogs_true_up() {
 #[tokio::test]
 async fn l8_negative_landed_cost_swaps_legs_and_lowers_the_rate() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let a = accts();
@@ -490,7 +492,7 @@ async fn l8_negative_landed_cost_swaps_legs_and_lowers_the_rate() {
 #[tokio::test]
 async fn l9_done_cannot_cancel_and_cancel_only_from_draft() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let a = accts();
@@ -517,7 +519,7 @@ async fn l9_done_cannot_cancel_and_cancel_only_from_draft() {
 #[tokio::test]
 async fn l10_worksheet_and_journal_both_sum_to_the_document() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let a = accts();
@@ -568,7 +570,7 @@ async fn l10_worksheet_and_journal_both_sum_to_the_document() {
 #[tokio::test]
 async fn l11_cost_line_without_account_is_rejected() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let a = accts();
@@ -590,7 +592,7 @@ async fn l11_cost_line_without_account_is_rejected() {
 #[tokio::test]
 async fn l12_standard_cost_method_refuses_loudly() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let a = accts();
@@ -658,7 +660,7 @@ async fn l13_sle_and_bin_writers_stay_engine_owned() {
 #[tokio::test]
 async fn l14_strict_company_fence_hides_cross_company_rows() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let other = Uuid::new_v4();
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
@@ -702,7 +704,7 @@ async fn l14_strict_company_fence_hides_cross_company_rows() {
 #[tokio::test]
 async fn l15_gl_rides_posting_state_pending_then_repost_heals() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let a = accts();
@@ -740,7 +742,7 @@ async fn l15_gl_rides_posting_state_pending_then_repost_heals() {
 #[tokio::test]
 async fn is_landed_costs_line_mints_no_stock_and_adds_no_value() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
     let a = accts();

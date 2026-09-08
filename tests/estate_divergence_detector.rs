@@ -34,6 +34,8 @@ use backbone_inventory::application::service::inventory_write_service::{
 
 // --- harness -------------------------------------------------------------------
 
+mod common;
+
 fn d(s: &str) -> Decimal { Decimal::from_str_exact(s).unwrap() }
 fn day() -> chrono::NaiveDate { chrono::NaiveDate::from_ymd_opt(2026, 7, 4).unwrap() }
 fn uq(p: &str) -> String { format!("{p}-{}", &Uuid::new_v4().simple().to_string()[..8]) }
@@ -212,7 +214,8 @@ async fn create_and_submit_delivery(
 async fn submit_receipt_moves_quants_and_ledger_together() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
 
     let (sink, posts) = RecordingSink::new();
@@ -264,7 +267,8 @@ async fn submit_receipt_moves_quants_and_ledger_together() {
 async fn submit_delivery_moves_quants_and_ledger_together() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
 
     let (rsink, _) = RecordingSink::new();
@@ -312,7 +316,8 @@ async fn submit_delivery_moves_quants_and_ledger_together() {
 async fn cancel_receipt_reverses_through_the_engine_and_estates_agree() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
 
     let (rsink, _) = RecordingSink::new();
@@ -358,7 +363,8 @@ async fn cancel_receipt_reverses_through_the_engine_and_estates_agree() {
 async fn cancel_delivery_reverses_through_the_engine_and_estates_agree() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
 
     let (rsink, _) = RecordingSink::new();
@@ -404,7 +410,8 @@ async fn cancel_delivery_reverses_through_the_engine_and_estates_agree() {
 async fn refused_receipt_cancel_leaves_both_estates_untouched() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
+    let company = common::fresh_company(&pool).await;
+    let item = Uuid::new_v4();
     let wh = warehouse(&w, company).await;
 
     // Receive 10 @ 100, deliver 8 — only 2 remain, so cancelling the receipt (which needs

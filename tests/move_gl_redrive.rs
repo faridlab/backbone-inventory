@@ -63,6 +63,8 @@ impl GlPostSink for FailingGl {
     }
 }
 
+mod common;
+
 fn d(s: &str) -> Decimal { Decimal::from_str_exact(s).unwrap() }
 fn day() -> chrono::NaiveDate { chrono::NaiveDate::from_ymd_opt(2026, 8, 26).unwrap() }
 fn uq(p: &str) -> String { format!("{p}-{}", &Uuid::new_v4().simple().to_string()[..8]) }
@@ -75,7 +77,7 @@ async fn pool() -> PgPool {
 /// Seed a real chart of accounts: asset Inventory, liability GR/IR, COGS, adjustment, and a
 /// non-postable asset HEADER (the rejection lever).
 async fn seed_coa(pool: &PgPool) -> (Uuid, HashMap<&'static str, Uuid>) {
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(pool).await;
     let coa: &[(&str, &str, &str, &str, &str, bool, bool)] = &[
         ("1000", "Header Aset", "asset", "current_asset", "debit", true, false),
         ("1300", "Persediaan", "asset", "inventory", "debit", false, true),

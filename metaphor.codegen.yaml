@@ -74,6 +74,11 @@ user_owned:
   - "tests/integrity_probes.rs"
   - "tests/consumer_surface.rs"
   - "tests/route_surface_guard.rs"
+  # Shared org-spine fixture the database-bound suites read: applies the sibling
+  # backbone-organization migrations + seeds root/company/branch/second-company when the
+  # test database lacks them, and hands each test a real company node (the warehouse
+  # kind guard rejects minted uuids since the org_unit_id re-key).
+  - "tests/common/**"
   # Schema-to-DDL drift check — validates that every unique/index/constraint declared in
   # schema YAML has a corresponding DDL counterpart in the migrated database.
   - "tests/schema_drift_check.rs"

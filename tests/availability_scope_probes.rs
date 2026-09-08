@@ -25,6 +25,8 @@ use backbone_inventory::application::service::{
     InventoryWriteService, NewDelivery, NewReceipt, NewWarehouse, ReceiptLine, DeliveryLine,
 };
 
+mod common;
+
 struct StubGl;
 #[async_trait::async_trait]
 impl backbone_inventory::application::service::inventory_gl::GlPostSink for StubGl {
@@ -129,7 +131,7 @@ async fn sold_out_verdict_evaluates_every_variant() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
     let read = AvailabilityScopeRead::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&w, company, false).await;
     // The template's variant set: v1 (never received), v2 (holding 5), v3 (never received).
     let (v1, v2, v3) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
@@ -161,7 +163,7 @@ async fn display_and_checkout_scopes_differ_and_stay_fresh() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
     let read = AvailabilityScopeRead::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&w, company, false).await;
     let item = Uuid::new_v4();
     receive(&w, company, wh, item, d("10")).await;
@@ -223,7 +225,7 @@ async fn no_all_warehouses_fallback_at_the_pivot() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
     let read = AvailabilityScopeRead::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let w1 = warehouse(&w, company, false).await;
     let w2 = warehouse(&w, company, false).await;
     let item = Uuid::new_v4();
@@ -246,10 +248,10 @@ async fn pivot_refusals_are_typed() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
     let read = AvailabilityScopeRead::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&w, company, false).await;
     let item = Uuid::new_v4();
-    let other_company = Uuid::new_v4();
+    let other_company = common::fresh_company(&pool).await;
 
     // A pivot warehouse that does not exist.
     let bogus = Uuid::new_v4();
@@ -324,7 +326,7 @@ async fn no_materialized_readiness_state_and_reads_write_nothing() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
     let read = AvailabilityScopeRead::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&w, company, false).await;
     let item = Uuid::new_v4();
     receive(&w, company, wh, item, d("3")).await;

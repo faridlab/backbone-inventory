@@ -23,10 +23,17 @@
 //! (e.g. `postgresql://inv_fence_app:<pw>@127.0.0.1:5433/<db>`). The database must already
 //! carry the module's migrations (they arm the fence), the reference-data seed, and — for
 //! the GL re-drive probe, which posts through the REAL backbone-accounting PostingService —
-//! the accounting schema's up-migrations. The role needs USAGE on the inventory schema plus
-//! SELECT/INSERT/UPDATE/DELETE on its tables and USAGE on its sequences, and the same grants
-//! on the accounting schema for the GL leg. Skips with a printed reason when the DSN is
-//! absent, so an unfenced dev database does not fail the run.
+//! the accounting schema's up-migrations. Since the warehouse re-key it must ALSO carry the
+//! organization schema with an org spine (root + company + branch): the write-path kind
+//! guard on `warehouses.org_unit_id` rejects any id that is not a real company/branch node,
+//! on every role. The restricted role cannot seed that spine — running any DATABASE_URL
+//! suite against the database does it (see `tests/common/mod.rs`) — so these probes skip
+//! with a printed reason when the spine is absent. The role needs USAGE on the inventory
+//! schema plus SELECT/INSERT/UPDATE/DELETE on its tables and USAGE on its sequences, the
+//! same grants on the accounting schema for the GL leg, and USAGE on the organization
+//! schema plus SELECT on `organization.org_units` (the kind guard and the subtree helpers
+//! run as their invoker). Skips with a printed reason when the DSN is absent, so an
+//! unfenced dev database does not fail the run.
 
 use rust_decimal::Decimal;
 use sqlx::PgPool;
@@ -50,6 +57,8 @@ use backbone_inventory::application::service::procurement_service::{
     NewOrderpoint, NewRoute, NewRouteRule, ProcurementService,
 };
 use backbone_inventory::infrastructure::persistence::ProcurementRepository;
+
+mod common;
 
 fn d(s: &str) -> Decimal {
     Decimal::from_str_exact(s).unwrap()
@@ -147,9 +156,20 @@ impl GlPostSink for RealLedgerSink {
     }
 }
 
-/// A connection from the RESTRICTED pool with `app.company_id` set at session level: every
-/// raw seeding/assertion statement below runs as the fenced role inside the company's scope,
-/// mirroring what the application role sees. The setting rides this one connection only.
+/// The acting company for a probe: a REAL org node read from the spine. The restricted
+/// role cannot seed the spine, so the database must have been prepared by the owner (any
+/// run of the DATABASE_URL suites does it) — otherwise the probe skips.
+async fn fence_company(pool: &PgPool) -> Option<Uuid> {
+    common::read_org_spine(pool).await.map(|fx| fx.company)
+}
+
+/// A connection from the RESTRICTED pool with `app.company_id` AND `app.scope_unit_ids` set
+/// at session level: every raw seeding/assertion statement below runs as the fenced role
+/// inside the company's scope, mirroring what the application role sees. The unit scope is
+/// the acting company's subtree (company + descendants + the root node — the shape the
+/// request-scope resolver binds), so both fence generations read one consistent scope: the
+/// legacy `company_id` fence and the re-keyed `org_unit_id` entitlement-union fence. The
+/// settings ride this one connection only.
 async fn scoped_conn(
     pool: &PgPool,
     company: Uuid,
@@ -160,7 +180,62 @@ async fn scoped_conn(
         .execute(&mut *conn)
         .await
         .expect("bind app.company_id on probe connection");
+    let scope: String = sqlx::query_scalar(
+        "SELECT string_agg(s::text, ',') \
+         FROM organization.org_unit_subtree(ARRAY[$1::uuid]) AS s",
+    )
+    .bind(company)
+    .fetch_one(&mut *conn)
+    .await
+    .expect("resolve the acting company's unit subtree");
+    sqlx::query("SELECT set_config('app.scope_unit_ids', $1, false)")
+        .bind(scope)
+        .execute(&mut *conn)
+        .await
+        .expect("bind app.scope_unit_ids on probe connection");
     conn
+}
+
+/// A restricted-role pool with every connection pinned to `company` at session level —
+/// `app.company_id` plus the entitlement-union `app.scope_unit_ids` (the company's subtree),
+/// the same pair [`scoped_conn`] sets, applied by an after-connect hook so they hold for the
+/// pool's lifetime.
+///
+/// Why the GL probe needs this when scoped connections exist: the posting seam's scoped
+/// reads ride the task-local of the backbone-orm copy the ACCOUNTING crate was compiled
+/// against, and when the two crates' framework pins land on different patch releases, two
+/// backbone-orm copies coexist in one binary — the scope this test binds sets one copy's
+/// task-local and the other copy's reads silently fall back to unfenced queries, which the
+/// row-level-security fence blanks (the posting then fails as if the accounts did not
+/// exist). Pinning the tenant on the connections themselves sidesteps the split: whatever
+/// copy issues the query, the session carries the scope. That is also the per-tenant
+/// database posture in production — a pool that talks to one tenant's database names its
+/// tenant on every connection it opens.
+async fn fenced_pool(dsn: &str, company: Uuid) -> PgPool {
+    sqlx::pool::PoolOptions::new()
+        .after_connect(move |conn, _| {
+            Box::pin(async move {
+                sqlx::query("SELECT set_config('app.company_id', $1, false)")
+                    .bind(company.to_string())
+                    .execute(&mut *conn)
+                    .await?;
+                let scope: String = sqlx::query_scalar(
+                    "SELECT string_agg(s::text, ',') \
+                     FROM organization.org_unit_subtree(ARRAY[$1::uuid]) AS s",
+                )
+                .bind(company)
+                .fetch_one(&mut *conn)
+                .await?;
+                sqlx::query("SELECT set_config('app.scope_unit_ids', $1, false)")
+                    .bind(scope)
+                    .execute(&mut *conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(dsn)
+        .await
+        .expect("connect the company-pinned restricted pool")
 }
 
 /// Insert a location row as the fenced role (the company scope must be set — see
@@ -284,7 +359,10 @@ async fn fenced_lifecycle_confirm_assign_done_writes_real_rows() {
     fence_or_skip!(dsn);
     let pool = PgPool::connect(&dsn).await.expect("connect as restricted role");
     let w = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let Some(company) = fence_company(&pool).await else {
+        eprintln!("skipping: fenced database carries no org spine (root/company/branch) — seed it as the owner first, e.g. by running any DATABASE_URL suite");
+        return;
+    };
     let item = Uuid::new_v4();
     let mut conn = scoped_conn(&pool, company).await;
 
@@ -368,7 +446,10 @@ async fn fenced_cancel_releases_the_reservation() {
     fence_or_skip!(dsn);
     let pool = PgPool::connect(&dsn).await.expect("connect as restricted role");
     let w = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let Some(company) = fence_company(&pool).await else {
+        eprintln!("skipping: fenced database carries no org spine (root/company/branch) — seed it as the owner first, e.g. by running any DATABASE_URL suite");
+        return;
+    };
     let item = Uuid::new_v4();
     let mut conn = scoped_conn(&pool, company).await;
 
@@ -423,7 +504,10 @@ async fn fenced_recompute_orderpoint_stamps_the_computes() {
     fence_or_skip!(dsn);
     let pool = PgPool::connect(&dsn).await.expect("connect as restricted role");
     let svc = ProcurementService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let Some(company) = fence_company(&pool).await else {
+        eprintln!("skipping: fenced database carries no org spine (root/company/branch) — seed it as the owner first, e.g. by running any DATABASE_URL suite");
+        return;
+    };
     let item = Uuid::new_v4();
     let mut conn = scoped_conn(&pool, company).await;
 
@@ -513,7 +597,10 @@ async fn fenced_receipt_picks_up_the_location_valuation_override() {
     fence_or_skip!(dsn);
     let pool = PgPool::connect(&dsn).await.expect("connect as restricted role");
     let w = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let Some(company) = fence_company(&pool).await else {
+        eprintln!("skipping: fenced database carries no org spine (root/company/branch) — seed it as the owner first, e.g. by running any DATABASE_URL suite");
+        return;
+    };
     let item = Uuid::new_v4();
     let mut conn = scoped_conn(&pool, company).await;
 
@@ -622,7 +709,10 @@ async fn fenced_unreserve_returns_the_reservation_to_available() {
     fence_or_skip!(dsn);
     let pool = PgPool::connect(&dsn).await.expect("connect as restricted role");
     let w = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let Some(company) = fence_company(&pool).await else {
+        eprintln!("skipping: fenced database carries no org spine (root/company/branch) — seed it as the owner first, e.g. by running any DATABASE_URL suite");
+        return;
+    };
     let item = Uuid::new_v4();
     let mut conn = scoped_conn(&pool, company).await;
 
@@ -704,17 +794,26 @@ async fn fenced_unreserve_returns_the_reservation_to_available() {
 #[tokio::test]
 async fn fenced_repost_gl_redrives_idempotently() {
     fence_or_skip!(dsn);
-    let pool = PgPool::connect(&dsn).await.expect("connect as restricted role");
+    // Read the spine on a throwaway connection, then pin the working pool to that company
+    // (see `fenced_pool`) — the GL seam's cross-crate reads need the scope on the session.
+    let boot = PgPool::connect(&dsn).await.expect("connect as restricted role");
+    let Some(company) = fence_company(&boot).await else {
+        eprintln!("skipping: fenced database carries no org spine (root/company/branch) — seed it as the owner first, e.g. by running any DATABASE_URL suite");
+        return;
+    };
+    boot.close().await;
+    let pool = fenced_pool(&dsn, company).await;
     let w = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
     let item = Uuid::new_v4();
     let mut conn = scoped_conn(&pool, company).await;
 
-    // The GL legs' accounts (a real chart pair: COGS detail + Inventory detail).
+    // The GL legs' accounts (a real chart pair: COGS detail + Inventory detail). The
+    // numbers are per-run unique because the spine company is shared across runs and
+    // probes, and the chart enforces (company, account_number) uniqueness.
     let (cogs_acct, inv_acct) = (Uuid::new_v4(), Uuid::new_v4());
     for (id, num, name, at, st) in [
-        (cogs_acct, "5100", "HPP (COGS)", "cogs", "direct_cost"),
-        (inv_acct, "1300", "Persediaan", "asset", "inventory"),
+        (cogs_acct, uq("5100"), "HPP (COGS)", "cogs", "direct_cost"),
+        (inv_acct, uq("1300"), "Persediaan", "asset", "inventory"),
     ] {
         sqlx::query(
             r#"INSERT INTO accounting.accounts
@@ -856,7 +955,10 @@ async fn fenced_procurement_provisions_through_the_crud_path() {
     fence_or_skip!(dsn);
     let pool = PgPool::connect(&dsn).await.expect("connect as restricted role");
     let svc = ProcurementService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let Some(company) = fence_company(&pool).await else {
+        eprintln!("skipping: fenced database carries no org spine (root/company/branch) — seed it as the owner first, e.g. by running any DATABASE_URL suite");
+        return;
+    };
     let item = Uuid::new_v4();
     let mut conn = scoped_conn(&pool, company).await;
 

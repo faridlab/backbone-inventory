@@ -39,6 +39,8 @@ use backbone_inventory::application::service::inventory_write_service::{
 use backbone_inventory::presentation::http::create_guarded_inventory_routes;
 use backbone_inventory::InventoryModule;
 
+mod common;
+
 const SECRET: &[u8] = b"inventory-route-match-probes-secret";
 
 /// The guarded surface the probes drive, and the source its dialect guard reads.
@@ -183,7 +185,7 @@ async fn picking_probe_get_matches() {
     let router = app().await;
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let transfer = picking(&svc, &pool, company, wh).await;
     let bearer = token(company);
@@ -204,7 +206,7 @@ async fn batch_membership_routes_match() {
     let router = app().await;
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let batch = svc.create_batch(company, uq("BATCH"), false, None).await.unwrap().id;
     let a = picking(&svc, &pool, company, wh).await;
@@ -253,7 +255,7 @@ async fn scrap_process_route_matches() {
     let router = app().await;
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let stock = loc(&pool, company, "internal", Some(wh)).await;
     let item = Uuid::new_v4();
@@ -309,7 +311,7 @@ async fn landed_cost_verb_routes_match() {
     let router = app().await;
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(&pool).await;
     let wh = warehouse(&svc, company).await;
     let item = Uuid::new_v4();
     let bearer = token(company);

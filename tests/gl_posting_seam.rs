@@ -23,6 +23,8 @@ use backbone_accounting::application::service::posting_service::{
 };
 use backbone_accounting::infrastructure::persistence::SqlxPostingRepository;
 
+mod common;
+
 struct AccountingAdapter { svc: PostingService }
 #[async_trait::async_trait]
 impl GlPostSink for AccountingAdapter {
@@ -92,7 +94,7 @@ async fn pool() -> PgPool {
 
 /// Seed the COA (asset Inventory, liability GR/IR clearing, COGS, expense adjustment + a header).
 async fn seed_coa(pool: &PgPool) -> (Uuid, HashMap<&'static str, Uuid>) {
-    let company = Uuid::new_v4();
+    let company = common::fresh_company(pool).await;
     let coa: &[(&str, &str, &str, &str, &str, bool, bool)] = &[
         ("1000", "Header Aset", "asset", "current_asset", "debit", true, false),
         ("1300", "Persediaan", "asset", "inventory", "debit", false, true),
