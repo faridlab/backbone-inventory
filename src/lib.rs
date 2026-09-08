@@ -137,30 +137,18 @@ impl InventoryModule {
         use presentation::http::{
             create_picking_batch_read_routes,
             create_delivery_note_routes,
-            create_delivery_note_item_routes,
             create_inventory_company_setting_routes,
             create_landed_cost_routes,
-            create_landed_cost_line_routes,
-            create_landed_cost_adjustment_line_routes,
             create_location_routes,
-            create_stock_move_routes,
-            create_stock_move_line_routes,
             create_operation_type_routes,
             create_transfer_read_routes,
             create_route_routes,
             create_route_rule_routes,
             create_reordering_rule_routes,
             create_purchase_receipt_routes,
-            create_purchase_receipt_item_routes,
-            create_quant_routes,
             create_scrap_read_routes,
             create_scrap_reason_tag_routes,
             create_stock_entry_routes,
-            create_stock_entry_item_routes,
-            create_stock_ledger_entry_routes,
-            create_bin_routes,
-            create_stock_reconciliation_routes,
-            create_stock_reconciliation_item_routes,
             create_package_type_routes,
             create_storage_category_routes,
             create_storage_category_capacity_routes,
@@ -171,33 +159,25 @@ impl InventoryModule {
             create_stock_item_routes,
         };
 
+        // Engine-owned tables (child line items, bins, stock_moves/lines/quants, the
+        // append-only SLE, reconciliations, landed-cost children) mount NO generic CRUD here —
+        // they are written only through InventoryWriteService / the move engine. The guard
+        // test tests/route_surface_guard.rs fails the build if a regen re-adds them.
         Router::new()
             .merge(create_picking_batch_read_routes(self.picking_batch_service.clone()))
             .merge(create_delivery_note_routes(self.delivery_note_service.clone()))
-            .merge(create_delivery_note_item_routes(self.delivery_note_item_service.clone()))
             .merge(create_inventory_company_setting_routes(self.inventory_company_setting_service.clone()))
             .merge(create_landed_cost_routes(self.landed_cost_service.clone()))
-            .merge(create_landed_cost_line_routes(self.landed_cost_line_service.clone()))
-            .merge(create_landed_cost_adjustment_line_routes(self.landed_cost_adjustment_line_service.clone()))
             .merge(create_location_routes(self.location_service.clone()))
-            .merge(create_stock_move_routes(self.stock_move_service.clone()))
-            .merge(create_stock_move_line_routes(self.stock_move_line_service.clone()))
             .merge(create_operation_type_routes(self.operation_type_service.clone()))
             .merge(create_transfer_read_routes(self.transfer_service.clone()))
             .merge(create_route_routes(self.route_service.clone()))
             .merge(create_route_rule_routes(self.route_rule_service.clone()))
             .merge(create_reordering_rule_routes(self.reordering_rule_service.clone()))
             .merge(create_purchase_receipt_routes(self.purchase_receipt_service.clone()))
-            .merge(create_purchase_receipt_item_routes(self.purchase_receipt_item_service.clone()))
-            .merge(create_quant_routes(self.quant_service.clone()))
             .merge(create_scrap_read_routes(self.scrap_service.clone()))
             .merge(create_scrap_reason_tag_routes(self.scrap_reason_tag_service.clone()))
             .merge(create_stock_entry_routes(self.stock_entry_service.clone()))
-            .merge(create_stock_entry_item_routes(self.stock_entry_item_service.clone()))
-            .merge(create_stock_ledger_entry_routes(self.stock_ledger_entry_service.clone()))
-            .merge(create_bin_routes(self.bin_service.clone()))
-            .merge(create_stock_reconciliation_routes(self.stock_reconciliation_service.clone()))
-            .merge(create_stock_reconciliation_item_routes(self.stock_reconciliation_item_service.clone()))
             .merge(create_package_type_routes(self.package_type_service.clone()))
             .merge(create_storage_category_routes(self.storage_category_service.clone()))
             .merge(create_storage_category_capacity_routes(self.storage_category_capacity_service.clone()))
