@@ -52,7 +52,6 @@ pub struct TransferFilter {
     pub location_id: Option<Uuid>,
     pub location_dest_id: Option<Uuid>,
     pub partner_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
     pub move_type: Option<MoveType>,
     pub state: Option<TransferState>,
     pub is_locked: Option<bool>,
@@ -64,7 +63,7 @@ pub struct TransferFilter {
 impl TransferFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.name.is_some() || self.origin.is_some() || self.note.is_some() || self.priority.is_some() || self.picking_type_id.is_some() || self.location_id.is_some() || self.location_dest_id.is_some() || self.partner_id.is_some() || self.company_id.is_some() || self.move_type.is_some() || self.state.is_some() || self.is_locked.is_some() || self.backorder_id.is_some() || self.return_id.is_some() || self.batch_id.is_some()
+        self.name.is_some() || self.origin.is_some() || self.note.is_some() || self.priority.is_some() || self.picking_type_id.is_some() || self.location_id.is_some() || self.location_dest_id.is_some() || self.partner_id.is_some() || self.move_type.is_some() || self.state.is_some() || self.is_locked.is_some() || self.backorder_id.is_some() || self.return_id.is_some() || self.batch_id.is_some()
     }
 }
 

@@ -47,7 +47,6 @@ pub struct LotFilter {
     pub name: Option<String>,
     pub reference: Option<String>,
     pub item_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
     pub location_id: Option<Uuid>,
     pub note: Option<String>,
 }
@@ -55,7 +54,7 @@ pub struct LotFilter {
 impl LotFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.name.is_some() || self.reference.is_some() || self.item_id.is_some() || self.company_id.is_some() || self.location_id.is_some() || self.note.is_some()
+        self.name.is_some() || self.reference.is_some() || self.item_id.is_some() || self.location_id.is_some() || self.note.is_some()
     }
 }
 

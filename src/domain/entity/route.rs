@@ -54,7 +54,6 @@ pub struct Route {
     pub product_selectable: bool,
     pub product_categ_selectable: bool,
     pub warehouse_selectable: bool,
-    pub company_id: Option<Uuid>,
     #[serde(default)]
     #[sqlx(json)]
     pub metadata: AuditMetadata,
@@ -76,7 +75,6 @@ impl Route {
             product_selectable,
             product_categ_selectable,
             warehouse_selectable,
-            company_id: None,
             metadata: AuditMetadata::default(),
         }
     }
@@ -133,16 +131,6 @@ impl Route {
 
 
     // ==========================================================
-    // Fluent Setters (with_* for optional fields)
-    // ==========================================================
-
-    /// Set the company_id field (chainable)
-    pub fn with_company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
-    // ==========================================================
     // Partial Update
     // ==========================================================
 
@@ -167,9 +155,6 @@ impl Route {
                 }
                 "warehouse_selectable" => {
                     if let Ok(v) = serde_json::from_value(value) { self.warehouse_selectable = v; }
-                }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
                 }
                 _ => {} // ignore unknown fields
             }
@@ -225,14 +210,10 @@ impl backbone_orm::EntityRepoMeta for Route {
     fn column_types() -> std::collections::HashMap<String, String> {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
         &["name"]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -248,7 +229,6 @@ pub struct RouteBuilder {
     product_selectable: Option<bool>,
     product_categ_selectable: Option<bool>,
     warehouse_selectable: Option<bool>,
-    company_id: Option<Uuid>,
 }
 
 impl RouteBuilder {
@@ -288,12 +268,6 @@ impl RouteBuilder {
         self
     }
 
-    /// Set the company_id field (optional)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Build the Route entity
     ///
     /// Returns Err if any required field without a default is missing.
@@ -308,7 +282,6 @@ impl RouteBuilder {
             product_selectable: self.product_selectable.unwrap_or(true),
             product_categ_selectable: self.product_categ_selectable.unwrap_or(false),
             warehouse_selectable: self.warehouse_selectable.unwrap_or(false),
-            company_id: self.company_id,
             metadata: AuditMetadata::default(),
         })
     }

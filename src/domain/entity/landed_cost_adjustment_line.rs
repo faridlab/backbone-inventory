@@ -50,7 +50,6 @@ impl std::ops::Deref for LandedCostAdjustmentLineId {
 pub struct LandedCostAdjustmentLine {
     pub id: Uuid,
     pub lc_id: Uuid,
-    pub company_id: Uuid,
     pub move_line_id: Uuid,
     pub cost_line_id: Uuid,
     pub share: Decimal,
@@ -68,11 +67,10 @@ impl LandedCostAdjustmentLine {
     }
 
     /// Create a new LandedCostAdjustmentLine with required fields
-    pub fn new(lc_id: Uuid, company_id: Uuid, move_line_id: Uuid, cost_line_id: Uuid, share: Decimal, additional_landed_cost: Decimal, remaining_qty: Decimal) -> Self {
+    pub fn new(lc_id: Uuid, move_line_id: Uuid, cost_line_id: Uuid, share: Decimal, additional_landed_cost: Decimal, remaining_qty: Decimal) -> Self {
         Self {
             id: Uuid::new_v4(),
             lc_id,
-            company_id,
             move_line_id,
             cost_line_id,
             share,
@@ -144,9 +142,6 @@ impl LandedCostAdjustmentLine {
                 "lc_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.lc_id = v; }
                 }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 "move_line_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.move_line_id = v; }
                 }
@@ -217,16 +212,12 @@ impl backbone_orm::EntityRepoMeta for LandedCostAdjustmentLine {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
         m.insert("lc_id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("move_line_id".to_string(), "uuid".to_string());
         m.insert("cost_line_id".to_string(), "uuid".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
         &[]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -237,7 +228,6 @@ impl backbone_orm::EntityRepoMeta for LandedCostAdjustmentLine {
 #[derive(Debug, Clone, Default)]
 pub struct LandedCostAdjustmentLineBuilder {
     lc_id: Option<Uuid>,
-    company_id: Option<Uuid>,
     move_line_id: Option<Uuid>,
     cost_line_id: Option<Uuid>,
     share: Option<Decimal>,
@@ -249,12 +239,6 @@ impl LandedCostAdjustmentLineBuilder {
     /// Set the lc_id field (required)
     pub fn lc_id(mut self, value: Uuid) -> Self {
         self.lc_id = Some(value);
-        self
-    }
-
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
         self
     }
 
@@ -293,7 +277,6 @@ impl LandedCostAdjustmentLineBuilder {
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<LandedCostAdjustmentLine, String> {
         let lc_id = self.lc_id.ok_or_else(|| "lc_id is required".to_string())?;
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
         let move_line_id = self.move_line_id.ok_or_else(|| "move_line_id is required".to_string())?;
         let cost_line_id = self.cost_line_id.ok_or_else(|| "cost_line_id is required".to_string())?;
         let share = self.share.ok_or_else(|| "share is required".to_string())?;
@@ -301,7 +284,6 @@ impl LandedCostAdjustmentLineBuilder {
         Ok(LandedCostAdjustmentLine {
             id: Uuid::new_v4(),
             lc_id,
-            company_id,
             move_line_id,
             cost_line_id,
             share,

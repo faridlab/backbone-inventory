@@ -37,9 +37,6 @@ pub struct CreateStockEntryItemDto {
     #[serde(alias = "entry_id")]
     pub entry_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
     pub quantity: Decimal,
@@ -61,9 +58,6 @@ pub struct UpdateStockEntryItemDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "entry_id")]
     pub entry_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
@@ -87,9 +81,6 @@ pub struct PatchStockEntryItemDto {
     #[serde(skip_serializing_if = "Option::is_none", alias = "entry_id")]
     pub entry_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "item_id")]
     pub item_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -99,7 +90,7 @@ pub struct PatchStockEntryItemDto {
 impl PatchStockEntryItemDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.entry_id.is_some() || self.company_id.is_some() || self.item_id.is_some() || self.quantity.is_some()
+        self.entry_id.is_some() || self.item_id.is_some() || self.quantity.is_some()
     }
 }
 
@@ -119,8 +110,6 @@ pub struct StockEntryItemResponseDto {
     pub id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub entry_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub item_id: Uuid,
     pub quantity: Decimal,
@@ -182,8 +171,8 @@ impl StockEntryItemListResponseDto {
 pub struct StockEntryItemSummaryDto {
     pub id: Uuid,
     pub entry_id: Uuid,
-    pub company_id: Uuid,
     pub item_id: Uuid,
+    pub quantity: Decimal,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -196,7 +185,6 @@ impl From<StockEntryItem> for StockEntryItemResponseDto {
         Self {
             id: entity.id,
             entry_id: entity.entry_id,
-            company_id: entity.company_id,
             item_id: entity.item_id,
             quantity: entity.quantity,
             metadata: entity.metadata,
@@ -210,8 +198,8 @@ impl From<StockEntryItem> for StockEntryItemSummaryDto {
         Self {
             id: entity.id,
             entry_id: entity.entry_id,
-            company_id: entity.company_id,
             item_id: entity.item_id,
+            quantity: entity.quantity,
             created_at,
         }
     }
@@ -222,7 +210,6 @@ impl From<CreateStockEntryItemDto> for StockEntryItem {
         Self {
             id: Uuid::new_v4(),
             entry_id: dto.entry_id,
-            company_id: dto.company_id,
             item_id: dto.item_id,
             quantity: dto.quantity,
             metadata: AuditMetadata::default(),
@@ -235,7 +222,6 @@ impl From<&StockEntryItem> for StockEntryItemResponseDto {
         Self {
             id: entity.id.clone(),
             entry_id: entity.entry_id.clone(),
-            company_id: entity.company_id.clone(),
             item_id: entity.item_id.clone(),
             quantity: entity.quantity.clone(),
             metadata: entity.metadata.clone(),
@@ -252,7 +238,6 @@ impl backbone_core::FromCreateDto<CreateStockEntryItemDto> for StockEntryItem {
 impl backbone_core::ApplyUpdateDto<UpdateStockEntryItemDto> for StockEntryItem {
     fn apply_update(mut self, dto: UpdateStockEntryItemDto) -> backbone_core::ServiceResult<Self> {
         self.entry_id = dto.entry_id;
-        self.company_id = dto.company_id;
         self.item_id = dto.item_id;
         self.quantity = dto.quantity;
         Ok(self)

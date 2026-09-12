@@ -16,9 +16,10 @@
 //!
 //! **Layering (the module's 4-layer rule).** This service ORCHESTRATES: it owns the valuation
 //! arithmetic, the unit of work (`begin`/`commit`), the ORDER the bin locks are taken in, the
-//! company-scope decisions (ADR-0008) and the seam events. It holds no SQL — every statement lives
-//! in `infrastructure::persistence`, and the repository methods that participate in a movement take
-//! THIS service's connection so the SLE + Bin writes commit together with their voucher.
+//! ambient org scope's seams (ADR-0029) and the seam events. It holds no SQL — every statement
+//! lives in `infrastructure::persistence`, and the repository methods that participate in a
+//! movement take THIS service's connection so the SLE + Bin writes commit together with their
+//! voucher.
 //!
 //! **This file is the hub:** it holds the module's vocabulary (input structs, outcomes, errors), the
 //! ctor, and the shared GL-emit/reconcile helper used by every submit/repost path. The write surface
@@ -32,7 +33,7 @@
 //! - [`super::inventory_transfer`] — Stock Entry (warehouse-to-warehouse move; value-neutral, no GL).
 //! - [`super::inventory_reconciliation`] — Stock Reconciliation (physical count → value diff).
 
-use backbone_orm::company_scope;
+use backbone_orm::org_scope;
 use rust_decimal::{Decimal, RoundingStrategy};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -51,6 +52,28 @@ use crate::infrastructure::persistence::{
 use super::inventory_events::{InventoryEventSink, LoggingSink};
 use super::inventory_gl::{AccountingPostEnvelope, GlPostSink};
 
+/// The ambient org scope's legacy company echo — the acting org unit, which the spine mirrored
+/// from the historical company id verbatim. Cross-module wire fields that still carry a tenant
+/// (the GL envelope, the outbox fence, the event payloads) are filled from it; nothing in this
+/// module keys a statement on it. `Uuid::nil()` when no scope is bound (undecorated module
+/// tests, jobs).
+pub(crate) fn legacy_company_echo() -> Uuid {
+    org_scope::current_org_scope()
+        .and_then(|s| s.legacy_company_id())
+        .unwrap_or(Uuid::nil())
+}
+
+/// Re-bind the caller's ambient org scope onto a transaction this service opened itself — the
+/// scope is task-local and a fresh pool transaction carries none of it. With no ambient scope
+/// (undecorated module tests, jobs) the transaction stays plain: the module is tenant-agnostic
+/// and the composed decorator owns isolation.
+pub(crate) async fn relay_ambient_scope(conn: &mut sqlx::PgConnection) -> Result<(), sqlx::Error> {
+    if let Some(scope) = org_scope::current_org_scope() {
+        org_scope::bind_org_scope_on(conn, &scope).await?;
+    }
+    Ok(())
+}
+
 pub(super) fn money(v: Decimal) -> Decimal {
     v.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
 }
@@ -62,7 +85,6 @@ pub(super) fn rate6(v: Decimal) -> Decimal {
 
 #[derive(Debug, Clone)]
 pub struct NewWarehouse {
-    pub company_id: Uuid,
     pub code: String,
     pub name: String,
     pub warehouse_type: Option<String>,
@@ -73,7 +95,6 @@ pub struct NewWarehouse {
 #[derive(Debug, Clone)]
 pub struct NewStockItem {
     pub item_id: Uuid,
-    pub company_id: Uuid,
     pub stock_uom: String,
     pub valuation_method: Option<String>,
     pub reorder_level: Decimal,
@@ -92,7 +113,6 @@ pub struct ReceiptLine {
 #[derive(Debug, Clone)]
 pub struct NewReceipt {
     pub receipt_number: String,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub supplier_id: Uuid,
     pub source_po_id: Option<Uuid>,
@@ -112,7 +132,6 @@ pub struct DeliveryLine {
 #[derive(Debug, Clone)]
 pub struct NewDelivery {
     pub delivery_number: String,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub customer_id: Uuid,
     pub source_so_id: Option<Uuid>,
@@ -127,7 +146,6 @@ pub struct NewDelivery {
 #[derive(Debug, Clone)]
 pub struct NewTransfer {
     pub entry_number: String,
-    pub company_id: Uuid,
     pub from_warehouse_id: Uuid,
     pub to_warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
@@ -143,7 +161,6 @@ pub struct ReconLine {
 #[derive(Debug, Clone)]
 pub struct NewReconciliation {
     pub recon_number: String,
-    pub company_id: Uuid,
     pub warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
     pub currency: String,
@@ -180,7 +197,6 @@ pub struct LcCostLine {
 #[derive(Debug, Clone)]
 pub struct NewLandedCost {
     pub lc_number: String,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub target_receipt_id: Uuid,
     pub posting_date: chrono::NaiveDate,
@@ -230,8 +246,6 @@ pub enum InventoryError {
     ViewLocationHoldsNoStock { location_id: Uuid },
     /// The location a move/quant references does not exist (or is soft-deleted).
     LocationNotFound(Uuid),
-    /// A quant's company must follow its location's company (R26/T3 — derived at write time).
-    QuantCompanyMismatch { location_id: Uuid, location_company: Option<Uuid>, move_company: Uuid },
     // ---- quant-driven adjustment door (spec §5.2 — no stock.inventory model) ----------------
     /// A count cannot be staged or applied while the quant holds reservations (stock.hook.yaml
     /// R24 `no_count_while_reserved`) — release the reservations first.
@@ -243,23 +257,23 @@ pub enum InventoryError {
     /// RATE is a valuation-overlay concern (the quant-driven door values the diff at the
     /// current moving average — never a silent rate revaluation).
     CountedRateUnsupported,
-    // ---- valuation overlay (per-company posting posture + landed costs) -------------------
-    /// The company's anglo-saxon delivery-debit posture is ON but no stock interim delivered
-    /// account is configured. Fail-closed: the delivery door refuses to operate (no envelope,
-    /// no partial post) until the account is set — a silent COGS fallback would post the
-    /// interim leg to the wrong account on every delivery.
-    AngloPostureUnconfigured { company_id: Uuid },
+    // ---- valuation overlay (the ambient posting posture + landed costs) -------------------
+    /// The anglo-saxon delivery-debit posture is ON but no stock interim delivered account is
+    /// configured. Fail-closed: the delivery door refuses to operate (no envelope, no partial
+    /// post) until the account is set — a silent COGS fallback would post the interim leg to
+    /// the wrong account on every delivery.
+    AngloPostureUnconfigured,
     /// A landed-cost validation found no DONE moves under its target receipt — nothing to
     /// revalue (the receipt was never submitted, or its lines were all zero / landed-cost
     /// service lines that mint no stock).
     LandedCostNoValuedTargets { receipt_id: Uuid },
     /// A landed-cost line carries no credit account (the split's credit side is undefined).
     LandedCostLineNeedsAccount { line_id: Uuid },
-    /// The company's cost method is `standard`: landed costs refuse to validate loudly. Under
-    /// standard costing a receipt's value comes from the item's standard price and a landed
-    /// cost would introduce a variance the standard-recompute engine (a later increment)
-    /// would have to absorb — refusing beats silently diverging.
-    LandedCostRequiresCostMethod { company_id: Uuid, cost_method: String },
+    /// The cost method is `standard`: landed costs refuse to validate loudly. Under standard
+    /// costing a receipt's value comes from the item's standard price and a landed cost would
+    /// introduce a variance the standard-recompute engine (a later increment) would have to
+    /// absorb — refusing beats silently diverging.
+    LandedCostRequiresCostMethod { cost_method: String },
     /// The split basis sums to zero across every target line (e.g. a `weight` split where no
     /// item carries a per-unit weight, or a `value` split over zero-valued lines). This is a
     /// LOUD rejection by decision: the historical silent equal-split fallback masked
@@ -300,8 +314,8 @@ pub enum InventoryError {
     /// move exists; corrections are reversal moves, never re-processing).
     ScrapNotDraft { scrap_id: Uuid, state: String },
     /// The scrap record's scrap location is absent and no inventory-loss location exists
-    /// for the company (explicit destination or a seeded loss location is required).
-    ScrapLocationUnavailable { company_id: Uuid },
+    /// (explicit destination or a seeded loss location is required).
+    ScrapLocationUnavailable,
     Db(sqlx::Error),
 }
 
@@ -325,11 +339,10 @@ impl InventoryError {
             InventoryError::MoveLinesRequired { .. } => "move_lines_required".into(),
             InventoryError::ViewLocationHoldsNoStock { .. } => "quant_on_view_location".into(),
             InventoryError::LocationNotFound(_) => "location_not_found".into(),
-            InventoryError::QuantCompanyMismatch { .. } => "quant_company_mismatch".into(),
             InventoryError::CountReserved { .. } => "quant_reserved".into(),
             InventoryError::OutdatedCount { .. } => "outdated_count".into(),
             InventoryError::CountedRateUnsupported => "counted_rate_unsupported".into(),
-            InventoryError::AngloPostureUnconfigured { .. } => "anglo_posture_unconfigured".into(),
+            InventoryError::AngloPostureUnconfigured => "anglo_posture_unconfigured".into(),
             InventoryError::LandedCostNoValuedTargets { .. } => "landed_cost_no_valued_targets".into(),
             InventoryError::LandedCostLineNeedsAccount { .. } => "landed_cost_line_needs_account".into(),
             InventoryError::LandedCostRequiresCostMethod { .. } => "landed_cost_requires_cost_method".into(),
@@ -424,7 +437,7 @@ pub struct InventoryWriteService {
     // projection probes, location resolution, quant-surface heal; count staging/consume).
     pub(super) pickings: Arc<StockPickingRepository>,
     pub(super) adjustments: Arc<StockAdjustmentRepository>,
-    // The valuation overlay (per-company posting posture + landed-cost document family).
+    // The valuation overlay (the ambient posting posture + landed-cost document family).
     // Stateless hand-owned SQL, same construction pattern as the GL voucher repository.
     pub(super) valuation_overlay: Arc<ValuationOverlayRepository>,
     // The picking-batch satellite's membership surface (state mint, member add/remove,
@@ -491,17 +504,11 @@ impl InventoryWriteService {
         debug_assert!(env.is_balanced());
         match sink.post(env).await {
             Ok(ack) => {
-                company_scope::with_company_scope(
-                    Some(env.company_id),
-                    self.gl.mark_posted(&self.db_pool, voucher, voucher_id, ack.journal_id, ack.post_id),
-                ).await?;
+                self.gl.mark_posted(&self.db_pool, voucher, voucher_id, ack.journal_id, ack.post_id).await?;
                 Ok(SubmitOutcome { voucher_id, posted: true, journal_id: Some(ack.journal_id), post_id: Some(ack.post_id), gl_amount })
             }
             Err(rej) => {
-                let _ = company_scope::with_company_scope(
-                    Some(env.company_id),
-                    self.gl.mark_failed(&self.db_pool, voucher, voucher_id),
-                ).await;
+                let _ = self.gl.mark_failed(&self.db_pool, voucher, voucher_id).await;
                 Err(InventoryError::GlRejected { code: rej.code, message: rej.message })
             }
         }
@@ -519,10 +526,7 @@ impl InventoryWriteService {
         debug_assert!(env.is_balanced());
         match sink.post(env).await {
             Ok(ack) => {
-                company_scope::with_company_scope(
-                    Some(env.company_id),
-                    self.gl.mark_reversal_posted(&self.db_pool, voucher, voucher_id, ack.journal_id, ack.post_id),
-                ).await?;
+                self.gl.mark_reversal_posted(&self.db_pool, voucher, voucher_id, ack.journal_id, ack.post_id).await?;
                 Ok(SubmitOutcome { voucher_id, posted: true, journal_id: Some(ack.journal_id), post_id: Some(ack.post_id), gl_amount })
             }
             Err(rej) => Err(InventoryError::GlRejected { code: rej.code, message: rej.message }),
@@ -556,8 +560,8 @@ impl InventoryWriteService {
         let origin = m.origin.clone().unwrap_or_default();
         let existing = {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, m.company_id).await?;
-            let rows = self.moves.fetch_moves_by_origin(&mut tx, m.company_id, &origin).await?;
+            relay_ambient_scope(&mut tx).await?;
+            let rows = self.moves.fetch_moves_by_origin(&mut tx, &origin).await?;
             tx.commit().await?;
             rows
         };
@@ -578,57 +582,53 @@ impl InventoryWriteService {
     /// `assigned` when the full demand is covered, less when not. The door decides what a
     /// short advance means (the delivery refuses; the inbound receipt never is).
     ///
-    /// The caller names its company; every state read and every engine verb below is scoped to
-    /// it (bind before fetch), so the whole advance is fence-correct under armed RLS.
+    /// Every state read and every engine verb below rides the ambient org scope (ADR-0029):
+    /// the composing decorator owns isolation, the module binds nothing itself.
     pub(in crate::application::service) async fn advance_move_to_assigned(
         &self,
-        company_id: Uuid,
         move_id: Uuid,
     ) -> Result<String, InventoryError> {
-        let mut state = self.move_state_of(company_id, move_id).await?;
+        let mut state = self.move_state_of(move_id).await?;
         if state == "draft" {
-            self.action_confirm(company_id, move_id).await?;
-            state = self.move_state_of(company_id, move_id).await?;
+            self.action_confirm(move_id).await?;
+            state = self.move_state_of(move_id).await?;
         }
         if state == "confirmed" || state == "partially_available" {
-            let outcome = self.action_assign(company_id, move_id).await?;
+            let outcome = self.action_assign(move_id).await?;
             state = outcome.state;
         }
         Ok(state)
     }
 
-    /// Read one move's current state under the company fence. The door drives the engine's
-    /// verbs; this re-read between verbs is how it follows the state the ENGINE wrote (the
-    /// door never derives or asserts move state itself). The caller names its company: the
-    /// scope is bound BEFORE the read and the fetch is scoped by `(id, company_id)`, so an
-    /// armed fence cannot blind the read and a cross-company id reads as absent.
+    /// Read one move's current state. The door drives the engine's verbs; this re-read between
+    /// verbs is how it follows the state the ENGINE wrote (the door never derives or asserts
+    /// move state itself). The read rides the caller's ambient org scope (ADR-0029) — under the
+    /// composed shape the decorator's fence bounds it; undecorated (module tests) it is plain.
     pub(in crate::application::service) async fn move_state_of(
         &self,
-        company_id: Uuid,
         move_id: Uuid,
     ) -> Result<String, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, company_id).await?;
-        let mv = self.moves.fetch_move_for_company(&mut tx, company_id, move_id).await?
+        relay_ambient_scope(&mut tx).await?;
+        let mv = self.moves.fetch_move(&mut tx, move_id).await?
             .ok_or(InventoryError::NotFound(move_id))?;
         tx.commit().await?;
         Ok(mv.state)
     }
 
     /// Resolve the endpoints a voucher door's line moves run between: the warehouse's stock
-    /// location (internal, resolve-or-bootstrap) and the company's counterpart partner
-    /// location (supplier for receipts, customer for deliveries — resolve-or-bootstrap).
-    /// Returns `(partner_location_id, stock_location_id)`.
+    /// location (internal, resolve-or-bootstrap) and the counterpart partner location
+    /// (supplier for receipts, customer for deliveries — resolve-or-bootstrap). Returns
+    /// `(partner_location_id, stock_location_id)`.
     pub(in crate::application::service) async fn door_move_endpoints(
         &self,
-        company_id: Uuid,
         warehouse_id: Uuid,
         partner_usage: &str,
     ) -> Result<(Uuid, Uuid), InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, company_id).await?;
-        let partner = self.pickings.ensure_partner_location(&mut tx, company_id, partner_usage).await?;
-        let stock = self.pickings.ensure_internal_location(&mut tx, warehouse_id, company_id).await?;
+        relay_ambient_scope(&mut tx).await?;
+        let partner = self.pickings.ensure_partner_location(&mut tx, partner_usage).await?;
+        let stock = self.pickings.ensure_internal_location(&mut tx, warehouse_id).await?;
         tx.commit().await?;
         Ok((partner, stock))
     }

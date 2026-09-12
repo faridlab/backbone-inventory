@@ -35,12 +35,8 @@ models:
       lc_number:
         type: string
         attributes: ["@required", "@max(40)"]
-        description: "Human reference (unique per company; the SLE voucher_no prefix)"
+        description: "Human reference (unique per org unit; the SLE voucher_no prefix)"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "Acting company (the LC books in its own company; strict fence) # logical FK to organization.Company.id"
 
       branch_id:
         type: uuid?
@@ -116,10 +112,6 @@ models:
         inverse: landed_cost
 
     indexes:
-      - type: unique
-        fields: [company_id, lc_number]
-        where: "deleted_at IS NULL"
-        description: "LC number unique per company"
       - type: index
         fields: [state]
         description: "Lifecycle worklist"
@@ -145,10 +137,6 @@ models:
         attributes: ["@required", "@foreign_key(LandedCost.id)"]
         description: "Owning landed cost (service-level cascade: the worksheet and lines are rewritten with the document)"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "Owning company, denormalized from LandedCost to FORCE RLS on the child (ADR-0010 Decision A)"
 
       name:
         type: string
@@ -202,10 +190,6 @@ models:
         attributes: ["@required", "@foreign_key(LandedCost.id)"]
         description: "Owning landed cost (service-level cascade: the worksheet is rewritten with the document)"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "Owning company, denormalized from LandedCost to FORCE RLS on the child (ADR-0010 Decision A)"
 
       move_line_id:
         type: uuid

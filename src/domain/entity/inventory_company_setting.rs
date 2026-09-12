@@ -51,7 +51,6 @@ impl std::ops::Deref for InventoryCompanySettingId {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct InventoryCompanySetting {
     pub id: Uuid,
-    pub company_id: Uuid,
     pub cost_method: InventoryCostMethod,
     pub valuation_policy: ValuationPolicy,
     pub anglo_saxon_accounting: bool,
@@ -68,10 +67,9 @@ impl InventoryCompanySetting {
     }
 
     /// Create a new InventoryCompanySetting with required fields
-    pub fn new(company_id: Uuid, cost_method: InventoryCostMethod, valuation_policy: ValuationPolicy, anglo_saxon_accounting: bool) -> Self {
+    pub fn new(cost_method: InventoryCostMethod, valuation_policy: ValuationPolicy, anglo_saxon_accounting: bool) -> Self {
         Self {
             id: Uuid::new_v4(),
-            company_id,
             cost_method,
             valuation_policy,
             anglo_saxon_accounting,
@@ -149,9 +147,6 @@ impl InventoryCompanySetting {
     pub fn apply_patch(&mut self, fields: std::collections::HashMap<String, serde_json::Value>) {
         for (key, value) in fields {
             match key.as_str() {
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 "cost_method" => {
                     if let Ok(v) = serde_json::from_value(value) { self.cost_method = v; }
                 }
@@ -218,7 +213,6 @@ impl backbone_orm::EntityRepoMeta for InventoryCompanySetting {
     fn column_types() -> std::collections::HashMap<String, String> {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("stock_interim_delivered_account_id".to_string(), "uuid".to_string());
         m.insert("cost_method".to_string(), "inventory_cost_method".to_string());
         m.insert("valuation_policy".to_string(), "valuation_policy".to_string());
@@ -226,9 +220,6 @@ impl backbone_orm::EntityRepoMeta for InventoryCompanySetting {
     }
     fn search_fields() -> &'static [&'static str] {
         &[]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -238,7 +229,6 @@ impl backbone_orm::EntityRepoMeta for InventoryCompanySetting {
 /// System fields (id, metadata, timestamps) are auto-initialized.
 #[derive(Debug, Clone, Default)]
 pub struct InventoryCompanySettingBuilder {
-    company_id: Option<Uuid>,
     cost_method: Option<InventoryCostMethod>,
     valuation_policy: Option<ValuationPolicy>,
     anglo_saxon_accounting: Option<bool>,
@@ -246,12 +236,6 @@ pub struct InventoryCompanySettingBuilder {
 }
 
 impl InventoryCompanySettingBuilder {
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Set the cost_method field (default: `InventoryCostMethod::default()`)
     pub fn cost_method(mut self, value: InventoryCostMethod) -> Self {
         self.cost_method = Some(value);
@@ -280,11 +264,9 @@ impl InventoryCompanySettingBuilder {
     ///
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<InventoryCompanySetting, String> {
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
 
         Ok(InventoryCompanySetting {
             id: Uuid::new_v4(),
-            company_id,
             cost_method: self.cost_method.unwrap_or_default(),
             valuation_policy: self.valuation_policy.unwrap_or_default(),
             anglo_saxon_accounting: self.anglo_saxon_accounting.unwrap_or(false),

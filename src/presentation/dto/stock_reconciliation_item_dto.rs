@@ -37,9 +37,6 @@ pub struct CreateStockReconciliationItemDto {
     #[serde(alias = "reconciliation_id")]
     pub reconciliation_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
     #[serde(alias = "counted_qty")]
@@ -68,9 +65,6 @@ pub struct UpdateStockReconciliationItemDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "reconciliation_id")]
     pub reconciliation_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
@@ -101,9 +95,6 @@ pub struct PatchStockReconciliationItemDto {
     #[serde(skip_serializing_if = "Option::is_none", alias = "reconciliation_id")]
     pub reconciliation_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "item_id")]
     pub item_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "counted_qty")]
@@ -119,7 +110,7 @@ pub struct PatchStockReconciliationItemDto {
 impl PatchStockReconciliationItemDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.reconciliation_id.is_some() || self.company_id.is_some() || self.item_id.is_some() || self.counted_qty.is_some() || self.counted_rate.is_some() || self.qty_difference.is_some() || self.value_difference.is_some()
+        self.reconciliation_id.is_some() || self.item_id.is_some() || self.counted_qty.is_some() || self.counted_rate.is_some() || self.qty_difference.is_some() || self.value_difference.is_some()
     }
 }
 
@@ -139,8 +130,6 @@ pub struct StockReconciliationItemResponseDto {
     pub id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub reconciliation_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub item_id: Uuid,
     pub counted_qty: Decimal,
@@ -205,8 +194,8 @@ impl StockReconciliationItemListResponseDto {
 pub struct StockReconciliationItemSummaryDto {
     pub id: Uuid,
     pub reconciliation_id: Uuid,
-    pub company_id: Uuid,
     pub item_id: Uuid,
+    pub counted_qty: Decimal,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -219,7 +208,6 @@ impl From<StockReconciliationItem> for StockReconciliationItemResponseDto {
         Self {
             id: entity.id,
             reconciliation_id: entity.reconciliation_id,
-            company_id: entity.company_id,
             item_id: entity.item_id,
             counted_qty: entity.counted_qty,
             counted_rate: entity.counted_rate,
@@ -236,8 +224,8 @@ impl From<StockReconciliationItem> for StockReconciliationItemSummaryDto {
         Self {
             id: entity.id,
             reconciliation_id: entity.reconciliation_id,
-            company_id: entity.company_id,
             item_id: entity.item_id,
+            counted_qty: entity.counted_qty,
             created_at,
         }
     }
@@ -248,7 +236,6 @@ impl From<CreateStockReconciliationItemDto> for StockReconciliationItem {
         Self {
             id: Uuid::new_v4(),
             reconciliation_id: dto.reconciliation_id,
-            company_id: dto.company_id,
             item_id: dto.item_id,
             counted_qty: dto.counted_qty,
             counted_rate: dto.counted_rate,
@@ -264,7 +251,6 @@ impl From<&StockReconciliationItem> for StockReconciliationItemResponseDto {
         Self {
             id: entity.id.clone(),
             reconciliation_id: entity.reconciliation_id.clone(),
-            company_id: entity.company_id.clone(),
             item_id: entity.item_id.clone(),
             counted_qty: entity.counted_qty.clone(),
             counted_rate: entity.counted_rate.clone(),
@@ -284,7 +270,6 @@ impl backbone_core::FromCreateDto<CreateStockReconciliationItemDto> for StockRec
 impl backbone_core::ApplyUpdateDto<UpdateStockReconciliationItemDto> for StockReconciliationItem {
     fn apply_update(mut self, dto: UpdateStockReconciliationItemDto) -> backbone_core::ServiceResult<Self> {
         self.reconciliation_id = dto.reconciliation_id;
-        self.company_id = dto.company_id;
         self.item_id = dto.item_id;
         self.counted_qty = dto.counted_qty;
         self.counted_rate = dto.counted_rate;

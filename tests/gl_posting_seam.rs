@@ -92,6 +92,12 @@ async fn pool() -> PgPool {
 
 /// Seed the COA (asset Inventory, liability GR/IR clearing, COGS, expense adjustment + a header).
 async fn seed_coa(pool: &PgPool) -> (Uuid, HashMap<&'static str, Uuid>) {
+    // These cases post under the DEFAULT posture (no anglo-saxon interim swap). The
+    // settings row is a scratch-wide singleton read unscoped (the composing service
+    // scopes it per org unit), and posture suites in other binaries leave their row
+    // behind — clear it so this file's deliveries debit plain COGS.
+    sqlx::query("DELETE FROM inventory.inventory_company_settings")
+        .execute(pool).await.expect("clear posture singleton");
     let company = Uuid::new_v4();
     let coa: &[(&str, &str, &str, &str, &str, bool, bool)] = &[
         ("1000", "Header Aset", "asset", "current_asset", "debit", true, false),
@@ -105,18 +111,18 @@ async fn seed_coa(pool: &PgPool) -> (Uuid, HashMap<&'static str, Uuid>) {
         let id = Uuid::new_v4();
         sqlx::query(
             r#"INSERT INTO accounting.accounts
-                (id, company_id, account_number, account_code, name, account_type, account_subtype,
+                (id, account_number, account_code, name, account_type, account_subtype,
                  normal_balance, is_header, is_detail, status)
-               VALUES ($1,$2,$3,$4,$5,$6::account_type,$7::account_subtype,$8::normal_balance,$9,$10,'active'::account_status)"#,
+               VALUES ($1,$2,$3,$4,$5::account_type,$6::account_subtype,$7::normal_balance,$8,$9,'active'::account_status)"#,
         )
-        .bind(id).bind(company).bind(code).bind(code).bind(name).bind(at).bind(st).bind(nb).bind(is_header).bind(is_detail)
+        .bind(id).bind(code).bind(code).bind(name).bind(at).bind(st).bind(nb).bind(is_header).bind(is_detail)
         .execute(pool).await.expect("seed account");
         m.insert(*code, id);
     }
     (company, m)
 }
-async fn warehouse(w: &InventoryWriteService, company: Uuid) -> Uuid {
-    w.create_warehouse(NewWarehouse { company_id: company, code: uq("WH"), name: uq("Main"), warehouse_type: None, parent_warehouse_id: None, is_group: false }).await.unwrap()
+async fn warehouse(w: &InventoryWriteService) -> Uuid {
+    w.create_warehouse(NewWarehouse { code: uq("WH"), name: uq("Main"), warehouse_type: None, parent_warehouse_id: None, is_group: false }).await.unwrap()
 }
 async fn jrow(pool: &PgPool, jid: Uuid) -> (Decimal, Decimal) {
     let r = sqlx::query("SELECT total_debit, total_credit FROM accounting.journals WHERE id=$1").bind(jid).fetch_one(pool).await.unwrap();
@@ -126,21 +132,24 @@ async fn line_amt(pool: &PgPool, jid: Uuid, acct: Uuid) -> (Decimal, Decimal) {
     let r = sqlx::query("SELECT debit_amount, credit_amount FROM accounting.journal_lines WHERE journal_id=$1 AND account_id=$2").bind(jid).bind(acct).fetch_one(pool).await.unwrap();
     (r.get("debit_amount"), r.get("credit_amount"))
 }
-async fn journal_count(pool: &PgPool, company: Uuid) -> i64 {
-    sqlx::query_scalar("SELECT COUNT(*) FROM accounting.journals WHERE company_id=$1").bind(company).fetch_one(pool).await.unwrap()
+/// Count the journals the seam posted for one voucher. The post dedupe key is
+/// (source_type, source_id, posting_type), so a voucher's journals — the original
+/// and, after a cancel, its reversal — are exactly the rows with its source_id.
+async fn journal_count(pool: &PgPool, source_id: Uuid) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM accounting.journals WHERE source_id=$1").bind(source_id).fetch_one(pool).await.unwrap()
 }
 
 // ISEAM-1: goods receipt (10 @ 100 = 1,000) → Dr Inventory 1,000 · Cr GR/IR 1,000 in the real GL.
 #[tokio::test]
 async fn receipt_posts_asset_to_real_gl() {
     let pool = pool().await;
-    let (company, coa) = seed_coa(&pool).await;
+    let (_company, coa) = seed_coa(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let adapter = AccountingAdapter { svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))) };
-    let wh = warehouse(&w, company).await;
+    let wh = warehouse(&w).await;
     let item = Uuid::new_v4();
     let rid = w.create_purchase_receipt(NewReceipt {
-        receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
+        receipt_number: uq("PR"), branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
@@ -160,14 +169,14 @@ async fn receipt_posts_asset_to_real_gl() {
 #[tokio::test]
 async fn delivery_posts_cogs_to_real_gl() {
     let pool = pool().await;
-    let (company, coa) = seed_coa(&pool).await;
+    let (_company, coa) = seed_coa(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let adapter = AccountingAdapter { svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))) };
-    let wh = warehouse(&w, company).await;
+    let wh = warehouse(&w).await;
     let item = Uuid::new_v4();
     for (q, r) in [("10", "100"), ("10", "120")] {
         let rid = w.create_purchase_receipt(NewReceipt {
-            receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
+            receipt_number: uq("PR"), branch_id: None, supplier_id: Uuid::new_v4(),
             source_po_id: None, warehouse_id: wh, posting_date: day(),
             currency: "IDR".into(),
             inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
@@ -176,7 +185,7 @@ async fn delivery_posts_cogs_to_real_gl() {
         w.submit_purchase_receipt(rid, &adapter).await.unwrap();
     }
     let did = w.create_delivery_note(NewDelivery {
-        delivery_number: uq("DN"), company_id: company, branch_id: None, customer_id: Uuid::new_v4(),
+        delivery_number: uq("DN"), branch_id: None, customer_id: Uuid::new_v4(),
         source_so_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         cogs_account_id: coa["5100"], inventory_account_id: coa["1300"],
@@ -193,13 +202,13 @@ async fn delivery_posts_cogs_to_real_gl() {
 #[tokio::test]
 async fn reconciliation_posts_adjustment_to_real_gl() {
     let pool = pool().await;
-    let (company, coa) = seed_coa(&pool).await;
+    let (_company, coa) = seed_coa(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let adapter = AccountingAdapter { svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))) };
-    let wh = warehouse(&w, company).await;
+    let wh = warehouse(&w).await;
     let item = Uuid::new_v4();
     let rid = w.create_purchase_receipt(NewReceipt {
-        receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
+        receipt_number: uq("PR"), branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
@@ -207,7 +216,7 @@ async fn reconciliation_posts_adjustment_to_real_gl() {
     }).await.unwrap();
     w.submit_purchase_receipt(rid, &adapter).await.unwrap();
     let sr = w.submit_reconciliation(NewReconciliation {
-        recon_number: uq("SR"), company_id: company, warehouse_id: wh, posting_date: day(),
+        recon_number: uq("SR"), warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: coa["1300"], adjustment_account_id: coa["5200"],
         lines: vec![ReconLine { item_id: item, counted_qty: d("8"), counted_rate: Decimal::ZERO }],
@@ -223,13 +232,13 @@ async fn reconciliation_posts_adjustment_to_real_gl() {
 #[tokio::test]
 async fn gl_rejection_leaves_movement_but_marks_failed() {
     let pool = pool().await;
-    let (company, coa) = seed_coa(&pool).await;
+    let (_company, coa) = seed_coa(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let adapter = AccountingAdapter { svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))) };
-    let wh = warehouse(&w, company).await;
+    let wh = warehouse(&w).await;
     let item = Uuid::new_v4();
     let rid = w.create_purchase_receipt(NewReceipt {
-        receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
+        receipt_number: uq("PR"), branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: coa["1000"], grir_account_id: coa["2150"], // 1000 is a header → rejected
@@ -240,7 +249,7 @@ async fn gl_rejection_leaves_movement_but_marks_failed() {
     let st: String = sqlx::query_scalar("SELECT posting_state::text FROM inventory.purchase_receipts WHERE id=$1").bind(rid).fetch_one(&pool).await.unwrap();
     assert_eq!(st, "failed");
     // The stock movement is real despite the GL rejection (retryable).
-    let (qty,): (Decimal,) = sqlx::query_as("SELECT actual_qty FROM inventory.bins WHERE company_id=$1 AND item_id=$2 AND warehouse_id=$3").bind(company).bind(item).bind(wh).fetch_one(&pool).await.unwrap();
+    let (qty,): (Decimal,) = sqlx::query_as("SELECT actual_qty FROM inventory.bins WHERE item_id=$1 AND warehouse_id=$2").bind(item).bind(wh).fetch_one(&pool).await.unwrap();
     assert_eq!(qty, d("10.0000"), "SLE+Bin committed; only the GL post failed");
 }
 
@@ -248,12 +257,12 @@ async fn gl_rejection_leaves_movement_but_marks_failed() {
 #[tokio::test]
 async fn resubmit_is_refused() {
     let pool = pool().await;
-    let (company, coa) = seed_coa(&pool).await;
+    let (_company, coa) = seed_coa(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let adapter = AccountingAdapter { svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))) };
-    let wh = warehouse(&w, company).await;
+    let wh = warehouse(&w).await;
     let rid = w.create_purchase_receipt(NewReceipt {
-        receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
+        receipt_number: uq("PR"), branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
@@ -269,13 +278,13 @@ async fn resubmit_is_refused() {
 #[tokio::test]
 async fn repost_recovers_a_failed_post() {
     let pool = pool().await;
-    let (company, coa) = seed_coa(&pool).await;
+    let (_company, coa) = seed_coa(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let good = AccountingAdapter { svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))) };
-    let wh = warehouse(&w, company).await;
+    let wh = warehouse(&w).await;
     let item = Uuid::new_v4();
     let rid = w.create_purchase_receipt(NewReceipt {
-        receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
+        receipt_number: uq("PR"), branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
@@ -286,7 +295,7 @@ async fn repost_recovers_a_failed_post() {
     assert_eq!(err.code(), "period_closed");
     let st: String = sqlx::query_scalar("SELECT posting_state::text FROM inventory.purchase_receipts WHERE id=$1").bind(rid).fetch_one(&pool).await.unwrap();
     assert_eq!(st, "failed");
-    let (qty,): (Decimal,) = sqlx::query_as("SELECT actual_qty FROM inventory.bins WHERE company_id=$1 AND item_id=$2 AND warehouse_id=$3").bind(company).bind(item).bind(wh).fetch_one(&pool).await.unwrap();
+    let (qty,): (Decimal,) = sqlx::query_as("SELECT actual_qty FROM inventory.bins WHERE item_id=$1 AND warehouse_id=$2").bind(item).bind(wh).fetch_one(&pool).await.unwrap();
     assert_eq!(qty, d("10.0000"), "movement committed despite failed post");
     // Repost → posted, exactly one journal.
     let out = w.repost_purchase_receipt(rid, &good).await.unwrap();
@@ -302,12 +311,12 @@ async fn repost_recovers_a_failed_post() {
 #[tokio::test]
 async fn repost_does_not_double_post() {
     let pool = pool().await;
-    let (company, coa) = seed_coa(&pool).await;
+    let (_company, coa) = seed_coa(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let adapter = AccountingAdapter { svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))) };
-    let wh = warehouse(&w, company).await;
+    let wh = warehouse(&w).await;
     let rid = w.create_purchase_receipt(NewReceipt {
-        receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
+        receipt_number: uq("PR"), branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
@@ -316,14 +325,14 @@ async fn repost_does_not_double_post() {
     let first = w.submit_purchase_receipt(rid, &adapter).await.unwrap();
     // Simulate the crash window: accounting posted, but selling-side status update was lost.
     sqlx::query("UPDATE inventory.purchase_receipts SET posting_state='failed'::gl_posting_state WHERE id=$1").bind(rid).execute(&pool).await.unwrap();
-    // Repost → dedup returns the same journal; still exactly one journal for the company.
+    // Repost → dedup returns the same journal; still exactly one journal.
     let again = w.repost_purchase_receipt(rid, &adapter).await.unwrap();
     assert_eq!(again.journal_id, first.journal_id, "same journal (dedup on source_id)");
-    assert_eq!(journal_count(&pool, company).await, 1, "no double post");
+    assert_eq!(journal_count(&pool, rid).await, 1, "no double post");
     // And an already-posted voucher short-circuits (no re-emit).
     let noop = w.repost_purchase_receipt(rid, &adapter).await.unwrap();
     assert_eq!(noop.journal_id, first.journal_id);
-    assert_eq!(journal_count(&pool, company).await, 1);
+    assert_eq!(journal_count(&pool, rid).await, 1);
 }
 
 // ISEAM-8 (council 2026-07-29): cancelling a posted receipt emits a balanced REVERSAL envelope —
@@ -332,13 +341,13 @@ async fn repost_does_not_double_post() {
 #[tokio::test]
 async fn cancel_emits_balanced_reversal_envelope() {
     let pool = pool().await;
-    let (company, coa) = seed_coa(&pool).await;
+    let (_company, coa) = seed_coa(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let adapter = AccountingAdapter { svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))) };
-    let wh = warehouse(&w, company).await;
+    let wh = warehouse(&w).await;
     let item = Uuid::new_v4();
     let rid = w.create_purchase_receipt(NewReceipt {
-        receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
+        receipt_number: uq("PR"), branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
@@ -369,13 +378,13 @@ async fn cancel_emits_balanced_reversal_envelope() {
 #[tokio::test]
 async fn cancel_posts_a_real_reversal_journal() {
     let pool = pool().await;
-    let (company, coa) = seed_coa(&pool).await;
+    let (_company, coa) = seed_coa(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
     let adapter = AccountingAdapter { svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))) };
-    let wh = warehouse(&w, company).await;
+    let wh = warehouse(&w).await;
     let item = Uuid::new_v4();
     let rid = w.create_purchase_receipt(NewReceipt {
-        receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
+        receipt_number: uq("PR"), branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: coa["1300"], grir_account_id: coa["2150"],
@@ -383,14 +392,14 @@ async fn cancel_posts_a_real_reversal_journal() {
     }).await.unwrap();
     let orig = w.submit_purchase_receipt(rid, &adapter).await.unwrap();
     let orig_jid = orig.journal_id.unwrap();
-    assert_eq!(journal_count(&pool, company).await, 1);
+    assert_eq!(journal_count(&pool, rid).await, 1);
 
     // Cancel through the REAL adapter → accounting posts a distinct reversal journal.
     let rev = w.cancel_purchase_receipt(rid, &adapter).await.unwrap();
     assert!(rev.posted);
     let rev_jid = rev.journal_id.unwrap();
     assert_ne!(rev_jid, orig_jid, "reversal is a distinct journal");
-    assert_eq!(journal_count(&pool, company).await, 2, "original + reversal");
+    assert_eq!(journal_count(&pool, rid).await, 2, "original + reversal");
 
     // The reversal mirrors the original (Dr Inventory·Cr GR/IR → Dr GR/IR · Cr Inventory).
     assert_eq!(jrow(&pool, rev_jid).await, (d("1000"), d("1000")), "balanced reversal");

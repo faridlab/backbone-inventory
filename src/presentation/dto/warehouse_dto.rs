@@ -33,9 +33,6 @@ use crate::domain::entity::WarehouseType;
 #[cfg_attr(feature = "validation", derive(Validate))]
 #[serde(rename_all = "camelCase")]
 pub struct CreateWarehouseDto {
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "validation", validate(length(max = 40)))]
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub code: String,
@@ -64,9 +61,6 @@ pub struct CreateWarehouseDto {
 #[cfg_attr(feature = "validation", derive(Validate))]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateWarehouseDto {
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "validation", validate(length(max = 40)))]
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub code: String,
@@ -95,9 +89,6 @@ pub struct UpdateWarehouseDto {
 #[cfg_attr(feature = "validation", derive(Validate))]
 #[serde(rename_all = "camelCase")]
 pub struct PatchWarehouseDto {
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[cfg_attr(feature = "validation", validate(length(max = 40)))]
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -118,7 +109,7 @@ pub struct PatchWarehouseDto {
 impl PatchWarehouseDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.company_id.is_some() || self.code.is_some() || self.name.is_some() || self.warehouse_type.is_some() || self.parent_warehouse_id.is_some() || self.is_group.is_some()
+        self.code.is_some() || self.name.is_some() || self.warehouse_type.is_some() || self.parent_warehouse_id.is_some() || self.is_group.is_some()
     }
 }
 
@@ -136,8 +127,6 @@ impl PatchWarehouseDto {
 pub struct WarehouseResponseDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub code: String,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
@@ -203,9 +192,9 @@ impl WarehouseListResponseDto {
 #[serde(rename_all = "camelCase")]
 pub struct WarehouseSummaryDto {
     pub id: Uuid,
-    pub company_id: Uuid,
     pub code: String,
     pub name: String,
+    pub warehouse_type: WarehouseType,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -217,7 +206,6 @@ impl From<Warehouse> for WarehouseResponseDto {
     fn from(entity: Warehouse) -> Self {
         Self {
             id: entity.id,
-            company_id: entity.company_id,
             code: entity.code,
             name: entity.name,
             warehouse_type: entity.warehouse_type,
@@ -233,9 +221,9 @@ impl From<Warehouse> for WarehouseSummaryDto {
         let created_at = backbone_core::PersistentEntity::created_at(&entity);
         Self {
             id: entity.id,
-            company_id: entity.company_id,
             code: entity.code,
             name: entity.name,
+            warehouse_type: entity.warehouse_type,
             created_at,
         }
     }
@@ -245,7 +233,6 @@ impl From<CreateWarehouseDto> for Warehouse {
     fn from(dto: CreateWarehouseDto) -> Self {
         Self {
             id: Uuid::new_v4(),
-            company_id: dto.company_id,
             code: dto.code,
             name: dto.name,
             warehouse_type: dto.warehouse_type,
@@ -260,7 +247,6 @@ impl From<&Warehouse> for WarehouseResponseDto {
     fn from(entity: &Warehouse) -> Self {
         Self {
             id: entity.id.clone(),
-            company_id: entity.company_id.clone(),
             code: entity.code.clone(),
             name: entity.name.clone(),
             warehouse_type: entity.warehouse_type.clone(),
@@ -279,7 +265,6 @@ impl backbone_core::FromCreateDto<CreateWarehouseDto> for Warehouse {
 
 impl backbone_core::ApplyUpdateDto<UpdateWarehouseDto> for Warehouse {
     fn apply_update(mut self, dto: UpdateWarehouseDto) -> backbone_core::ServiceResult<Self> {
-        self.company_id = dto.company_id;
         self.code = dto.code;
         self.name = dto.name;
         self.warehouse_type = dto.warehouse_type;

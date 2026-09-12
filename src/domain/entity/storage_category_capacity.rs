@@ -53,7 +53,6 @@ pub struct StorageCategoryCapacity {
     pub item_id: Option<Uuid>,
     pub package_type_id: Option<Uuid>,
     pub quantity: Decimal,
-    pub company_id: Option<Uuid>,
     #[serde(default)]
     #[sqlx(json)]
     pub metadata: AuditMetadata,
@@ -73,7 +72,6 @@ impl StorageCategoryCapacity {
             item_id: None,
             package_type_id: None,
             quantity,
-            company_id: None,
             metadata: AuditMetadata::default(),
         }
     }
@@ -145,12 +143,6 @@ impl StorageCategoryCapacity {
         self
     }
 
-    /// Set the company_id field (chainable)
-    pub fn with_company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     // ==========================================================
     // Partial Update
     // ==========================================================
@@ -170,9 +162,6 @@ impl StorageCategoryCapacity {
                 }
                 "quantity" => {
                     if let Ok(v) = serde_json::from_value(value) { self.quantity = v; }
-                }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
                 }
                 _ => {} // ignore unknown fields
             }
@@ -231,14 +220,10 @@ impl backbone_orm::EntityRepoMeta for StorageCategoryCapacity {
         m.insert("storage_category_id".to_string(), "uuid".to_string());
         m.insert("item_id".to_string(), "uuid".to_string());
         m.insert("package_type_id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
         &[]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -252,7 +237,6 @@ pub struct StorageCategoryCapacityBuilder {
     item_id: Option<Uuid>,
     package_type_id: Option<Uuid>,
     quantity: Option<Decimal>,
-    company_id: Option<Uuid>,
 }
 
 impl StorageCategoryCapacityBuilder {
@@ -280,12 +264,6 @@ impl StorageCategoryCapacityBuilder {
         self
     }
 
-    /// Set the company_id field (optional)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Build the StorageCategoryCapacity entity
     ///
     /// Returns Err if any required field without a default is missing.
@@ -298,7 +276,6 @@ impl StorageCategoryCapacityBuilder {
             item_id: self.item_id,
             package_type_id: self.package_type_id,
             quantity: self.quantity.unwrap_or(Decimal::from(1)),
-            company_id: self.company_id,
             metadata: AuditMetadata::default(),
         })
     }

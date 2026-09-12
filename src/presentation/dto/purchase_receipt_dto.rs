@@ -39,9 +39,6 @@ pub struct CreatePurchaseReceiptDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "receipt_number")]
     pub receipt_number: String,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "branch_id")]
     pub branch_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -99,9 +96,6 @@ pub struct UpdatePurchaseReceiptDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "receipt_number")]
     pub receipt_number: String,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "branch_id")]
     pub branch_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -159,9 +153,6 @@ pub struct PatchPurchaseReceiptDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "receipt_number")]
     pub receipt_number: Option<String>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "branch_id")]
     pub branch_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -207,7 +198,7 @@ pub struct PatchPurchaseReceiptDto {
 impl PatchPurchaseReceiptDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.receipt_number.is_some() || self.company_id.is_some() || self.branch_id.is_some() || self.supplier_id.is_some() || self.source_po_id.is_some() || self.warehouse_id.is_some() || self.posting_date.is_some() || self.currency.is_some() || self.total_value.is_some() || self.inventory_account_id.is_some() || self.grir_account_id.is_some() || self.transfer_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some() || self.posted_at.is_some() || self.notes.is_some()
+        self.receipt_number.is_some() || self.branch_id.is_some() || self.supplier_id.is_some() || self.source_po_id.is_some() || self.warehouse_id.is_some() || self.posting_date.is_some() || self.currency.is_some() || self.total_value.is_some() || self.inventory_account_id.is_some() || self.grir_account_id.is_some() || self.transfer_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some() || self.posted_at.is_some() || self.notes.is_some()
     }
 }
 
@@ -227,8 +218,6 @@ pub struct PurchaseReceiptResponseDto {
     pub id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub receipt_number: String,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub supplier_id: Uuid,
@@ -309,8 +298,8 @@ impl PurchaseReceiptListResponseDto {
 pub struct PurchaseReceiptSummaryDto {
     pub id: Uuid,
     pub receipt_number: String,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
+    pub supplier_id: Uuid,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -323,7 +312,6 @@ impl From<PurchaseReceipt> for PurchaseReceiptResponseDto {
         Self {
             id: entity.id,
             receipt_number: entity.receipt_number,
-            company_id: entity.company_id,
             branch_id: entity.branch_id,
             supplier_id: entity.supplier_id,
             source_po_id: entity.source_po_id,
@@ -351,8 +339,8 @@ impl From<PurchaseReceipt> for PurchaseReceiptSummaryDto {
         Self {
             id: entity.id,
             receipt_number: entity.receipt_number,
-            company_id: entity.company_id,
             branch_id: entity.branch_id,
+            supplier_id: entity.supplier_id,
             created_at,
         }
     }
@@ -363,7 +351,6 @@ impl From<CreatePurchaseReceiptDto> for PurchaseReceipt {
         Self {
             id: Uuid::new_v4(),
             receipt_number: dto.receipt_number,
-            company_id: dto.company_id,
             branch_id: dto.branch_id,
             supplier_id: dto.supplier_id,
             source_po_id: dto.source_po_id,
@@ -390,7 +377,6 @@ impl From<&PurchaseReceipt> for PurchaseReceiptResponseDto {
         Self {
             id: entity.id.clone(),
             receipt_number: entity.receipt_number.clone(),
-            company_id: entity.company_id.clone(),
             branch_id: entity.branch_id.clone(),
             supplier_id: entity.supplier_id.clone(),
             source_po_id: entity.source_po_id.clone(),
@@ -421,7 +407,6 @@ impl backbone_core::FromCreateDto<CreatePurchaseReceiptDto> for PurchaseReceipt 
 impl backbone_core::ApplyUpdateDto<UpdatePurchaseReceiptDto> for PurchaseReceipt {
     fn apply_update(mut self, dto: UpdatePurchaseReceiptDto) -> backbone_core::ServiceResult<Self> {
         self.receipt_number = dto.receipt_number;
-        self.company_id = dto.company_id;
         self.branch_id = dto.branch_id;
         self.supplier_id = dto.supplier_id;
         self.source_po_id = dto.source_po_id;

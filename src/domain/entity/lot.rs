@@ -52,7 +52,6 @@ pub struct Lot {
     pub name: String,
     pub reference: Option<String>,
     pub item_id: Uuid,
-    pub company_id: Option<Uuid>,
     pub product_qty: Decimal,
     pub location_id: Option<Uuid>,
     pub note: Option<String>,
@@ -74,7 +73,6 @@ impl Lot {
             name,
             reference: None,
             item_id,
-            company_id: None,
             product_qty,
             location_id: None,
             note: None,
@@ -143,12 +141,6 @@ impl Lot {
         self
     }
 
-    /// Set the company_id field (chainable)
-    pub fn with_company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Set the location_id field (chainable)
     pub fn with_location_id(mut self, value: Uuid) -> Self {
         self.location_id = Some(value);
@@ -177,9 +169,6 @@ impl Lot {
                 }
                 "item_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.item_id = v; }
-                }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
                 }
                 "product_qty" => {
                     if let Ok(v) = serde_json::from_value(value) { self.product_qty = v; }
@@ -245,15 +234,11 @@ impl backbone_orm::EntityRepoMeta for Lot {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
         m.insert("item_id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("location_id".to_string(), "uuid".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
         &["name"]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -266,7 +251,6 @@ pub struct LotBuilder {
     name: Option<String>,
     reference: Option<String>,
     item_id: Option<Uuid>,
-    company_id: Option<Uuid>,
     product_qty: Option<Decimal>,
     location_id: Option<Uuid>,
     note: Option<String>,
@@ -288,12 +272,6 @@ impl LotBuilder {
     /// Set the item_id field (required)
     pub fn item_id(mut self, value: Uuid) -> Self {
         self.item_id = Some(value);
-        self
-    }
-
-    /// Set the company_id field (optional)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
         self
     }
 
@@ -327,7 +305,6 @@ impl LotBuilder {
             name,
             reference: self.reference,
             item_id,
-            company_id: self.company_id,
             product_qty: self.product_qty.unwrap_or(Decimal::from(0)),
             location_id: self.location_id,
             note: self.note,

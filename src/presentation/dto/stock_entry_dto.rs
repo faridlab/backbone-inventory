@@ -39,9 +39,6 @@ pub struct CreateStockEntryDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "entry_number")]
     pub entry_number: String,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[serde(alias = "stock_entry_type")]
     pub stock_entry_type: StockEntryType,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "from_warehouse_id")]
@@ -78,9 +75,6 @@ pub struct UpdateStockEntryDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "entry_number")]
     pub entry_number: String,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[serde(alias = "stock_entry_type")]
     pub stock_entry_type: StockEntryType,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "from_warehouse_id")]
@@ -117,9 +111,6 @@ pub struct PatchStockEntryDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "entry_number")]
     pub entry_number: Option<String>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "stock_entry_type")]
     pub stock_entry_type: Option<StockEntryType>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "from_warehouse_id")]
@@ -143,7 +134,7 @@ pub struct PatchStockEntryDto {
 impl PatchStockEntryDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.entry_number.is_some() || self.company_id.is_some() || self.stock_entry_type.is_some() || self.from_warehouse_id.is_some() || self.to_warehouse_id.is_some() || self.posting_date.is_some() || self.transfer_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.notes.is_some()
+        self.entry_number.is_some() || self.stock_entry_type.is_some() || self.from_warehouse_id.is_some() || self.to_warehouse_id.is_some() || self.posting_date.is_some() || self.transfer_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.notes.is_some()
     }
 }
 
@@ -163,8 +154,6 @@ pub struct StockEntryResponseDto {
     pub id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub entry_number: String,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     pub stock_entry_type: StockEntryType,
     pub from_warehouse_id: Option<Uuid>,
     pub to_warehouse_id: Option<Uuid>,
@@ -232,8 +221,8 @@ impl StockEntryListResponseDto {
 pub struct StockEntrySummaryDto {
     pub id: Uuid,
     pub entry_number: String,
-    pub company_id: Uuid,
     pub stock_entry_type: StockEntryType,
+    pub from_warehouse_id: Option<Uuid>,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -246,7 +235,6 @@ impl From<StockEntry> for StockEntryResponseDto {
         Self {
             id: entity.id,
             entry_number: entity.entry_number,
-            company_id: entity.company_id,
             stock_entry_type: entity.stock_entry_type,
             from_warehouse_id: entity.from_warehouse_id,
             to_warehouse_id: entity.to_warehouse_id,
@@ -266,8 +254,8 @@ impl From<StockEntry> for StockEntrySummaryDto {
         Self {
             id: entity.id,
             entry_number: entity.entry_number,
-            company_id: entity.company_id,
             stock_entry_type: entity.stock_entry_type,
+            from_warehouse_id: entity.from_warehouse_id,
             created_at,
         }
     }
@@ -278,7 +266,6 @@ impl From<CreateStockEntryDto> for StockEntry {
         Self {
             id: Uuid::new_v4(),
             entry_number: dto.entry_number,
-            company_id: dto.company_id,
             stock_entry_type: dto.stock_entry_type,
             from_warehouse_id: dto.from_warehouse_id,
             to_warehouse_id: dto.to_warehouse_id,
@@ -297,7 +284,6 @@ impl From<&StockEntry> for StockEntryResponseDto {
         Self {
             id: entity.id.clone(),
             entry_number: entity.entry_number.clone(),
-            company_id: entity.company_id.clone(),
             stock_entry_type: entity.stock_entry_type.clone(),
             from_warehouse_id: entity.from_warehouse_id.clone(),
             to_warehouse_id: entity.to_warehouse_id.clone(),
@@ -320,7 +306,6 @@ impl backbone_core::FromCreateDto<CreateStockEntryDto> for StockEntry {
 impl backbone_core::ApplyUpdateDto<UpdateStockEntryDto> for StockEntry {
     fn apply_update(mut self, dto: UpdateStockEntryDto) -> backbone_core::ServiceResult<Self> {
         self.entry_number = dto.entry_number;
-        self.company_id = dto.company_id;
         self.stock_entry_type = dto.stock_entry_type;
         self.from_warehouse_id = dto.from_warehouse_id;
         self.to_warehouse_id = dto.to_warehouse_id;

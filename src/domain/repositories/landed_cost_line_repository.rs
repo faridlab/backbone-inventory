@@ -45,7 +45,6 @@ pub struct LandedCostLinePaginatedResult {
 #[derive(Debug, Clone, Default)]
 pub struct LandedCostLineFilter {
     pub lc_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
     pub name: Option<String>,
     pub account_id: Option<Uuid>,
     pub split_method: Option<LandedCostSplitMethod>,
@@ -54,7 +53,7 @@ pub struct LandedCostLineFilter {
 impl LandedCostLineFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.lc_id.is_some() || self.company_id.is_some() || self.name.is_some() || self.account_id.is_some() || self.split_method.is_some()
+        self.lc_id.is_some() || self.name.is_some() || self.account_id.is_some() || self.split_method.is_some()
     }
 }
 

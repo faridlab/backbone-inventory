@@ -7,6 +7,10 @@
 //! config (resolved by the composing service / an item-account map), not selling's concern, so they
 //! ride on the intake DTO. This is the inventory-owned half of the seam — a consumer wires the event
 //! bus to `DeliveryIntake::on_delivery_requested`.
+//!
+//! Tenancy (ADR-0029): the module is tenant-agnostic. These intake DTOs are ACL-mapped inputs
+//! (the composition layer builds them from the producer module's wire envelope); the writes they
+//! trigger ride the ambient org scope the composing service set per request.
 
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -31,7 +35,6 @@ pub struct DeliveryRequestLine {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DeliveryRequested {
     pub delivery_number: String,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub customer_id: Uuid,
     pub source_so_id: Option<Uuid>,
@@ -59,7 +62,6 @@ pub struct ReceiptRequestLine {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ReceiptExpected {
     pub receipt_number: String,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub supplier_id: Uuid,
     pub source_po_id: Option<Uuid>,
@@ -89,7 +91,6 @@ impl DeliveryIntake {
     pub async fn on_delivery_requested(&self, req: DeliveryRequested) -> Result<Uuid, InventoryError> {
         self.write.create_delivery_note(NewDelivery {
             delivery_number: req.delivery_number,
-            company_id: req.company_id,
             branch_id: req.branch_id,
             customer_id: req.customer_id,
             source_so_id: req.source_so_id,
@@ -108,7 +109,6 @@ impl DeliveryIntake {
     pub async fn on_receipt_expected(&self, req: ReceiptExpected) -> Result<Uuid, InventoryError> {
         self.write.create_purchase_receipt(NewReceipt {
             receipt_number: req.receipt_number,
-            company_id: req.company_id,
             branch_id: req.branch_id,
             supplier_id: req.supplier_id,
             source_po_id: req.source_po_id,

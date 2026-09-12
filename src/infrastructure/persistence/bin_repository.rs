@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use crate::domain::entity::Bin;
 
+
 /// Table name for Bin entities
 pub const TABLE_NAME: &str = "inventory.bins";
 
@@ -56,23 +57,21 @@ impl BinRepository {
     /// these locks in.
     ///
     /// Takes the CALLER'S connection: the lock must be held for the whole movement, and the SLE +
-    /// Bin write must commit as one unit with it. **The caller MUST have already bound the company
-    /// on that transaction (`bind_company_on`) before calling** — the RLS fence (ADR-0008) means an
-    /// unbound connection sees zero rows here, which would silently read a bin as empty and corrupt
-    /// the quantity. Don't re-bind here; the caller's bind covers it.
+    /// Bin write must commit as one unit with it. **The caller MUST have already relayed the
+    /// ambient org scope onto that transaction before calling** — the composed decorator's fence
+    /// (ADR-0029) is what bounds the bin lookup. Don't re-bind here; the caller's relay covers it.
     pub async fn lock_or_init(
         &self,
         conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
         item_id: Uuid,
         warehouse_id: Uuid,
     ) -> Result<BinBalanceRow, sqlx::Error> {
         let row = sqlx::query(
             r#"SELECT actual_qty, valuation_rate, stock_value FROM inventory.bins
-               WHERE company_id=$1 AND item_id=$2 AND warehouse_id=$3 AND (metadata->>'deleted_at') IS NULL
+               WHERE item_id=$1 AND warehouse_id=$2 AND (metadata->>'deleted_at') IS NULL
                FOR UPDATE"#,
         )
-        .bind(company_id).bind(item_id).bind(warehouse_id)
+        .bind(item_id).bind(warehouse_id)
         .fetch_optional(&mut *conn)
         .await?;
         if let Some(r) = row {
@@ -83,10 +82,10 @@ impl BinRepository {
             });
         }
         sqlx::query(
-            r#"INSERT INTO inventory.bins (id, company_id, item_id, warehouse_id, actual_qty, reserved_qty, valuation_rate, stock_value)
-               VALUES ($1,$2,$3,$4,0,0,0,0)"#,
+            r#"INSERT INTO inventory.bins (id, item_id, warehouse_id, actual_qty, reserved_qty, valuation_rate, stock_value)
+               VALUES ($1,$2,$3,0,0,0,0)"#,
         )
-        .bind(Uuid::new_v4()).bind(company_id).bind(item_id).bind(warehouse_id)
+        .bind(Uuid::new_v4()).bind(item_id).bind(warehouse_id)
         .execute(&mut *conn)
         .await?;
         Ok(BinBalanceRow {
@@ -99,7 +98,6 @@ impl BinRepository {
     pub async fn update_balance(
         &self,
         conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
         item_id: Uuid,
         warehouse_id: Uuid,
         actual_qty: Decimal,
@@ -107,10 +105,10 @@ impl BinRepository {
         stock_value: Decimal,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
-            r#"UPDATE inventory.bins SET actual_qty=$4, valuation_rate=$5, stock_value=$6
-               WHERE company_id=$1 AND item_id=$2 AND warehouse_id=$3 AND (metadata->>'deleted_at') IS NULL"#,
+            r#"UPDATE inventory.bins SET actual_qty=$3, valuation_rate=$4, stock_value=$5
+               WHERE item_id=$1 AND warehouse_id=$2 AND (metadata->>'deleted_at') IS NULL"#,
         )
-        .bind(company_id).bind(item_id).bind(warehouse_id)
+        .bind(item_id).bind(warehouse_id)
         .bind(actual_qty).bind(valuation_rate).bind(stock_value)
         .execute(conn)
         .await?;
@@ -134,17 +132,15 @@ pub struct BinWarehouseAvailabilityRow {
 /// Hand-written Bin read SQL backing the consumer-facing read port
 /// (`InventoryReadService`). Pool-based: each read is its own unit of work.
 ///
-/// These take `company_id` as an explicit parameter AND filter on it, so they are fenced by
-/// argument regardless of scope; they additionally run through `company_scope` so they ride the
-/// RLS fence (ADR-0008) like every other read in the suite. Defense in depth — the predicate is
-/// not redundant with the fence, keep both.
+/// These run through the scoped read helpers so they ride the ambient org scope's
+/// request-dedicated connection — the composed decorator's fence (ADR-0029) bounds what the
+/// caller can see, like every other read in the suite.
 impl BinRepository {
     /// One bin's availability columns. `Ok(None)` = no bin row (the caller decides what that
     /// means; the read service projects it as a zeroed, unavailable view).
     pub async fn fetch_availability(
         &self,
         pool: &PgPool,
-        company_id: Uuid,
         item_id: Uuid,
         warehouse_id: Uuid,
     ) -> Result<Option<BinAvailabilityRow>, sqlx::Error> {
@@ -152,9 +148,9 @@ impl BinRepository {
             pool,
             sqlx::query(
                 r#"SELECT actual_qty, reserved_qty FROM inventory.bins
-                   WHERE company_id=$1 AND item_id=$2 AND warehouse_id=$3 AND (metadata->>'deleted_at') IS NULL"#,
+                   WHERE item_id=$1 AND warehouse_id=$2 AND (metadata->>'deleted_at') IS NULL"#,
             )
-            .bind(company_id).bind(item_id).bind(warehouse_id),
+            .bind(item_id).bind(warehouse_id),
         )
         .await?;
         Ok(row.map(|r| BinAvailabilityRow {
@@ -163,21 +159,20 @@ impl BinRepository {
         }))
     }
 
-    /// Every bin the company holds for one item, ordered by warehouse.
+    /// Every bin holding one item, ordered by warehouse.
     pub async fn fetch_availability_across_warehouses(
         &self,
         pool: &PgPool,
-        company_id: Uuid,
         item_id: Uuid,
     ) -> Result<Vec<BinWarehouseAvailabilityRow>, sqlx::Error> {
         let rows = company_scope::fetch_all_rows_scoped(
             pool,
             sqlx::query(
                 r#"SELECT warehouse_id, actual_qty, reserved_qty FROM inventory.bins
-                   WHERE company_id=$1 AND item_id=$2 AND (metadata->>'deleted_at') IS NULL
+                   WHERE item_id=$1 AND (metadata->>'deleted_at') IS NULL
                    ORDER BY warehouse_id"#,
             )
-            .bind(company_id).bind(item_id),
+            .bind(item_id),
         )
         .await?;
         Ok(rows
@@ -194,7 +189,6 @@ impl BinRepository {
     pub async fn fetch_balance(
         &self,
         pool: &PgPool,
-        company_id: Uuid,
         item_id: Uuid,
         warehouse_id: Uuid,
     ) -> Result<Option<BinBalanceRow>, sqlx::Error> {
@@ -202,9 +196,9 @@ impl BinRepository {
             pool,
             sqlx::query(
                 r#"SELECT actual_qty, valuation_rate, stock_value FROM inventory.bins
-                   WHERE company_id=$1 AND item_id=$2 AND warehouse_id=$3 AND (metadata->>'deleted_at') IS NULL"#,
+                   WHERE item_id=$1 AND warehouse_id=$2 AND (metadata->>'deleted_at') IS NULL"#,
             )
-            .bind(company_id).bind(item_id).bind(warehouse_id),
+            .bind(item_id).bind(warehouse_id),
         )
         .await?;
         Ok(row.map(|r| BinBalanceRow {

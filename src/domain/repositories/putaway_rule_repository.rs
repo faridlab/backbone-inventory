@@ -52,13 +52,12 @@ pub struct PutawayRuleFilter {
     pub storage_category_id: Option<Uuid>,
     pub sublocation: Option<PutawaySublocation>,
     pub active: Option<bool>,
-    pub company_id: Option<Uuid>,
 }
 
 impl PutawayRuleFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.location_in_id.is_some() || self.location_out_id.is_some() || self.item_id.is_some() || self.category_id.is_some() || self.package_type_id.is_some() || self.storage_category_id.is_some() || self.sublocation.is_some() || self.active.is_some() || self.company_id.is_some()
+        self.location_in_id.is_some() || self.location_out_id.is_some() || self.item_id.is_some() || self.category_id.is_some() || self.package_type_id.is_some() || self.storage_category_id.is_some() || self.sublocation.is_some() || self.active.is_some()
     }
 }
 

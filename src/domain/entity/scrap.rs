@@ -65,7 +65,6 @@ pub struct Scrap {
     pub picking_id: Option<Uuid>,
     pub move_id: Option<Uuid>,
     pub scrap_reason_tag_ids: Vec<Uuid>,
-    pub company_id: Uuid,
     #[serde(default)]
     #[sqlx(json)]
     pub metadata: AuditMetadata,
@@ -78,7 +77,7 @@ impl Scrap {
     }
 
     /// Create a new Scrap with required fields
-    pub fn new(name: String, state: ScrapState, date_expected: DateTime<Utc>, item_id: Uuid, scrap_qty: Decimal, location_id: Uuid, scrap_location_id: Uuid, scrap_reason_tag_ids: Vec<Uuid>, company_id: Uuid) -> Self {
+    pub fn new(name: String, state: ScrapState, date_expected: DateTime<Utc>, item_id: Uuid, scrap_qty: Decimal, location_id: Uuid, scrap_location_id: Uuid, scrap_reason_tag_ids: Vec<Uuid>) -> Self {
         Self {
             id: Uuid::new_v4(),
             name,
@@ -95,7 +94,6 @@ impl Scrap {
             picking_id: None,
             move_id: None,
             scrap_reason_tag_ids,
-            company_id,
             metadata: AuditMetadata::default(),
         }
     }
@@ -241,9 +239,6 @@ impl Scrap {
                 "scrap_reason_tag_ids" => {
                     if let Ok(v) = serde_json::from_value(value) { self.scrap_reason_tag_ids = v; }
                 }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 _ => {} // ignore unknown fields
             }
         }
@@ -306,15 +301,11 @@ impl backbone_orm::EntityRepoMeta for Scrap {
         m.insert("owner_id".to_string(), "uuid".to_string());
         m.insert("picking_id".to_string(), "uuid".to_string());
         m.insert("move_id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("state".to_string(), "scrap_state".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
         &["name"]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -338,7 +329,6 @@ pub struct ScrapBuilder {
     picking_id: Option<Uuid>,
     move_id: Option<Uuid>,
     scrap_reason_tag_ids: Option<Vec<Uuid>>,
-    company_id: Option<Uuid>,
 }
 
 impl ScrapBuilder {
@@ -426,12 +416,6 @@ impl ScrapBuilder {
         self
     }
 
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Build the Scrap entity
     ///
     /// Returns Err if any required field without a default is missing.
@@ -440,7 +424,6 @@ impl ScrapBuilder {
         let location_id = self.location_id.ok_or_else(|| "location_id is required".to_string())?;
         let scrap_location_id = self.scrap_location_id.ok_or_else(|| "scrap_location_id is required".to_string())?;
         let scrap_reason_tag_ids = self.scrap_reason_tag_ids.ok_or_else(|| "scrap_reason_tag_ids is required".to_string())?;
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
 
         Ok(Scrap {
             id: Uuid::new_v4(),
@@ -458,7 +441,6 @@ impl ScrapBuilder {
             picking_id: self.picking_id,
             move_id: self.move_id,
             scrap_reason_tag_ids,
-            company_id,
             metadata: AuditMetadata::default(),
         })
     }

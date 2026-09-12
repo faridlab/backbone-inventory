@@ -19,8 +19,9 @@
 //! This test reads `src/lib.rs` and fails the build if any engine-owned-table route mount reappears,
 //! turning a silent reopen into a loud CI failure.
 //!
-//! Safety note: the RLS fence (NOT NULL `company_id` + FORCE RLS, ADR-0008/0010) already makes any
-//! exposure fail-closed — a generic create is rejected, reads are tenant-fenced. This guard is
+//! Safety note: the half-fence posture (ADR-0029 — RLS enabled + forced with no module policy)
+//! means exposure is fenced by the composing service's org-scoped policies at the host, so a
+//! generic read/write outside the caller's scope is rejected there. This guard is
 //! defense-in-depth hygiene, not the security boundary.
 
 const LIB_RS: &str = include_str!("../src/lib.rs");

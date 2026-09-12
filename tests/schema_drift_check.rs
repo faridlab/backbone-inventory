@@ -298,10 +298,10 @@ async fn drift_check_actually_catches_missing_indexes() {
     // check actually works by temporarily removing an index from the database.
     //
     // To use:
-    // 1. Drop a known index: `DROP INDEX inventory.idx_warehouses_company_id_code;`
+    // 1. Drop a known index: `DROP INDEX inventory.idx_warehouses_parent_warehouse_id;`
     // 2. Run this test: `cargo test drift_check_actually_catches_missing_indexes -- --ignored`
     // 3. Verify it fails with the missing index
-    // 4. Restore the index: `CREATE UNIQUE INDEX idx_warehouses_company_id_code ...`
+    // 4. Restore the index: `CREATE INDEX idx_warehouses_parent_warehouse_id ...`
     //
     // This proves the test is not a no-op.
 

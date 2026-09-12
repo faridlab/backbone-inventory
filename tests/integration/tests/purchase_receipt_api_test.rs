@@ -25,7 +25,6 @@ impl TestDataGenerator for PurchaseReceiptTestData {
         json!({
             "id": Uuid::new_v4().to_string(),
             "receipt_number": format!("Test {}", Uuid::new_v4().to_string().split('-').next().unwrap()),
-            "company_id": Uuid::new_v4().to_string(),
             "branch_id": null,
             "supplier_id": Uuid::new_v4().to_string(),
             "source_po_id": null,
@@ -50,7 +49,6 @@ impl TestDataGenerator for PurchaseReceiptTestData {
         json!({
             "id": id,
             "receipt_number": format!("Test {}", Uuid::new_v4().to_string().split('-').next().unwrap()),
-            "company_id": Uuid::new_v4().to_string(),
             "branch_id": null,
             "supplier_id": Uuid::new_v4().to_string(),
             "source_po_id": null,

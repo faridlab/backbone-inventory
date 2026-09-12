@@ -12,11 +12,11 @@
 //! - enum values bind as text with an explicit cast (`$n::move_state`), never via `sqlx::Type`
 //!   derives, and decode through `::text` aliases (the schema-normalization R1 lessons);
 //! - every read filters `(metadata->>'deleted_at') IS NULL` (soft-delete grain);
-//! - every claim is company-scoped by an explicit `company_id = $n` predicate (defense-in-depth
-//!   under the RLS fence, ADR-0008 — the job binds `app.company_id` on the connection too).
+//! - tenancy is composition-installed (ADR-0029): statements are grain-keyed only — the
+//!   composing service's org fence bounds what a claim or search can see.
 
 use rust_decimal::Decimal;
-use sqlx::{Executor, PgConnection, Postgres, Row};
+use sqlx::{Executor, Postgres, Row};
 use uuid::Uuid;
 
 /// A `stock.rule` row as the procurement surface reads it (`inventory.route_rules`).
@@ -34,7 +34,6 @@ pub struct RuleRow {
     pub picking_type_id: Uuid,
     pub route_id: Uuid,
     pub warehouse_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
     pub propagate_cancel: bool,
 }
 
@@ -47,7 +46,6 @@ pub struct OrderpointRow {
     pub item_id: Uuid,
     pub location_id: Uuid,
     pub warehouse_id: Uuid,
-    pub company_id: Uuid,
     pub item_min_qty: Decimal,
     pub item_max_qty: Decimal,
     pub route_id: Option<Uuid>,
@@ -92,7 +90,6 @@ pub struct NewMoveRow {
     pub origin: String,
     pub location_id: Uuid,
     pub location_dest_id: Uuid,
-    pub company_id: Uuid,
     pub rule_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
     pub orderpoint_id: Option<Uuid>,
@@ -115,7 +112,6 @@ fn rule_row(m: sqlx::postgres::PgRow) -> RuleRow {
         picking_type_id: m.get("picking_type_id"),
         route_id: m.get("route_id"),
         warehouse_id: m.get("warehouse_id"),
-        company_id: m.get("company_id"),
         propagate_cancel: m.get("propagate_cancel"),
     }
 }
@@ -141,15 +137,14 @@ impl ProcurementRepository {
     /// location COVERS the demand — the demand sits at or below the destination on the location
     /// tree (`demand.parent_path LIKE dest.parent_path || '%'`), so a rule pulling into an
     /// ancestor (WH/Stock) serves a demand in a child bin (WH/Stock/Shelf-1). The join enforces
-    /// the coverage; the route must be active and visible to the company (a NULL-company rule is
-    /// shared master data, ADR-0014 shared_blank).
+    /// the coverage; the route must be active. Which rules the caller may see is the composing
+    /// service's org fence's business (shared masters ride the root-shared union).
     ///
-    /// `route_ids: None` means "search every active route visible to the company" (the
-    /// warehouse/orderpoint-resolved default); `Some(ids)` restricts to explicit candidates
-    /// (e.g. the orderpoint's `route_id` override).
+    /// `route_ids: None` means "search every active route" (the warehouse/orderpoint-resolved
+    /// default); `Some(ids)` restricts to explicit candidates (e.g. the orderpoint's
+    /// `route_id` override).
     pub async fn search_rule<'e, E>(
         executor: E,
-        company_id: Uuid,
         demand_location_id: Uuid,
         route_ids: Option<Vec<Uuid>>,
     ) -> Result<Option<RuleRow>, sqlx::Error>
@@ -160,53 +155,27 @@ impl ProcurementRepository {
             r#"SELECT r.id, r.name, r.sequence, r.action::text AS action, r.auto::text AS auto,
                       r.procure_method::text AS procure_method, r.delay, r.location_src_id,
                       r.location_dest_id, r.picking_type_id, r.route_id, r.warehouse_id,
-                      r.company_id, r.propagate_cancel
+                      r.propagate_cancel
                FROM inventory.route_rules r
                JOIN inventory.routes rt ON rt.id = r.route_id
                   AND rt.active
-                  AND (rt.company_id IS NULL OR rt.company_id = $1)
                   AND (rt.metadata->>'deleted_at') IS NULL
                JOIN inventory.locations dest ON dest.id = r.location_dest_id
-               JOIN inventory.locations demand ON demand.id = $2
+               JOIN inventory.locations demand ON demand.id = $1
                   AND (demand.metadata->>'deleted_at') IS NULL
                   AND demand.parent_path LIKE dest.parent_path || '%'
                WHERE r.active
                  AND r.action IN ('pull', 'pull_push')
-                 AND (r.company_id IS NULL OR r.company_id = $1)
                  AND (r.metadata->>'deleted_at') IS NULL
-                 AND ($3::uuid[] IS NULL OR r.route_id = ANY($3))
+                 AND ($2::uuid[] IS NULL OR r.route_id = ANY($2))
                ORDER BY r.sequence DESC, r.name
                LIMIT 1"#,
         )
-        .bind(company_id)
         .bind(demand_location_id)
         .bind(route_ids)
         .fetch_optional(executor)
         .await?;
         Ok(row.map(rule_row))
-    }
-
-    /// The R11 reference companies: `(operation-type company, warehouse company)` for a rule.
-    /// Both nullable — shared operation types / no warehouse on the rule.
-    pub async fn rule_company_refs<'e, E>(
-        executor: E,
-        picking_type_id: Uuid,
-        warehouse_id: Option<Uuid>,
-    ) -> Result<(Option<Uuid>, Option<Uuid>), sqlx::Error>
-    where
-        E: Executor<'e, Database = Postgres>,
-    {
-        let row = sqlx::query(
-            r#"SELECT (SELECT company_id FROM inventory.operation_types
-                       WHERE id = $1 AND (metadata->>'deleted_at') IS NULL) AS pt_company,
-                      (SELECT company_id FROM inventory.warehouses
-                       WHERE id = $2 AND (metadata->>'deleted_at') IS NULL) AS wh_company"#,
-        )
-        .bind(picking_type_id)
-        .bind(warehouse_id)
-        .fetch_one(executor)
-        .await?;
-        Ok((row.get("pt_company"), row.get("wh_company")))
     }
 
     /// The usage of a location (`location_usage` as text) — the R13-rule pre-check reads it
@@ -237,12 +206,12 @@ impl ProcurementRepository {
         let row = sqlx::query(
             r#"INSERT INTO inventory.stock_moves
                    (name, state, priority, item_id, demand_qty, quantity, price_unit,
-                    procure_method, origin, location_id, location_dest_id, company_id,
+                    procure_method, origin, location_id, location_dest_id,
                     rule_id, warehouse_id, orderpoint_id, move_orig_ids, move_dest_ids,
                     is_inventory, scrapped, propagate_cancel)
                VALUES ($1, 'draft', 'normal', $2, $3, 0, 0,
-                       $4::procure_method, $5, $6, $7, $8,
-                       $9, $10, $11, $12, $13, FALSE, FALSE, $14)
+                       $4::procure_method, $5, $6, $7,
+                       $8, $9, $10, $11, $12, FALSE, FALSE, $13)
                RETURNING id"#,
         )
         .bind(&m.name)
@@ -252,7 +221,6 @@ impl ProcurementRepository {
         .bind(&m.origin)
         .bind(m.location_id)
         .bind(m.location_dest_id)
-        .bind(m.company_id)
         .bind(m.rule_id)
         .bind(m.warehouse_id)
         .bind(m.orderpoint_id)
@@ -292,7 +260,6 @@ impl ProcurementRepository {
     /// the batch that never committed, never a second move for the same orderpoint.
     pub async fn claim_orderpoints<'e, E>(
         executor: E,
-        company_id: Uuid,
         limit: i64,
     ) -> Result<Vec<OrderpointRow>, sqlx::Error>
     where
@@ -300,22 +267,20 @@ impl ProcurementRepository {
     {
         let rows = sqlx::query(
             r#"SELECT id, name, trigger::text AS trigger, item_id, location_id, warehouse_id,
-                      company_id, item_min_qty, item_max_qty, route_id, qty_to_order_manual
+                      item_min_qty, item_max_qty, route_id, qty_to_order_manual
                FROM inventory.reordering_rules op
-               WHERE op.company_id = $1
-                 AND op.active AND op.trigger = 'auto'
+               WHERE op.active AND op.trigger = 'auto'
                  AND (op.snoozed_until IS NULL OR op.snoozed_until <= CURRENT_DATE)
                  AND (op.metadata->>'deleted_at') IS NULL
                  AND NOT EXISTS (
                        SELECT 1 FROM inventory.stock_moves m
                        WHERE m.orderpoint_id = op.id
-                         AND m.state::text = ANY($2)
+                         AND m.state::text = ANY($1)
                          AND (m.metadata->>'deleted_at') IS NULL)
                ORDER BY op.metadata->>'created_at', op.id
-               LIMIT $3
+               LIMIT $2
                FOR UPDATE OF op SKIP LOCKED"#,
         )
-        .bind(company_id)
         .bind(&["draft", "waiting", "confirmed", "partially_available", "assigned"][..])
         .bind(limit)
         .fetch_all(executor)
@@ -329,7 +294,6 @@ impl ProcurementRepository {
                 item_id: r.get("item_id"),
                 location_id: r.get("location_id"),
                 warehouse_id: r.get("warehouse_id"),
-                company_id: r.get("company_id"),
                 item_min_qty: r.get("item_min_qty"),
                 item_max_qty: r.get("item_max_qty"),
                 route_id: r.get("route_id"),
@@ -342,7 +306,6 @@ impl ProcurementRepository {
     /// SKIP LOCKED` (two concurrent scheduler replicas take disjoint sets).
     pub async fn claim_assignable_moves<'e, E>(
         executor: E,
-        company_id: Uuid,
         limit: i64,
     ) -> Result<Vec<ClaimedMoveRow>, sqlx::Error>
     where
@@ -351,14 +314,12 @@ impl ProcurementRepository {
         let rows = sqlx::query(
             r#"SELECT id, name, item_id, state::text AS state
                FROM inventory.stock_moves
-               WHERE company_id = $1
-                 AND state::text = ANY($2)
+               WHERE state::text = ANY($1)
                  AND (metadata->>'deleted_at') IS NULL
                ORDER BY date, id
-               LIMIT $3
+               LIMIT $2
                FOR UPDATE SKIP LOCKED"#,
         )
-        .bind(company_id)
         .bind(&["confirmed", "partially_available"][..])
         .bind(limit)
         .fetch_all(executor)
@@ -379,7 +340,6 @@ impl ProcurementRepository {
     pub async fn forecast_components<'e, E>(
         executor: E,
         item_id: Uuid,
-        company_id: Uuid,
         location_id: Uuid,
     ) -> Result<ForecastComponents, sqlx::Error>
     where
@@ -388,30 +348,29 @@ impl ProcurementRepository {
         let row = sqlx::query(&format!(
             r#"WITH demand AS (
                    SELECT parent_path FROM inventory.locations
-                   WHERE id = $3 AND (metadata->>'deleted_at') IS NULL
+                   WHERE id = $2 AND (metadata->>'deleted_at') IS NULL
                )
                SELECT
                  (SELECT COALESCE(SUM(quantity - reserved_quantity), 0)
                     FROM inventory.stock_quants q
-                   WHERE q.item_id = $1 AND q.company_id = $2
+                   WHERE q.item_id = $1
                      AND (q.metadata->>'deleted_at') IS NULL
                      AND q.location_id IN ({subtree})) AS on_hand,
                  (SELECT COALESCE(SUM(demand_qty - quantity), 0)
                     FROM inventory.stock_moves m
-                   WHERE m.item_id = $1 AND m.company_id = $2
-                     AND m.state::text = ANY($4)
+                   WHERE m.item_id = $1
+                     AND m.state::text = ANY($3)
                      AND (m.metadata->>'deleted_at') IS NULL
                      AND m.location_dest_id IN ({subtree})) AS incoming,
                  (SELECT COALESCE(SUM(demand_qty - quantity), 0)
                     FROM inventory.stock_moves m
-                   WHERE m.item_id = $1 AND m.company_id = $2
-                     AND m.state::text = ANY($4)
+                   WHERE m.item_id = $1
+                     AND m.state::text = ANY($3)
                      AND (m.metadata->>'deleted_at') IS NULL
                      AND m.location_id IN ({subtree})) AS outgoing"#,
             subtree = SUBTREE_SQL
         ))
         .bind(item_id)
-        .bind(company_id)
         .bind(location_id)
         .bind(&["waiting", "confirmed", "partially_available", "assigned"][..])
         .fetch_one(executor)
@@ -454,7 +413,6 @@ impl ProcurementRepository {
     /// (`inventory_quantity_set`) pins its row until the count applies.
     pub async fn housekeep_quants<'e, E>(
         executor: E,
-        company_id: Uuid,
         limit: i64,
     ) -> Result<u64, sqlx::Error>
     where
@@ -464,13 +422,11 @@ impl ProcurementRepository {
             r#"DELETE FROM inventory.stock_quants
                WHERE ctid IN (
                    SELECT ctid FROM inventory.stock_quants
-                   WHERE company_id = $1
-                     AND quantity = 0 AND reserved_quantity = 0
+                   WHERE quantity = 0 AND reserved_quantity = 0
                      AND inventory_quantity_set = FALSE
                      AND (metadata->>'deleted_at') IS NULL
-                   LIMIT $2)"#,
+                   LIMIT $1)"#,
         )
-        .bind(company_id)
         .bind(limit)
         .execute(executor)
         .await?;
@@ -516,27 +472,19 @@ impl ProcurementRepository {
         Ok(row)
     }
 
-    /// Bind `app.company_id` on a connection from the ambient scope (set by the scheduler's
-    /// `with_company_scope` wrapper — the write-verb pattern: the RLS fence is what scopes a
-    /// non-bypassing role; the explicit predicates above are defense-in-depth).
-    pub async fn bind_company(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
-        backbone_orm::company_scope::bind_current_company(conn).await
-    }
-
     /// Insert a new route (procurement configuration).
-    pub async fn insert_route<'e, E>(executor: E, id: Uuid, name: &str, active: bool, sequence: i32, company_id: Option<Uuid>) -> Result<(), sqlx::Error>
+    pub async fn insert_route<'e, E>(executor: E, id: Uuid, name: &str, active: bool, sequence: i32) -> Result<(), sqlx::Error>
     where
         E: Executor<'e, Database = Postgres>,
     {
         sqlx::query(
-            r#"INSERT INTO inventory.routes (id, name, active, sequence, company_id)
-               VALUES ($1, $2, $3, $4, $5)"#,
+            r#"INSERT INTO inventory.routes (id, name, active, sequence)
+               VALUES ($1, $2, $3, $4)"#,
         )
         .bind(id)
         .bind(name)
         .bind(active)
         .bind(sequence)
-        .bind(company_id)
         .execute(executor)
         .await?;
         Ok(())
@@ -557,7 +505,6 @@ impl ProcurementRepository {
         picking_type_id: Uuid,
         route_id: Uuid,
         warehouse_id: Option<Uuid>,
-        company_id: Option<Uuid>,
         propagate_cancel: bool,
     ) -> Result<(), sqlx::Error>
     where
@@ -567,9 +514,9 @@ impl ProcurementRepository {
             r#"INSERT INTO inventory.route_rules
                    (id, name, active, sequence, action, auto, procure_method, delay,
                     location_src_id, location_dest_id, picking_type_id, route_id,
-                    warehouse_id, company_id, propagate_cancel)
+                    warehouse_id, propagate_cancel)
                VALUES ($1, $2, TRUE, $3, $4::rule_action, $5::rule_auto,
-                       $6::procure_method, $7, $8, $9, $10, $11, $12, $13, $14)"#,
+                       $6::procure_method, $7, $8, $9, $10, $11, $12, $13)"#,
         )
         .bind(id)
         .bind(name)
@@ -583,7 +530,6 @@ impl ProcurementRepository {
         .bind(picking_type_id)
         .bind(route_id)
         .bind(warehouse_id)
-        .bind(company_id)
         .bind(propagate_cancel)
         .execute(executor)
         .await?;
@@ -599,7 +545,6 @@ impl ProcurementRepository {
         item_id: Uuid,
         location_id: Uuid,
         warehouse_id: Uuid,
-        company_id: Uuid,
         item_min_qty: Decimal,
         item_max_qty: Decimal,
         route_id: Option<Uuid>,
@@ -609,9 +554,9 @@ impl ProcurementRepository {
     {
         sqlx::query(
             r#"INSERT INTO inventory.reordering_rules
-                   (id, name, trigger, active, item_id, location_id, warehouse_id, company_id,
+                   (id, name, trigger, active, item_id, location_id, warehouse_id,
                     item_min_qty, item_max_qty, route_id)
-               VALUES ($1, $2, $3::orderpoint_trigger, TRUE, $4, $5, $6, $7, $8, $9, $10)"#,
+               VALUES ($1, $2, $3::orderpoint_trigger, TRUE, $4, $5, $6, $7, $8, $9)"#,
         )
         .bind(id)
         .bind(name)
@@ -619,7 +564,6 @@ impl ProcurementRepository {
         .bind(item_id)
         .bind(location_id)
         .bind(warehouse_id)
-        .bind(company_id)
         .bind(item_min_qty)
         .bind(item_max_qty)
         .bind(route_id)
@@ -628,24 +572,22 @@ impl ProcurementRepository {
         Ok(())
     }
 
-    /// Check for existing orderpoint covering (item, location, company).
+    /// Check for an existing orderpoint covering (item, location).
     pub async fn orderpoint_exists<'e, E>(
         executor: E,
         item_id: Uuid,
         location_id: Uuid,
-        company_id: Uuid,
     ) -> Result<i64, sqlx::Error>
     where
         E: Executor<'e, Database = Postgres>,
     {
         sqlx::query_scalar::<_, i64>(
             r#"SELECT COUNT(*) FROM inventory.reordering_rules
-               WHERE item_id = $1 AND location_id = $2 AND company_id = $3
+               WHERE item_id = $1 AND location_id = $2
                  AND (metadata->>'deleted_at') IS NULL"#,
         )
         .bind(item_id)
         .bind(location_id)
-        .bind(company_id)
         .fetch_one(executor)
         .await
     }

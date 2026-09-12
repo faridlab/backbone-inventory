@@ -9,7 +9,7 @@ Feature: Example flow
   I want to <capability>
 
   Background:
-    Given the tenant schema "inventory" is migrated
+    Given the module schema "inventory" is migrated
 
   @happy-path @module:inventory
   Scenario: Create an example

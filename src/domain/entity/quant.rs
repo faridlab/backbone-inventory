@@ -63,7 +63,6 @@ pub struct Quant {
     pub inventory_quantity_set: bool,
     pub inventory_date: Option<NaiveDate>,
     pub sn_duplicated: bool,
-    pub company_id: Uuid,
     #[serde(default)]
     #[sqlx(json)]
     pub metadata: AuditMetadata,
@@ -76,7 +75,7 @@ impl Quant {
     }
 
     /// Create a new Quant with required fields
-    pub fn new(item_id: Uuid, location_id: Uuid, quantity: Decimal, reserved_quantity: Decimal, available_quantity: Decimal, inventory_quantity_set: bool, sn_duplicated: bool, company_id: Uuid) -> Self {
+    pub fn new(item_id: Uuid, location_id: Uuid, quantity: Decimal, reserved_quantity: Decimal, available_quantity: Decimal, inventory_quantity_set: bool, sn_duplicated: bool) -> Self {
         Self {
             id: Uuid::new_v4(),
             item_id,
@@ -93,7 +92,6 @@ impl Quant {
             inventory_quantity_set,
             inventory_date: None,
             sn_duplicated,
-            company_id,
             metadata: AuditMetadata::default(),
         }
     }
@@ -245,9 +243,6 @@ impl Quant {
                 "sn_duplicated" => {
                     if let Ok(v) = serde_json::from_value(value) { self.sn_duplicated = v; }
                 }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 _ => {} // ignore unknown fields
             }
         }
@@ -307,14 +302,10 @@ impl backbone_orm::EntityRepoMeta for Quant {
         m.insert("lot_id".to_string(), "uuid".to_string());
         m.insert("package_id".to_string(), "uuid".to_string());
         m.insert("owner_id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
         &[]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -338,7 +329,6 @@ pub struct QuantBuilder {
     inventory_quantity_set: Option<bool>,
     inventory_date: Option<NaiveDate>,
     sn_duplicated: Option<bool>,
-    company_id: Option<Uuid>,
 }
 
 impl QuantBuilder {
@@ -426,19 +416,12 @@ impl QuantBuilder {
         self
     }
 
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Build the Quant entity
     ///
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<Quant, String> {
         let item_id = self.item_id.ok_or_else(|| "item_id is required".to_string())?;
         let location_id = self.location_id.ok_or_else(|| "location_id is required".to_string())?;
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
 
         Ok(Quant {
             id: Uuid::new_v4(),
@@ -456,7 +439,6 @@ impl QuantBuilder {
             inventory_quantity_set: self.inventory_quantity_set.unwrap_or(false),
             inventory_date: self.inventory_date,
             sn_duplicated: self.sn_duplicated.unwrap_or(false),
-            company_id,
             metadata: AuditMetadata::default(),
         })
     }

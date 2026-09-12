@@ -6,6 +6,9 @@
 //!     the quantity a Sales Order may commit against.
 //!   - `StockBalance { item_id, warehouse_id, actual_qty, valuation_rate, stock_value }`.
 //! Re-exported from `crate::exports` as the stable public read surface.
+//!
+//! Tenancy (ADR-0029): the module is tenant-agnostic. Every read rides the ambient org scope
+//! the composing service set per request; the composing decorator owns isolation.
 
 use std::sync::Arc;
 
@@ -71,8 +74,8 @@ impl InventoryReadService {
 
     /// Availability for one item in one warehouse. Returns a zeroed view (available 0) when no bin
     /// exists yet — an un-received item is simply unavailable, not an error.
-    pub async fn availability(&self, company_id: Uuid, item_id: Uuid, warehouse_id: Uuid) -> Result<AvailabilityView, sqlx::Error> {
-        let row = self.bins.fetch_availability(&self.db_pool, company_id, item_id, warehouse_id).await?;
+    pub async fn availability(&self, item_id: Uuid, warehouse_id: Uuid) -> Result<AvailabilityView, sqlx::Error> {
+        let row = self.bins.fetch_availability(&self.db_pool, item_id, warehouse_id).await?;
         let (actual, reserved) = match row {
             Some(r) => (r.actual_qty, r.reserved_qty),
             None => (Decimal::ZERO, Decimal::ZERO),
@@ -80,9 +83,9 @@ impl InventoryReadService {
         Ok(AvailabilityView { item_id, warehouse_id, actual_qty: actual, reserved_qty: reserved, available_qty: actual - reserved })
     }
 
-    /// Availability for one item across every warehouse of the company that holds a bin for it.
-    pub async fn availability_across_warehouses(&self, company_id: Uuid, item_id: Uuid) -> Result<Vec<AvailabilityView>, sqlx::Error> {
-        let rows = self.bins.fetch_availability_across_warehouses(&self.db_pool, company_id, item_id).await?;
+    /// Availability for one item across every warehouse that holds a bin for it.
+    pub async fn availability_across_warehouses(&self, item_id: Uuid) -> Result<Vec<AvailabilityView>, sqlx::Error> {
+        let rows = self.bins.fetch_availability_across_warehouses(&self.db_pool, item_id).await?;
         Ok(rows.into_iter().map(|r| {
             let actual = r.actual_qty;
             let reserved = r.reserved_qty;
@@ -91,8 +94,8 @@ impl InventoryReadService {
     }
 
     /// Valuation balance for one item in one warehouse (None if no bin exists).
-    pub async fn stock_balance(&self, company_id: Uuid, item_id: Uuid, warehouse_id: Uuid) -> Result<Option<StockBalance>, sqlx::Error> {
-        let row = self.bins.fetch_balance(&self.db_pool, company_id, item_id, warehouse_id).await?;
+    pub async fn stock_balance(&self, item_id: Uuid, warehouse_id: Uuid) -> Result<Option<StockBalance>, sqlx::Error> {
+        let row = self.bins.fetch_balance(&self.db_pool, item_id, warehouse_id).await?;
         Ok(row.map(|r| StockBalance {
             item_id, warehouse_id,
             actual_qty: r.actual_qty, valuation_rate: r.valuation_rate, stock_value: r.stock_value,
@@ -103,8 +106,8 @@ impl InventoryReadService {
     /// location's quant rows (T2 — the READ arm of the reservation triangle; the warehouse-grain
     /// [`Self::availability`] above projects the same invariant off the Bin balance). Zeroed view
     /// when no quant exists — an unreceived item is unavailable, not an error.
-    pub async fn quant_availability(&self, company_id: Uuid, item_id: Uuid, location_id: Uuid) -> Result<QuantAvailability, sqlx::Error> {
-        let row = self.quants.fetch_on_hand(&self.db_pool, company_id, item_id, location_id).await?;
+    pub async fn quant_availability(&self, item_id: Uuid, location_id: Uuid) -> Result<QuantAvailability, sqlx::Error> {
+        let row = self.quants.fetch_on_hand(&self.db_pool, item_id, location_id).await?;
         Ok(QuantAvailability {
             item_id,
             location_id,

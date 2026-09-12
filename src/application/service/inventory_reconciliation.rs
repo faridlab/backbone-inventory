@@ -26,9 +26,13 @@
 //! (the door values the diff at the current moving average — a rate revaluation is a
 //! valuation-overlay concern, never done silently here).
 //!
+//! Tenancy (ADR-0029): the module is tenant-agnostic. Every write transaction this file opens
+//! re-binds the caller's ambient org scope (`relay_ambient_scope`); the composing decorator owns
+//! isolation.
+//!
 //! Guard map (schema/hooks/stock.hook.yaml): R24 `no_count_while_reserved` (a quant holding
 //! reservations cannot be staged or applied), R13 (only stockable locations hold counts),
-//! R26 (the quant's company follows its location), T4 (the stored diff compute).
+//! T4 (the stored diff compute).
 //!
 //! Per the module's 4-layer rule this file holds no SQL — the statements live on
 //! [`super::super::super::infrastructure::persistence::StockAdjustmentRepository`] (quant
@@ -36,7 +40,6 @@
 //! mint-once/resume gate) and the engine's repositories; every write takes this service's
 //! transaction so the staging, the move mint, and the voucher rows commit in bounded units.
 
-use backbone_orm::company_scope;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
@@ -48,7 +51,8 @@ use super::inventory_events::{InventoryEvent, StockReconciled};
 use super::inventory_gl::{AccountingPostEnvelope, GlPostLine, GlPostSink};
 use super::inventory_move_engine::{BackorderPolicy, MoveGlDirective};
 use super::inventory_write_service::{
-    is_dup, money, InventoryError, InventoryWriteService, NewReconciliation, SubmitOutcome,
+    is_dup, legacy_company_echo, money, relay_ambient_scope, InventoryError,
+    InventoryWriteService, NewReconciliation, SubmitOutcome,
 };
 
 // --- door vocabulary ----------------------------------------------------------
@@ -85,12 +89,10 @@ impl InventoryWriteService {
     /// `inventory_quantity_set` gate that [`Self::apply_inventory`] demands. Staging
     /// OVERWRITES any prior staging — the count is not a delta, so re-counting replaces the
     /// previous count. Guards: R24 (the quant holds no reservations), R13 (only internal
-    /// locations are countable), R26 (the location belongs to the caller's company). A
-    /// quant that does not exist yet is initialized at zero — the count surface exists even
-    /// before any stock does.
+    /// locations are countable). A quant that does not exist yet is initialized at zero —
+    /// the count surface exists even before any stock does.
     pub async fn stage_quant_count(
         &self,
-        company_id: Uuid,
         item_id: Uuid,
         location_id: Uuid,
         counted_qty: Decimal,
@@ -99,21 +101,22 @@ impl InventoryWriteService {
             return Err(InventoryError::NegativeQuantity);
         }
         let mut tx = self.db_pool.begin().await?;
-        // RLS scope (ADR-0008): bound before any fenced read — an unbound connection sees
-        // zero quants and would initialize a duplicate count surface.
-        company_scope::bind_company_on(&mut tx, company_id).await?;
+        // Re-bind the caller's ambient org scope before any read (ADR-0029) — the scope is
+        // task-local and a fresh pool transaction carries none of it; undecorated (module
+        // tests, jobs) the transaction stays plain.
+        relay_ambient_scope(&mut tx).await?;
         let existing = self.adjustments.lock_quant(
             &mut tx, QuantSelector::ItemLocation { item_id, location_id },
         ).await?;
         let quant = match existing {
             Some(row) => {
-                self.check_countable(&row, company_id)?;
+                self.check_countable(&row)?;
                 row
             }
             None => {
-                // Bootstrap the count surface: the location must be a stockable location of
-                // this company (R13 / R26) before a quant may exist on it. The two-id facts
-                // read resolves the same location twice — it is a single-location lookup.
+                // Bootstrap the count surface: the location must be a stockable location
+                // (R13) before a quant may exist on it. The two-id facts read resolves the
+                // same location twice — it is a single-location lookup.
                 let locs = self.moves.fetch_move_locations(&mut tx, location_id, location_id).await?;
                 let facts = locs.0.ok_or(InventoryError::LocationNotFound(location_id))?;
                 if facts.usage == "view" {
@@ -126,14 +129,7 @@ impl InventoryWriteService {
                     // the whole class under the view-location code.
                     return Err(InventoryError::ViewLocationHoldsNoStock { location_id });
                 }
-                if facts.company_id != Some(company_id) {
-                    return Err(InventoryError::QuantCompanyMismatch {
-                        location_id,
-                        location_company: facts.company_id,
-                        move_company: company_id,
-                    });
-                }
-                let id = self.adjustments.init_quant(&mut tx, item_id, location_id, company_id).await?;
+                let id = self.adjustments.init_quant(&mut tx, item_id, location_id).await?;
                 self.adjustments.lock_quant(&mut tx, QuantSelector::ById(id)).await?
                     .ok_or(InventoryError::NotFound(id))?
             }
@@ -170,7 +166,6 @@ impl InventoryWriteService {
     /// the voucher path drives the door that way and posts its own single net envelope.
     pub async fn apply_inventory(
         &self,
-        company_id: Uuid,
         selector: QuantSelector,
         gl: &MoveGlDirective,
         sink: &dyn GlPostSink,
@@ -178,14 +173,14 @@ impl InventoryWriteService {
         // -- gate + guards under the quant's FOR UPDATE lock --------------------------------
         let (quant_id, location_id, counted, staged_diff) = {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, company_id).await?;
+            relay_ambient_scope(&mut tx).await?;
             let quant = self.adjustments.lock_quant(&mut tx, selector).await?
                 .ok_or_else(|| match selector {
                     QuantSelector::ById(id) => InventoryError::NotFound(id),
                     QuantSelector::ItemLocation { location_id, .. } =>
                         InventoryError::LocationNotFound(location_id),
                 })?;
-            self.check_countable(&quant, company_id)?;
+            self.check_countable(&quant)?;
             if !quant.inventory_quantity_set {
                 tx.commit().await?;
                 return Ok(AppliedCount {
@@ -220,7 +215,7 @@ impl InventoryWriteService {
         // -- zero diff: the count matches the on-hand — consume, no move --------------------
         if staged_diff == Decimal::ZERO {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, company_id).await?;
+            relay_ambient_scope(&mut tx).await?;
             self.adjustments.consume_staged_count(&mut tx, quant_id).await?;
             tx.commit().await?;
             return Ok(AppliedCount {
@@ -232,8 +227,8 @@ impl InventoryWriteService {
         // -- resolve the inventory-loss location (the far end of every adjustment move) ----
         let loss_location = {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, company_id).await?;
-            let loc = self.pickings.ensure_inventory_loss_location(&mut tx, company_id).await?;
+            relay_ambient_scope(&mut tx).await?;
+            let loc = self.pickings.ensure_inventory_loss_location(&mut tx).await?;
             tx.commit().await?;
             loc
         };
@@ -243,7 +238,7 @@ impl InventoryWriteService {
             QuantSelector::ById(_) => {
                 // The locked row carried it; re-read the grain off the quant we just locked.
                 let mut tx = self.db_pool.begin().await?;
-                company_scope::bind_company_on(&mut tx, company_id).await?;
+                relay_ambient_scope(&mut tx).await?;
                 let quant = self.adjustments.lock_quant(&mut tx, QuantSelector::ById(quant_id)).await?
                     .ok_or(InventoryError::NotFound(quant_id))?;
                 tx.commit().await?;
@@ -253,9 +248,9 @@ impl InventoryWriteService {
         };
         let existing = {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, company_id).await?;
+            relay_ambient_scope(&mut tx).await?;
             let found = self.pickings.find_adjustment_moves(
-                &mut tx, company_id, item_id, location_id, loss_location,
+                &mut tx, item_id, location_id, loss_location,
             ).await?;
             tx.commit().await?;
             found
@@ -272,14 +267,13 @@ impl InventoryWriteService {
                 };
                 let warehouse = {
                     let mut tx = self.db_pool.begin().await?;
-                    company_scope::bind_company_on(&mut tx, company_id).await?;
+                    relay_ambient_scope(&mut tx).await?;
                     let locs = self.moves.fetch_move_locations(&mut tx, location_id, location_id).await?;
                     tx.commit().await?;
                     locs.0.and_then(|f| f.warehouse_id)
                 };
                 self.create_move(super::inventory_move_engine::NewStockMove {
                     name: format!("ADJ/{}/{}", item_id.simple(), location_id.simple()),
-                    company_id,
                     item_id,
                     demand_qty: qty,
                     price_unit: Decimal::ZERO, // the diff is valued at the current average
@@ -304,14 +298,14 @@ impl InventoryWriteService {
         // Sequence the verbs, re-reading the state between them: the engine owns the state
         // (this method never asserts it), and the assign step is what mints the execution
         // line the done verb requires (R24 at move grain).
-        let mut state = self.move_state_of(company_id, move_id).await?;
+        let mut state = self.move_state_of(move_id).await?;
         if state == "draft" {
-            self.action_confirm(company_id, move_id).await?;
-            state = self.move_state_of(company_id, move_id).await?;
+            self.action_confirm(move_id).await?;
+            state = self.move_state_of(move_id).await?;
         }
         if state == "confirmed" || state == "partially_available" {
-            self.action_assign(company_id, move_id).await?;
-            state = self.move_state_of(company_id, move_id).await?;
+            self.action_assign(move_id).await?;
+            state = self.move_state_of(move_id).await?;
         }
         if state != "assigned" {
             // An adjustment must land WHOLE: a partial draw would leave the on-hand short of
@@ -320,12 +314,12 @@ impl InventoryWriteService {
                 move_id, action: "apply", current: state,
             });
         }
-        self.action_done(company_id, move_id, BackorderPolicy::Never, gl, sink).await?;
+        self.action_done(move_id, BackorderPolicy::Never, gl, sink).await?;
 
         // -- consume the staging (the gate drops AFTER the move landed) ---------------------
         {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, company_id).await?;
+            relay_ambient_scope(&mut tx).await?;
             self.adjustments.consume_staged_count(&mut tx, quant_id).await?;
             tx.commit().await?;
         }
@@ -340,33 +334,23 @@ impl InventoryWriteService {
     /// count, with the stored diff compute. A probe — it derives nothing, writes nothing.
     pub async fn staged_counts(
         &self,
-        company_id: Uuid,
         location_id: Uuid,
     ) -> Result<Vec<StagedCountRow>, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, company_id).await?;
+        relay_ambient_scope(&mut tx).await?;
         let rows = self.adjustments.staged_counts_at_location(&mut tx, location_id).await?;
         tx.commit().await?;
         Ok(rows)
     }
 
     /// The guards every staging/apply shares: R24 (no count while the quant holds
-    /// reservations — release them first), R13 (only stockable locations hold counts),
-    /// R26 (the location belongs to the count's company).
+    /// reservations — release them first), R13 (only stockable locations hold counts).
     fn check_countable(
         &self,
         quant: &crate::infrastructure::persistence::QuantCountRow,
-        company_id: Uuid,
     ) -> Result<(), InventoryError> {
         if quant.location_usage == "view" || quant.location_usage != "internal" {
             return Err(InventoryError::ViewLocationHoldsNoStock { location_id: quant.location_id });
-        }
-        if quant.location_company_id != Some(company_id) {
-            return Err(InventoryError::QuantCompanyMismatch {
-                location_id: quant.location_id,
-                location_company: quant.location_company_id,
-                move_company: company_id,
-            });
         }
         if quant.reserved_quantity > Decimal::ZERO {
             return Err(InventoryError::CountReserved {
@@ -409,8 +393,8 @@ impl InventoryWriteService {
         // warehouse on first use, the same resolution the transfer voucher uses).
         let stock_location = {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, r.company_id).await?;
-            let loc = self.pickings.ensure_internal_location(&mut tx, r.warehouse_id, r.company_id).await?;
+            relay_ambient_scope(&mut tx).await?;
+            let loc = self.pickings.ensure_internal_location(&mut tx, r.warehouse_id).await?;
             tx.commit().await?;
             loc
         };
@@ -423,9 +407,9 @@ impl InventoryWriteService {
             // without quants) — the door reads and writes the quant grain.
             {
                 let mut tx = self.db_pool.begin().await?;
-                company_scope::bind_company_on(&mut tx, r.company_id).await?;
+                relay_ambient_scope(&mut tx).await?;
                 self.pickings.ensure_quant_surface(
-                    &mut tx, r.company_id, l.item_id, stock_location, Some(r.warehouse_id),
+                    &mut tx, l.item_id, stock_location, Some(r.warehouse_id),
                 ).await?;
                 tx.commit().await?;
             }
@@ -433,14 +417,13 @@ impl InventoryWriteService {
             // valued at the current average — a counted RATE is refused at the door).
             let rate = {
                 let mut tx = self.db_pool.begin().await?;
-                company_scope::bind_company_on(&mut tx, r.company_id).await?;
-                let bal = self.bins.lock_or_init(&mut tx, r.company_id, l.item_id, r.warehouse_id).await?;
+                relay_ambient_scope(&mut tx).await?;
+                let bal = self.bins.lock_or_init(&mut tx, l.item_id, r.warehouse_id).await?;
                 tx.commit().await?;
                 bal.valuation_rate
             };
-            let staged = self.stage_quant_count(r.company_id, l.item_id, stock_location, l.counted_qty).await?;
+            let staged = self.stage_quant_count(l.item_id, stock_location, l.counted_qty).await?;
             let outcome = self.apply_inventory(
-                r.company_id,
                 QuantSelector::ItemLocation { item_id: l.item_id, location_id: stock_location },
                 &MoveGlDirective::default(), // no per-move GL: the voucher posts the one net envelope
                 sink,
@@ -458,11 +441,10 @@ impl InventoryWriteService {
         // ---- voucher record: header + items + net, one transaction -----------------------
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, r.company_id).await?;
+        relay_ambient_scope(&mut tx).await?;
         let ins = self.recons.insert_submitted(&mut tx, &NewReconciliationRow {
             id,
             recon_number: &r.recon_number,
-            company_id: r.company_id,
             warehouse_id: r.warehouse_id,
             posting_date: r.posting_date,
             currency: &r.currency,
@@ -476,7 +458,6 @@ impl InventoryWriteService {
             self.recon_items.insert_item(&mut tx, &NewReconciliationItemRow {
                 id: Uuid::new_v4(),
                 reconciliation_id: id,
-                company_id: r.company_id,
                 item_id: *item_id,
                 counted_qty: *counted_qty,
                 counted_rate: Decimal::ZERO,
@@ -498,20 +479,20 @@ impl InventoryWriteService {
                 vec![GlPostLine::debit(adj, amt).with_description("Stock adjustment"), GlPostLine::credit(inv, amt).with_description("Inventory")]
             };
             let env = AccountingPostEnvelope {
-                idempotency_key: id.to_string(), company_id: r.company_id, branch_id: None,
+                // Legacy twin (ADR-0029): filled from the ambient org scope's company echo
+                // for consumers that still read a tenant off the wire. No module statement
+                // keys on it.
+                idempotency_key: id.to_string(), company_id: legacy_company_echo(), branch_id: None,
                 source_type: "inventory".into(), source_id: id, source_reference: Some(r.recon_number.clone()),
                 posting_date: r.posting_date, currency: r.currency.clone(), posting_type: "original".into(), reverses_post_id: None,
                 description: Some("Stock reconciliation".into()), lines,
             };
             self.emit_and_reconcile(crate::infrastructure::persistence::GlVoucher::StockReconciliation, id, &env, sink, net.abs()).await?;
         } else {
-            company_scope::with_company_scope(
-                Some(r.company_id),
-                self.recons.mark_not_applicable(&self.db_pool, id),
-            ).await?;
+            self.recons.mark_not_applicable(&self.db_pool, id).await?;
         }
         self.sink.publish(InventoryEvent::StockReconciled(StockReconciled {
-            reconciliation_id: id, company_id: r.company_id, warehouse_id: r.warehouse_id, net_difference: net,
+            reconciliation_id: id, company_id: legacy_company_echo(), warehouse_id: r.warehouse_id, net_difference: net,
         }));
         Ok(id)
     }
@@ -536,10 +517,7 @@ impl InventoryWriteService {
         if h.net_difference.is_zero() {
             // net==0 carries no value to post; the recovery is the mark_not_applicable that the
             // crash skipped. No event re-publish — the physical movement already committed.
-            company_scope::with_company_scope(
-                Some(h.company_id),
-                self.recons.mark_not_applicable(&self.db_pool, id),
-            ).await?;
+            self.recons.mark_not_applicable(&self.db_pool, id).await?;
             return Ok(SubmitOutcome {
                 voucher_id: id, posted: false, journal_id: None, post_id: None, gl_amount: Decimal::ZERO,
             });
@@ -554,7 +532,9 @@ impl InventoryWriteService {
             vec![GlPostLine::debit(adj, amt).with_description("Stock adjustment"), GlPostLine::credit(inv, amt).with_description("Inventory")]
         };
         let env = AccountingPostEnvelope {
-            idempotency_key: id.to_string(), company_id: h.company_id, branch_id: None,
+            // Legacy twin (ADR-0029): filled from the ambient org scope's company echo for
+            // consumers that still read a tenant off the wire. No module statement keys on it.
+            idempotency_key: id.to_string(), company_id: legacy_company_echo(), branch_id: None,
             source_type: "inventory".into(), source_id: id, source_reference: Some(h.recon_number.clone()),
             posting_date: h.posting_date, currency: h.currency.clone(), posting_type: "original".into(), reverses_post_id: None,
             description: Some("Stock reconciliation (repost)".into()), lines,

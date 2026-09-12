@@ -50,14 +50,13 @@ pub struct ReorderingRuleFilter {
     pub item_id: Option<Uuid>,
     pub location_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
     pub route_id: Option<Uuid>,
 }
 
 impl ReorderingRuleFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.name.is_some() || self.trigger.is_some() || self.active.is_some() || self.item_id.is_some() || self.location_id.is_some() || self.warehouse_id.is_some() || self.company_id.is_some() || self.route_id.is_some()
+        self.name.is_some() || self.trigger.is_some() || self.active.is_some() || self.item_id.is_some() || self.location_id.is_some() || self.warehouse_id.is_some() || self.route_id.is_some()
     }
 }
 

@@ -9,15 +9,15 @@
 //! own; this repo re-derives it from the move rows after every state change).
 //!
 //! 4-layer rule: services orchestrate, repositories hold SQL. Write methods take the CALLER'S
-//! connection (the movement's transaction); the caller has already bound the company scope
-//! (ADR-0008). State values bind as `$n::move_state` (unqualified — the enum type is created
+//! connection (the movement's transaction); the caller has already relayed the ambient org
+//! scope onto it. State values bind as `$n::move_state` (unqualified — the enum type is created
 //! unqualified in migrations) and decode through `::text`.
 
 use rust_decimal::Decimal;
 use sqlx::{PgConnection, PgPool, Row};
 use uuid::Uuid;
 
-use backbone_orm::company_scope;
+use backbone_orm::org_scope;
 
 use crate::domain::entity::StockMove;
 
@@ -62,7 +62,6 @@ pub struct NewMoveRow<'a> {
     pub location_id: Uuid,
     pub location_dest_id: Uuid,
     pub partner_id: Option<Uuid>,
-    pub company_id: Uuid,
     pub warehouse_id: Option<Uuid>,
     pub orderpoint_id: Option<Uuid>,
     pub move_orig_ids: Vec<Uuid>,
@@ -100,7 +99,6 @@ pub struct MoveRow {
     pub location_id: Uuid,
     pub location_dest_id: Uuid,
     pub partner_id: Option<Uuid>,
-    pub company_id: Uuid,
     pub warehouse_id: Option<Uuid>,
     pub orderpoint_id: Option<Uuid>,
     pub move_orig_ids: Vec<Uuid>,
@@ -127,14 +125,14 @@ impl StockMoveRepository {
         sqlx::query(
             r#"INSERT INTO inventory.stock_moves
                  (id, name, state, item_id, demand_qty, price_unit, procure_method, picking_id,
-                  origin, location_id, location_dest_id, partner_id, company_id, warehouse_id,
+                  origin, location_id, location_dest_id, partner_id, warehouse_id,
                   orderpoint_id, move_orig_ids, move_dest_ids, is_inventory, scrapped, forced_value)
-               VALUES ($1,$2,'draft'::move_state,$3,$4,$5,$6::procure_method,$7,$8,$9,$10,$11,$12,
-                       $13,$14,$15,$16,$17,$18,$19)"#,
+               VALUES ($1,$2,'draft'::move_state,$3,$4,$5,$6::procure_method,$7,$8,$9,$10,$11,
+                       $12,$13,$14,$15,$16,$17,$18)"#,
         )
         .bind(m.id).bind(m.name).bind(m.item_id).bind(m.demand_qty).bind(m.price_unit)
         .bind(m.procure_method).bind(m.picking_id).bind(m.origin)
-        .bind(m.location_id).bind(m.location_dest_id).bind(m.partner_id).bind(m.company_id)
+        .bind(m.location_id).bind(m.location_dest_id).bind(m.partner_id)
         .bind(m.warehouse_id).bind(m.orderpoint_id)
         .bind(&m.move_orig_ids).bind(&m.move_dest_ids)
         .bind(m.is_inventory).bind(m.scrapped).bind(m.forced_value)
@@ -152,40 +150,13 @@ impl StockMoveRepository {
         let row = sqlx::query(
             r#"SELECT id, name, state::text AS state, posting_state::text AS posting_state, date, item_id, demand_qty, quantity,
                       price_unit, procure_method::text AS procure_method, picking_id, origin, rule_id,
-                      location_id, location_dest_id, partner_id, company_id, warehouse_id,
+                      location_id, location_dest_id, partner_id, warehouse_id,
                       orderpoint_id, move_orig_ids, move_dest_ids, is_inventory, scrapped,
                       propagate_cancel, forced_value
                FROM inventory.stock_moves
                WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
         )
         .bind(move_id)
-        .fetch_optional(&mut *conn)
-        .await?;
-        Ok(row.map(move_row_of))
-    }
-
-    /// Fetch one move scoped to a company (`WHERE id = $1 AND company_id = $2`). The state
-    /// verbs' fetch: the caller binds the company scope on the transaction BEFORE this read,
-    /// and the explicit `company_id` predicate keeps the cross-company 404 fail-closed even on
-    /// an unfenced (superuser/migration) connection — the row of another company reads as
-    /// absent, never as operable.
-    pub async fn fetch_move_for_company(
-        &self,
-        conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
-        move_id: Uuid,
-    ) -> Result<Option<MoveRow>, sqlx::Error> {
-        let row = sqlx::query(
-            r#"SELECT id, name, state::text AS state, posting_state::text AS posting_state, date, item_id, demand_qty, quantity,
-                      price_unit, procure_method::text AS procure_method, picking_id, origin, rule_id,
-                      location_id, location_dest_id, partner_id, company_id, warehouse_id,
-                      orderpoint_id, move_orig_ids, move_dest_ids, is_inventory, scrapped,
-                      propagate_cancel, forced_value
-               FROM inventory.stock_moves
-               WHERE id=$1 AND company_id=$2 AND (metadata->>'deleted_at') IS NULL"#,
-        )
-        .bind(move_id)
-        .bind(company_id)
         .fetch_optional(&mut *conn)
         .await?;
         Ok(row.map(move_row_of))
@@ -200,7 +171,7 @@ impl StockMoveRepository {
         let rows = sqlx::query(
             r#"SELECT id, name, state::text AS state, posting_state::text AS posting_state, date, item_id, demand_qty, quantity,
                       price_unit, procure_method::text AS procure_method, picking_id, origin, rule_id,
-                      location_id, location_dest_id, partner_id, company_id, warehouse_id,
+                      location_id, location_dest_id, partner_id, warehouse_id,
                       orderpoint_id, move_orig_ids, move_dest_ids, is_inventory, scrapped,
                       propagate_cancel, forced_value
                FROM inventory.stock_moves
@@ -212,25 +183,23 @@ impl StockMoveRepository {
         Ok(rows.into_iter().map(move_row_of).collect())
     }
 
-    /// Fetch a company's moves minted for one voucher (`origin` — voucher doors stamp the
+    /// Fetch the moves minted for one voucher (`origin` — voucher doors stamp the
     /// voucher number there so a crashed submit can find and resume its line moves).
     pub async fn fetch_moves_by_origin(
         &self,
         conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
         origin: &str,
     ) -> Result<Vec<MoveRow>, sqlx::Error> {
         let rows = sqlx::query(
             r#"SELECT id, name, state::text AS state, posting_state::text AS posting_state, date, item_id, demand_qty, quantity,
                       price_unit, procure_method::text AS procure_method, picking_id, origin, rule_id,
-                      location_id, location_dest_id, partner_id, company_id, warehouse_id,
+                      location_id, location_dest_id, partner_id, warehouse_id,
                       orderpoint_id, move_orig_ids, move_dest_ids, is_inventory, scrapped,
                       propagate_cancel, forced_value
                FROM inventory.stock_moves
-               WHERE company_id=$1 AND origin=$2 AND (metadata->>'deleted_at') IS NULL
+               WHERE origin=$1 AND (metadata->>'deleted_at') IS NULL
                ORDER BY name"#,
         )
-        .bind(company_id)
         .bind(origin)
         .fetch_all(&mut *conn)
         .await?;
@@ -284,8 +253,8 @@ impl StockMoveRepository {
 
     /// Attach a move to its grouping transfer (the picking-assignment write: the move's
     /// `picking_id` is set, and the projection re-derives on the caller's next reproject —
-    /// this write only moves the pointer). Runs inside the caller's transaction; the company
-    /// scope is already bound by the service that resolved the group.
+    /// this write only moves the pointer). Runs inside the caller's transaction; the ambient
+    /// org scope is already relayed onto it by the service that resolved the group.
     pub async fn set_picking(
         &self,
         conn: &mut sqlx::PgConnection,
@@ -338,8 +307,7 @@ impl StockMoveRepository {
 /// transaction, atomically with the physical movement; the `posted`/`failed` reconciles run on
 /// the pool AFTER the movement commits (the GL leg is eventually consistent — a crash between
 /// commit and the reconcile leaves `pending`, which the repost verb re-drives; accounting
-/// dedupes on `(company, source_type, source_id, posting_type)` so a re-drive can never double
-/// post).
+/// dedupes on `(source_type, source_id, posting_type)` so a re-drive can never double post).
 impl StockMoveRepository {
     /// Arm the GL leg: `posting_state = pending`, inside the movement's own transaction. Called
     /// by the done path only when it actually built an envelope for this move — moves that post
@@ -364,14 +332,15 @@ impl StockMoveRepository {
     /// `posting_state <> 'posted'` so a re-drive that accounting answered from its dedupe
     /// (returning the ORIGINAL journal) can never flip a settled state.
     ///
-    /// Runs `execute_scoped` on the pool; the caller wraps it in `with_company_scope` (the
-    /// company comes off the move row) so the UPDATE passes the RLS fence.
+    /// Runs `org_scope::execute_scoped` on the pool: the write rides the ambient org scope's
+    /// request-dedicated connection (the composing service sets it per request) so it passes
+    /// the decorator's fence (ADR-0029).
     pub async fn mark_posting_posted(
         &self,
         pool: &PgPool,
         move_id: Uuid,
     ) -> Result<(), sqlx::Error> {
-        company_scope::execute_scoped(
+        org_scope::execute_scoped(
             pool,
             sqlx::query(
                 r#"UPDATE inventory.stock_moves
@@ -387,13 +356,13 @@ impl StockMoveRepository {
     /// Record a GL rejection. The physical movement is NOT rolled back — it really happened;
     /// the move parks in `failed` and is re-drivable via `repost_move_gl`.
     ///
-    /// Caller supplies the company scope, as [`Self::mark_posting_posted`].
+    /// Same org-scoped pool write as [`Self::mark_posting_posted`].
     pub async fn mark_posting_failed(
         &self,
         pool: &PgPool,
         move_id: Uuid,
     ) -> Result<(), sqlx::Error> {
-        company_scope::execute_scoped(
+        org_scope::execute_scoped(
             pool,
             sqlx::query(
                 r#"UPDATE inventory.stock_moves
@@ -416,7 +385,7 @@ impl StockMoveRepository {
         pool: &PgPool,
         move_id: Uuid,
     ) -> Result<(), sqlx::Error> {
-        company_scope::execute_scoped(
+        org_scope::execute_scoped(
             pool,
             sqlx::query(
                 r#"UPDATE inventory.stock_moves
@@ -431,13 +400,11 @@ impl StockMoveRepository {
 }
 
 /// The location facts a move's guards and valuation core need: usage (supplier/view/internal/
-/// customer/inventory/production/transit — the routing + reservation rules key off it), the
-/// company the location belongs to, and the warehouse a valuation bin resolves to. `usage`
-/// decodes as text like every other enum here.
+/// customer/inventory/production/transit — the routing + reservation rules key off it), and the
+/// warehouse a valuation bin resolves to. `usage` decodes as text like every other enum here.
 pub struct LocationFacts {
     pub id: Uuid,
     pub usage: String,
-    pub company_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
     /// Per-location valuation-account override: when set, an inventory GL leg that touches this
     /// location resolves to it ahead of the caller-supplied (door-header / directive) account —
@@ -445,7 +412,7 @@ pub struct LocationFacts {
     pub valuation_account_id: Option<Uuid>,
 }
 
-/// Location reads the move pipeline owns (guards R9/R13/R26 + the bin-warehouse resolution in
+/// Location reads the move pipeline owns (guards R9/R13 + the bin-warehouse resolution in
 /// `_action_done`'s valuation core). One round trip for both endpoints.
 impl StockMoveRepository {
     /// Fetch a move's two endpoint locations. Returns `(src, dest)` as read; `None` for an absent
@@ -457,7 +424,7 @@ impl StockMoveRepository {
         location_dest_id: Uuid,
     ) -> Result<(Option<LocationFacts>, Option<LocationFacts>), sqlx::Error> {
         let rows = sqlx::query(
-            r#"SELECT id, usage::text AS usage, company_id, warehouse_id, valuation_account_id
+            r#"SELECT id, usage::text AS usage, warehouse_id, valuation_account_id
                FROM inventory.locations
                WHERE id IN ($1, $2) AND (metadata->>'deleted_at') IS NULL"#,
         )
@@ -469,7 +436,6 @@ impl StockMoveRepository {
             rows.iter().find(|r| r.get::<Uuid, _>("id") == id).map(|r| LocationFacts {
                 id: r.get("id"),
                 usage: r.get("usage"),
-                company_id: r.get("company_id"),
                 warehouse_id: r.get("warehouse_id"),
                 valuation_account_id: r.get("valuation_account_id"),
             })
@@ -558,7 +524,6 @@ fn move_row_of(r: sqlx::postgres::PgRow) -> MoveRow {
         location_id: r.get("location_id"),
         location_dest_id: r.get("location_dest_id"),
         partner_id: r.get("partner_id"),
-        company_id: r.get("company_id"),
         warehouse_id: r.get("warehouse_id"),
         orderpoint_id: r.get("orderpoint_id"),
         move_orig_ids: r.get("move_orig_ids"),

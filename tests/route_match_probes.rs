@@ -16,18 +16,18 @@
 //! landed-cost validate + cancel verbs. Plus a source-level dialect guard so the class
 //! cannot be reintroduced silently on a route the probes do not drive.
 //!
+//! The router ships BARE of authentication: the composing service wraps it in its org scope
+//! middleware, so these probes drive it undecorated with no auth header at all.
+//!
 //! Requires DATABASE_URL (default :5433/backbone_inventory), schema applied.
 
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
-use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
-use serde::Serialize;
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use backbone_auth::company::CompanyVerifier;
 use backbone_inventory::application::service::inventory_gl::{
     AccountingPostEnvelope, GlPostAck, GlPostRejected, GlPostSink,
 };
@@ -39,24 +39,8 @@ use backbone_inventory::application::service::inventory_write_service::{
 use backbone_inventory::presentation::http::create_guarded_inventory_routes;
 use backbone_inventory::InventoryModule;
 
-const SECRET: &[u8] = b"inventory-route-match-probes-secret";
-
 /// The guarded surface the probes drive, and the source its dialect guard reads.
 const GUARDED_ROUTES_RS: &str = include_str!("../src/presentation/http/guarded_routes.rs");
-
-#[derive(Serialize)]
-struct TestClaims {
-    sub: String,
-    exp: usize,
-    company_id: Option<Uuid>,
-}
-
-/// Mint an HS256 token carrying the tenant the request acts for (the claim the
-/// `company_auth` guard requires).
-fn token(company_id: Uuid) -> String {
-    let claims = TestClaims { sub: "probe-1".into(), exp: 9_999_999_999, company_id: Some(company_id) };
-    encode(&Header::new(Algorithm::HS256), &claims, &EncodingKey::from_secret(SECRET)).unwrap()
-}
 
 async fn pool() -> PgPool {
     let url = std::env::var("DATABASE_URL")
@@ -64,20 +48,19 @@ async fn pool() -> PgPool {
     PgPool::connect(&url).await.expect("connect DB")
 }
 
-/// The REAL router a composing service mounts — the same builder, verifier, and route
-/// table production uses.
+/// The REAL router a composing service mounts — the same builder and route table
+/// production uses (org scoping is the composing service's middleware, undecorated here).
 async fn app() -> axum::Router {
     let pool = pool().await;
     let module = InventoryModule::builder().with_database(pool.clone()).build().unwrap();
-    create_guarded_inventory_routes(&module, pool, CompanyVerifier::hs256(SECRET))
+    create_guarded_inventory_routes(&module, pool)
 }
 
-fn req(method: &str, uri: &str, body: Option<Value>, bearer: &str) -> Request<Body> {
+fn req(method: &str, uri: &str, body: Option<Value>) -> Request<Body> {
     Request::builder()
         .method(method)
         .uri(uri)
         .header(header::CONTENT_TYPE, "application/json")
-        .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
         .body(Body::from(body.map(|v| v.to_string()).unwrap_or_default()))
         .unwrap()
 }
@@ -103,70 +86,70 @@ impl GlPostSink for AckSink {
 
 fn uq(p: &str) -> String { format!("{p}-{}", &Uuid::new_v4().simple().to_string()[..8]) }
 
-async fn warehouse(svc: &InventoryWriteService, company: Uuid) -> Uuid {
+async fn warehouse(svc: &InventoryWriteService) -> Uuid {
     svc.create_warehouse(NewWarehouse {
-        company_id: company, code: uq("WH"), name: uq("Main"),
+        code: uq("WH"), name: uq("Main"),
         warehouse_type: None, parent_warehouse_id: None, is_group: false,
     }).await.unwrap()
 }
 
-async fn loc(pool: &PgPool, company: Uuid, usage: &str, wh: Option<Uuid>) -> Uuid {
+async fn loc(pool: &PgPool, usage: &str, wh: Option<Uuid>) -> Uuid {
     let id = Uuid::new_v4();
     let name = uq("LOC");
     sqlx::query(
         r#"INSERT INTO inventory.locations
-             (id, name, complete_name, usage, parent_path, company_id, warehouse_id)
-           VALUES ($1,$2,$3,$4::location_usage,$5,$6,$7)"#,
+             (id, name, complete_name, usage, parent_path, warehouse_id)
+           VALUES ($1,$2,$3,$4::location_usage,$5,$6)"#,
     )
-    .bind(id).bind(&name).bind(&name).bind(usage).bind("").bind(company).bind(wh)
+    .bind(id).bind(&name).bind(&name).bind(usage).bind("").bind(wh)
     .execute(pool).await.unwrap();
     id
 }
 
-async fn op_type(pool: &PgPool, company: Uuid, src: Uuid, dst: Uuid) -> Uuid {
+async fn op_type(pool: &PgPool, src: Uuid, dst: Uuid) -> Uuid {
     let id = Uuid::new_v4();
     sqlx::query(
         r#"INSERT INTO inventory.operation_types
-             (id, name, sequence_code, code, company_id,
+             (id, name, sequence_code, code,
               default_location_src_id, default_location_dest_id, reservation_method, create_backorder)
-           VALUES ($1,$2,$3,$4::picking_code,$5,$6,$7,'manual'::reservation_method,'ask'::create_backorder)"#,
+           VALUES ($1,$2,$3,$4::picking_code,$5,$6,'manual'::reservation_method,'ask'::create_backorder)"#,
     )
-    .bind(id).bind(uq("PT")).bind(uq("SEQ")).bind("incoming").bind(company)
+    .bind(id).bind(uq("PT")).bind(uq("SEQ")).bind("incoming")
     .bind(src).bind(dst)
     .execute(pool).await.unwrap();
     id
 }
 
-async fn seed_quant(pool: &PgPool, company: Uuid, item: Uuid, location: Uuid, qty: &str) {
+async fn seed_quant(pool: &PgPool, item: Uuid, location: Uuid, qty: &str) {
     let q = rust_decimal::Decimal::from_str_exact(qty).unwrap();
     sqlx::query(
         r#"INSERT INTO inventory.stock_quants
-             (id, item_id, location_id, quantity, reserved_quantity, available_quantity, company_id)
-           VALUES ($1,$2,$3,$4,0,$4,$5)"#,
+             (id, item_id, location_id, quantity, reserved_quantity, available_quantity)
+           VALUES ($1,$2,$3,$4,0,$4)"#,
     )
-    .bind(Uuid::new_v4()).bind(item).bind(location).bind(q).bind(company)
+    .bind(Uuid::new_v4()).bind(item).bind(location).bind(q)
     .execute(pool).await.unwrap();
 }
 
-async fn seed_bin(pool: &PgPool, company: Uuid, item: Uuid, wh: Uuid, qty: &str, rate: &str) {
+async fn seed_bin(pool: &PgPool, item: Uuid, wh: Uuid, qty: &str, rate: &str) {
     let (q, r) = (rust_decimal::Decimal::from_str_exact(qty).unwrap(),
                   rust_decimal::Decimal::from_str_exact(rate).unwrap());
     sqlx::query(
         r#"INSERT INTO inventory.bins
-             (id, company_id, item_id, warehouse_id, actual_qty, reserved_qty, valuation_rate, stock_value)
-           VALUES ($1,$2,$3,$4,$5,0,$6,$7)"#,
+             (id, item_id, warehouse_id, actual_qty, reserved_qty, valuation_rate, stock_value)
+           VALUES ($1,$2,$3,$4,0,$5,$6)"#,
     )
-    .bind(Uuid::new_v4()).bind(company).bind(item).bind(wh).bind(q).bind(r).bind(q * r)
+    .bind(Uuid::new_v4()).bind(item).bind(wh).bind(q).bind(r).bind(q * r)
     .execute(pool).await.unwrap();
 }
 
 /// A member picking in `confirmed` (manual reservation): returns its transfer id.
-async fn picking(svc: &InventoryWriteService, pool: &PgPool, company: Uuid, wh: Uuid) -> Uuid {
-    let supplier = loc(pool, company, "supplier", None).await;
-    let stock = loc(pool, company, "internal", Some(wh)).await;
-    let op = op_type(pool, company, supplier, stock).await;
+async fn picking(svc: &InventoryWriteService, pool: &PgPool, wh: Uuid) -> Uuid {
+    let supplier = loc(pool, "supplier", None).await;
+    let stock = loc(pool, "internal", Some(wh)).await;
+    let op = op_type(pool, supplier, stock).await;
     let created = svc.create_picking(NewPicking {
-        name: uq("PICK"), company_id: company, picking_type_id: op,
+        name: uq("PICK"), picking_type_id: op,
         location_id: supplier, location_dest_id: stock, partner_id: None,
         move_type: "direct".into(), origin: None,
         lines: vec![PickingLine { item_id: Uuid::new_v4(), demand_qty: "5".parse().unwrap(), price_unit: "1".parse().unwrap() }],
@@ -183,12 +166,10 @@ async fn picking_probe_get_matches() {
     let router = app().await;
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let transfer = picking(&svc, &pool, company, wh).await;
-    let bearer = token(company);
+    let wh = warehouse(&svc).await;
+    let transfer = picking(&svc, &pool, wh).await;
 
-    let (status, body) = send(router, req("GET", &format!("/pickings/{transfer}"), None, &bearer)).await;
+    let (status, body) = send(router, req("GET", &format!("/pickings/{transfer}"), None)).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     assert_eq!(body["id"].as_str(), Some(transfer.to_string().as_str()), "body: {body}");
     assert!(body["moves"].as_array().map(|m| !m.is_empty()).unwrap_or(false), "body: {body}");
@@ -204,17 +185,15 @@ async fn batch_membership_routes_match() {
     let router = app().await;
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let batch = svc.create_batch(company, uq("BATCH"), false, None).await.unwrap().id;
-    let a = picking(&svc, &pool, company, wh).await;
-    let b = picking(&svc, &pool, company, wh).await;
-    let bearer = token(company);
+    let wh = warehouse(&svc).await;
+    let batch = svc.create_batch(uq("BATCH"), false, None).await.unwrap().id;
+    let a = picking(&svc, &pool, wh).await;
+    let b = picking(&svc, &pool, wh).await;
 
     // Add: the route matches and the reprojected header comes back.
     let (status, body) = send(
         router.clone(),
-        req("POST", &format!("/picking-batches/{batch}/pickings"), Some(json!({ "pickingId": a })), &bearer),
+        req("POST", &format!("/picking-batches/{batch}/pickings"), Some(json!({ "pickingId": a }))),
     ).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     assert_eq!(body["id"].as_str(), Some(batch.to_string().as_str()), "body: {body}");
@@ -223,13 +202,13 @@ async fn batch_membership_routes_match() {
     // A second member joins (the projection stays over both).
     let (status, _) = send(
         router.clone(),
-        req("POST", &format!("/picking-batches/{batch}/pickings"), Some(json!({ "pickingId": b })), &bearer),
+        req("POST", &format!("/picking-batches/{batch}/pickings"), Some(json!({ "pickingId": b }))),
     ).await;
     assert_eq!(status, StatusCode::OK);
 
     // The batch GET probe (the hyphenated path — this door's alone; the generated
     // picking-batch reads mount at the underscore form) matches and reports both members.
-    let (status, body) = send(router.clone(), req("GET", &format!("/picking-batches/{batch}"), None, &bearer)).await;
+    let (status, body) = send(router.clone(), req("GET", &format!("/picking-batches/{batch}"), None)).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     assert_eq!(body["batch"]["id"].as_str(), Some(batch.to_string().as_str()), "body: {body}");
     assert_eq!(body["members"].as_array().map(Vec::len), Some(2), "body: {body}");
@@ -237,7 +216,7 @@ async fn batch_membership_routes_match() {
     // Remove (TWO parameters on one path): the route matches and the header comes back.
     let (status, body) = send(
         router.clone(),
-        req("DELETE", &format!("/picking-batches/{batch}/pickings/{a}"), None, &bearer),
+        req("DELETE", &format!("/picking-batches/{batch}/pickings/{a}"), None),
     ).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     assert_eq!(body["id"].as_str(), Some(batch.to_string().as_str()), "body: {body}");
@@ -253,34 +232,32 @@ async fn scrap_process_route_matches() {
     let router = app().await;
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let stock = loc(&pool, company, "internal", Some(wh)).await;
+    let wh = warehouse(&svc).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
     let item = Uuid::new_v4();
-    seed_quant(&pool, company, item, stock, "7").await;
-    seed_bin(&pool, company, item, wh, "7", "3").await;
+    seed_quant(&pool, item, stock, "7").await;
+    seed_bin(&pool, item, wh, "7", "3").await;
     let scrap_row = svc.create_scrap(NewScrap {
-        company_id: company, item_id: item, scrap_qty: "3".parse().unwrap(),
+        item_id: item, scrap_qty: "3".parse().unwrap(),
         location_id: stock, scrap_location_id: None,
         lot_id: None, package_id: None, owner_id: None, picking_id: None,
         origin: None, scrap_reason_tag_ids: vec![],
     }).await.unwrap();
     let scrap = scrap_row.id;
-    let bearer = token(company);
 
     // The generated scrap read surface owns GET /scraps/:id (the generic envelope).
-    let (status, body) = send(router.clone(), req("GET", &format!("/scraps/{scrap}"), None, &bearer)).await;
+    let (status, body) = send(router.clone(), req("GET", &format!("/scraps/{scrap}"), None)).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     assert_eq!(body["success"], Value::Bool(true), "body: {body}");
     assert_eq!(body["data"]["id"].as_str(), Some(scrap.to_string().as_str()), "body: {body}");
     assert_eq!(body["data"]["state"], json!("draft"), "body: {body}");
 
-    let (status, body) = send(router.clone(), req("POST", &format!("/scraps/{scrap}/process"), None, &bearer)).await;
+    let (status, body) = send(router.clone(), req("POST", &format!("/scraps/{scrap}/process"), None)).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     assert_eq!(body["scrapId"].as_str(), Some(scrap.to_string().as_str()), "body: {body}");
     assert!(body["moveId"].is_string(), "body: {body}");
 
-    let (status, body) = send(router, req("GET", &format!("/scraps/{scrap}"), None, &bearer)).await;
+    let (status, body) = send(router, req("GET", &format!("/scraps/{scrap}"), None)).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     assert_eq!(body["data"]["state"], json!("done"), "body: {body}");
 }
@@ -288,9 +265,9 @@ async fn scrap_process_route_matches() {
 // ── /landed-costs/:id/validate + /cancel ──────────────────────────────────────
 
 /// Open a DRAFT landed cost over `receipt` (one quantity-basis cost line). Returns its id.
-async fn draft_lc(svc: &InventoryWriteService, company: Uuid, receipt: Uuid) -> Uuid {
+async fn draft_lc(svc: &InventoryWriteService, receipt: Uuid) -> Uuid {
     svc.create_landed_cost(backbone_inventory::application::service::inventory_write_service::NewLandedCost {
-        lc_number: uq("LC"), company_id: company, branch_id: None,
+        lc_number: uq("LC"), branch_id: None,
         target_receipt_id: receipt,
         posting_date: chrono::NaiveDate::from_ymd_opt(2026, 8, 27).unwrap(),
         currency: "IDR".into(), notes: None,
@@ -309,14 +286,12 @@ async fn landed_cost_verb_routes_match() {
     let router = app().await;
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
+    let wh = warehouse(&svc).await;
     let item = Uuid::new_v4();
-    let bearer = token(company);
 
     // A submitted receipt gives the allocation its DONE moves.
     let receipt = svc.create_purchase_receipt(NewReceipt {
-        receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
+        receipt_number: uq("PR"), branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh,
         posting_date: chrono::NaiveDate::from_ymd_opt(2026, 8, 27).unwrap(),
         currency: "IDR".into(),
@@ -325,15 +300,15 @@ async fn landed_cost_verb_routes_match() {
     }).await.unwrap();
     svc.submit_purchase_receipt(receipt, &AckSink).await.unwrap();
 
-    let to_validate = draft_lc(&svc, company, receipt).await;
-    let to_cancel = draft_lc(&svc, company, receipt).await;
+    let to_validate = draft_lc(&svc, receipt).await;
+    let to_cancel = draft_lc(&svc, receipt).await;
 
-    let (status, body) = send(router.clone(), req("POST", &format!("/landed-costs/{to_validate}/validate"), None, &bearer)).await;
+    let (status, body) = send(router.clone(), req("POST", &format!("/landed-costs/{to_validate}/validate"), None)).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     assert_eq!(body["id"].as_str(), Some(to_validate.to_string().as_str()), "body: {body}");
     assert_eq!(body["posted"], Value::Bool(false), "the deferred HTTP shape arms the GL leg; it does not post: {body}");
 
-    let (status, body) = send(router, req("POST", &format!("/landed-costs/{to_cancel}/cancel"), None, &bearer)).await;
+    let (status, body) = send(router, req("POST", &format!("/landed-costs/{to_cancel}/cancel"), None)).await;
     assert_eq!(status, StatusCode::NO_CONTENT, "body: {body}");
 }
 

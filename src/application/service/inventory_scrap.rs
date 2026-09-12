@@ -9,18 +9,21 @@
 //! the move id. No second estate: the quants, the SLE pair, the Bin reblende, and the GL
 //! leg are all the engine's, exactly as for every other door.
 //!
-//! The scrap location defaults to the company's inventory-loss location (the same sink
-//! the reconciliation door moves through), overridable per scrap. The GL shape is the
+//! The scrap location defaults to the inventory-loss location (the same sink the
+//! reconciliation door moves through), overridable per scrap. The GL shape is the
 //! adjustment shape (the engine's `is_inventory` leg): the directive's
 //! `adjustment_account_id` carries the scrap expense account, `inventory_account_id` the
 //! stock account. The HTTP surface gets the DEFERRED form (the module's standing posture:
 //! the composing service's sink is not available on a bare route); a service-driven
 //! process posts through its sink, and `repost_move_gl` re-drives a stuck leg.
 //!
+//! Tenancy (ADR-0029): the module is tenant-agnostic. Every write transaction this file
+//! opens re-binds the caller's ambient org scope (`relay_ambient_scope`); the composing
+//! decorator owns isolation.
+//!
 //! Per the module's 4-layer rule this file holds no SQL — statements live on
 //! [`super::super::super::infrastructure::persistence::ScrapDoorRepository`].
 
-use backbone_orm::company_scope;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
@@ -28,19 +31,20 @@ use crate::infrastructure::persistence::{NewScrapRow, ScrapRow};
 
 use super::inventory_gl::GlPostSink;
 use super::inventory_move_engine::{BackorderPolicy, MoveGlDirective, NewStockMove};
-use super::inventory_write_service::{is_dup, InventoryError, InventoryWriteService};
+use super::inventory_write_service::{
+    is_dup, relay_ambient_scope, InventoryError, InventoryWriteService,
+};
 
-/// The scrap-mint input. `scrap_location_id` defaults to the company's inventory-loss
+/// The scrap-mint input. `scrap_location_id` defaults to the inventory-loss
 /// location when `None`. Guards on mint: strictly positive quantity (R-shaped), a
-/// stockable internal source that belongs to the company (R13/R26).
+/// stockable internal source location (R13).
 #[derive(Debug, Clone)]
 pub struct NewScrap {
-    pub company_id: Uuid,
     pub item_id: Uuid,
     pub scrap_qty: Decimal,
     /// Where the scrapped stock currently sits (internal usage).
     pub location_id: Uuid,
-    /// Where the scrap lands (the loss sink); `None` resolves the company default.
+    /// Where the scrap lands (the loss sink); `None` resolves the default loss sink.
     pub scrap_location_id: Option<Uuid>,
     pub lot_id: Option<Uuid>,
     pub package_id: Option<Uuid>,
@@ -62,8 +66,8 @@ impl InventoryWriteService {
 
     /// Mint a scrap order in `draft`. Nothing moves yet — the header records WHAT will be
     /// scrapped, where from, and where to. Guards: strictly positive quantity, a live
-    /// internal source location of this company, a resolvable scrap location. The name is
-    /// minted `SCRAP/<short-uuid>` (unique per company — the typed duplicate error on the
+    /// internal source location, a resolvable scrap location. The name is
+    /// minted `SCRAP/<short-uuid>` (org-scoped unique — the typed duplicate error on the
     /// rare collision).
     pub async fn create_scrap(&self, s: NewScrap) -> Result<ScrapRow, InventoryError> {
         if s.scrap_qty <= Decimal::ZERO {
@@ -72,41 +76,33 @@ impl InventoryWriteService {
         let id = Uuid::new_v4();
         let name = format!("SCRAP/{}", &Uuid::new_v4().simple().to_string()[..8].to_uppercase());
         let mut tx = self.db_pool.begin().await?;
-        // RLS scope (ADR-0008): bound before any read — an unbound connection is fenced
-        // to zero rows and the location lookups below would read every location as absent.
-        company_scope::bind_company_on(&mut tx, s.company_id).await?;
-        // R13/R26-shaped pre-checks: the source must be a stockable INTERNAL location of
-        // this company (a view location holds no stock; an internal location of another
-        // company is not this company's to scrap from).
+        // Re-bind the caller's ambient org scope before any read (ADR-0029) — the scope is
+        // task-local and a fresh pool transaction carries none of it; undecorated (module
+        // tests, jobs) the transaction stays plain.
+        relay_ambient_scope(&mut tx).await?;
+        // R13-shaped pre-check: the source must be a stockable INTERNAL location (a view
+        // location holds no stock).
         let locs = self.moves.fetch_move_locations(&mut tx, s.location_id, s.location_id).await?;
         let src = locs.0.ok_or(InventoryError::LocationNotFound(s.location_id))?;
         if src.usage != "internal" {
             return Err(InventoryError::ViewLocationHoldsNoStock { location_id: s.location_id });
         }
-        if src.company_id != Some(s.company_id) {
-            return Err(InventoryError::QuantCompanyMismatch {
-                location_id: s.location_id,
-                location_company: src.company_id,
-                move_company: s.company_id,
-            });
-        }
-        // The scrap sink: explicit when given, else the company's inventory-loss location
+        // The scrap sink: explicit when given, else the inventory-loss location
         // (bootstrapped on first use — the same sink the reconciliation door uses).
         let scrap_location_id = match s.scrap_location_id {
             Some(explicit) => {
                 let dst = self.moves.fetch_move_locations(&mut tx, explicit, explicit).await?;
                 match dst.1.or(dst.0) {
                     Some(facts) if facts.usage == "inventory" => explicit,
-                    _ => return Err(InventoryError::ScrapLocationUnavailable { company_id: s.company_id }),
+                    _ => return Err(InventoryError::ScrapLocationUnavailable),
                 }
             }
-            None => self.pickings.ensure_inventory_loss_location(&mut tx, s.company_id).await
-                .map_err(|_| InventoryError::ScrapLocationUnavailable { company_id: s.company_id })?,
+            None => self.pickings.ensure_inventory_loss_location(&mut tx).await
+                .map_err(|_| InventoryError::ScrapLocationUnavailable)?,
         };
         let ins = self.scraps.insert_scrap(&mut tx, &NewScrapRow {
             id,
             name: &name,
-            company_id: s.company_id,
             origin: s.origin.as_deref(),
             item_id: s.item_id,
             scrap_qty: s.scrap_qty,
@@ -122,23 +118,17 @@ impl InventoryWriteService {
             return Err(if is_dup(&e) { InventoryError::DuplicateNumber(name) } else { e.into() });
         }
         tx.commit().await?;
-        self.fetch_scrap(s.company_id, id).await?
+        self.fetch_scrap(id).await?
             .ok_or(InventoryError::NotFound(id))
     }
 
-    /// The probe: read one scrap header. Fenced — the caller names the company and the
-    /// RLS scope is bound before the read (a wrong-company scrap reads as absent).
-    pub async fn fetch_scrap(
-        &self,
-        company_id: Uuid,
-        scrap_id: Uuid,
-    ) -> Result<Option<ScrapRow>, InventoryError> {
+    /// The probe: read one scrap header, riding the caller's ambient org scope (ADR-0029).
+    pub async fn fetch_scrap(&self, scrap_id: Uuid) -> Result<Option<ScrapRow>, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, company_id).await?;
+        relay_ambient_scope(&mut tx).await?;
         let row = self.scraps.fetch_scrap(&mut tx, scrap_id).await?;
         tx.commit().await?;
-        // Belt-and-braces beyond the fence: never surface a cross-company header.
-        Ok(row.filter(|r| r.company_id == company_id))
+        Ok(row)
     }
 
     /// Process a DRAFT scrap: mint the move, drive it to done through the engine, stamp
@@ -155,12 +145,11 @@ impl InventoryWriteService {
     /// move instead of minting a second one.
     pub async fn process_scrap(
         &self,
-        company_id: Uuid,
         scrap_id: Uuid,
         gl: &MoveGlDirective,
         sink: &dyn GlPostSink,
     ) -> Result<ScrapProcessed, InventoryError> {
-        let scrap = self.fetch_scrap(company_id, scrap_id).await?
+        let scrap = self.fetch_scrap(scrap_id).await?
             .ok_or(InventoryError::NotFound(scrap_id))?;
         match scrap.state.as_str() {
             "draft" => {}
@@ -172,7 +161,6 @@ impl InventoryWriteService {
             Some(prior) => prior,
             None => self.create_move(NewStockMove {
                 name: scrap.name.clone(),
-                company_id,
                 item_id: scrap.item_id,
                 demand_qty: scrap.scrap_qty,
                 price_unit: Decimal::ZERO, // the loss is valued at the current average
@@ -195,7 +183,7 @@ impl InventoryWriteService {
         // state; this method never asserts it).
         let mv = {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, company_id).await?;
+            relay_ambient_scope(&mut tx).await?;
             let mv = self.moves.fetch_move(&mut tx, move_id).await?
                 .ok_or(InventoryError::NotFound(move_id))?;
             tx.commit().await?;
@@ -203,16 +191,16 @@ impl InventoryWriteService {
         };
         let mut state = mv.state.clone();
         if state == "draft" {
-            state = self.action_confirm(company_id, move_id).await?;
+            state = self.action_confirm(move_id).await?;
         }
         if matches!(state.as_str(), "confirmed" | "partially_available") {
-            self.action_assign(company_id, move_id).await?;
-            state = self.move_state_of(company_id, move_id).await?;
+            self.action_assign(move_id).await?;
+            state = self.move_state_of(move_id).await?;
         }
         if state == "assigned" || state == "waiting" {
             // The waiting case is the resume window's residue (a move confirmed against
             // nothing reservable); the assign pass above is what freed or refused it.
-            let fresh = self.move_state_of(company_id, move_id).await?;
+            let fresh = self.move_state_of(move_id).await?;
             if fresh == "waiting" {
                 return Err(InventoryError::WrongMoveState {
                     move_id, action: "process_scrap", current: fresh,
@@ -227,17 +215,17 @@ impl InventoryWriteService {
         }
         let mv = {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, company_id).await?;
+            relay_ambient_scope(&mut tx).await?;
             let mv = self.moves.fetch_move(&mut tx, move_id).await?
                 .ok_or(InventoryError::NotFound(move_id))?;
             tx.commit().await?;
             mv
         };
         self.prepare_move_for_validate(&mv).await?;
-        self.action_done(company_id, move_id, BackorderPolicy::Never, gl, sink).await?;
+        self.action_done(move_id, BackorderPolicy::Never, gl, sink).await?;
         {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, company_id).await?;
+            relay_ambient_scope(&mut tx).await?;
             let closed = self.scraps.mark_scrap_done(&mut tx, scrap_id, move_id).await?;
             tx.commit().await?;
             if !closed {
@@ -254,7 +242,6 @@ impl InventoryWriteService {
     /// standing deferred posture for GL-posting verbs on a bare route).
     pub async fn process_scrap_deferred(
         &self,
-        company_id: Uuid,
         scrap_id: Uuid,
     ) -> Result<ScrapProcessed, InventoryError> {
         let no_accounts = MoveGlDirective {
@@ -277,6 +264,6 @@ impl InventoryWriteService {
                 })
             }
         }
-        self.process_scrap(company_id, scrap_id, &no_accounts, &NoGlSink).await
+        self.process_scrap(scrap_id, &no_accounts, &NoGlSink).await
     }
 }

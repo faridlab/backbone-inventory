@@ -58,7 +58,6 @@ pub struct ReorderingRule {
     pub item_id: Uuid,
     pub location_id: Uuid,
     pub warehouse_id: Uuid,
-    pub company_id: Uuid,
     pub item_min_qty: Decimal,
     pub item_max_qty: Decimal,
     pub route_id: Option<Uuid>,
@@ -80,7 +79,7 @@ impl ReorderingRule {
     }
 
     /// Create a new ReorderingRule with required fields
-    pub fn new(name: String, trigger: OrderpointTrigger, active: bool, item_id: Uuid, location_id: Uuid, warehouse_id: Uuid, company_id: Uuid, item_min_qty: Decimal, item_max_qty: Decimal, qty_on_hand: Decimal, qty_forecast: Decimal, qty_to_order: Decimal, qty_to_order_manual: Decimal, lead_days: Decimal) -> Self {
+    pub fn new(name: String, trigger: OrderpointTrigger, active: bool, item_id: Uuid, location_id: Uuid, warehouse_id: Uuid, item_min_qty: Decimal, item_max_qty: Decimal, qty_on_hand: Decimal, qty_forecast: Decimal, qty_to_order: Decimal, qty_to_order_manual: Decimal, lead_days: Decimal) -> Self {
         Self {
             id: Uuid::new_v4(),
             name,
@@ -90,7 +89,6 @@ impl ReorderingRule {
             item_id,
             location_id,
             warehouse_id,
-            company_id,
             item_min_qty,
             item_max_qty,
             route_id: None,
@@ -206,9 +204,6 @@ impl ReorderingRule {
                 "warehouse_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.warehouse_id = v; }
                 }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 "item_min_qty" => {
                     if let Ok(v) = serde_json::from_value(value) { self.item_min_qty = v; }
                 }
@@ -293,16 +288,12 @@ impl backbone_orm::EntityRepoMeta for ReorderingRule {
         m.insert("item_id".to_string(), "uuid".to_string());
         m.insert("location_id".to_string(), "uuid".to_string());
         m.insert("warehouse_id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("route_id".to_string(), "uuid".to_string());
         m.insert("trigger".to_string(), "orderpoint_trigger".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
         &["name"]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -319,7 +310,6 @@ pub struct ReorderingRuleBuilder {
     item_id: Option<Uuid>,
     location_id: Option<Uuid>,
     warehouse_id: Option<Uuid>,
-    company_id: Option<Uuid>,
     item_min_qty: Option<Decimal>,
     item_max_qty: Option<Decimal>,
     route_id: Option<Uuid>,
@@ -371,12 +361,6 @@ impl ReorderingRuleBuilder {
     /// Set the warehouse_id field (required)
     pub fn warehouse_id(mut self, value: Uuid) -> Self {
         self.warehouse_id = Some(value);
-        self
-    }
-
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
         self
     }
 
@@ -442,7 +426,6 @@ impl ReorderingRuleBuilder {
         let item_id = self.item_id.ok_or_else(|| "item_id is required".to_string())?;
         let location_id = self.location_id.ok_or_else(|| "location_id is required".to_string())?;
         let warehouse_id = self.warehouse_id.ok_or_else(|| "warehouse_id is required".to_string())?;
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
 
         Ok(ReorderingRule {
             id: Uuid::new_v4(),
@@ -453,7 +436,6 @@ impl ReorderingRuleBuilder {
             item_id,
             location_id,
             warehouse_id,
-            company_id,
             item_min_qty: self.item_min_qty.unwrap_or(Decimal::from(0)),
             item_max_qty: self.item_max_qty.unwrap_or(Decimal::from(0)),
             route_id: self.route_id,

@@ -30,9 +30,9 @@
 //!     overload and no all-warehouses arm on this surface — a caller without
 //!     a pivot must refuse on its own side; it can never ask this read to
 //!     silently sum every warehouse.
-//!   - A pivot warehouse that does not exist, is soft-deleted, or belongs to
-//!     another company refuses typed (`UnknownWarehouse`) rather than
-//!     projecting an all-sold-out storefront off a zero-row read.
+//!   - A pivot warehouse that does not exist or is soft-deleted refuses
+//!     typed (`UnknownWarehouse`) rather than projecting an all-sold-out
+//!     storefront off a zero-row read.
 //!   - A GROUPING warehouse node refuses typed as a pivot (`GroupPivot`) —
 //!     pointing a shop at a group node is a misconfiguration that would
 //!     otherwise read as permanently sold out.
@@ -43,6 +43,11 @@
 //!     item) and passes all of them; this surface has no first-variant
 //!     shortcut to get wrong — sold out means NO member of the set has
 //!     availability.
+//!
+//! Tenancy (ADR-0029): the module is tenant-agnostic. Every read rides the
+//! ambient org scope the composing service set per request; the composing
+//! decorator owns isolation, and a pivot unknown under that scope refuses
+//! typed rather than projecting a silently-empty verdict.
 
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -99,10 +104,10 @@ pub struct SoldOutVerdict {
 /// The availability scope read's typed refusals.
 #[derive(Debug, thiserror::Error)]
 pub enum AvailabilityScopeError {
-    /// The pivot warehouse does not exist, is soft-deleted, or belongs to
-    /// another company. Carries (warehouse_id, company_id).
-    #[error("availability pivot warehouse {0} is unknown to company {1}")]
-    UnknownWarehouse(Uuid, Uuid),
+    /// The pivot warehouse does not exist or is soft-deleted under the
+    /// ambient org scope. Carries the warehouse id.
+    #[error("availability pivot warehouse {0} is unknown")]
+    UnknownWarehouse(Uuid),
     /// The pivot warehouse is a grouping node, not a concrete stock
     /// warehouse. Carries the warehouse id.
     #[error("availability pivot warehouse {0} is a warehouse group, not a stock warehouse")]
@@ -138,7 +143,6 @@ pub trait AvailabilityScopePort: Send + Sync {
     /// unreceived item is unavailable, not an error).
     async fn display_availability(
         &self,
-        company_id: Uuid,
         item_ids: &[Uuid],
         warehouse_id: Uuid,
     ) -> Result<Vec<ScopedAvailability>, AvailabilityScopeError>;
@@ -148,7 +152,6 @@ pub trait AvailabilityScopePort: Send + Sync {
     /// quantities, floored at zero. Complete over the demand list's items.
     async fn checkout_free_qty(
         &self,
-        company_id: Uuid,
         demands: &[CheckoutDemand],
         warehouse_id: Uuid,
     ) -> Result<Vec<CheckoutFreeQty>, AvailabilityScopeError>;
@@ -160,7 +163,6 @@ pub trait AvailabilityScopePort: Send + Sync {
     /// truth.
     async fn sold_out(
         &self,
-        company_id: Uuid,
         item_ids: &[Uuid],
         warehouse_id: Uuid,
     ) -> Result<SoldOutVerdict, AvailabilityScopeError>;
@@ -185,7 +187,6 @@ impl RefusingAvailabilityScopePort {
 impl AvailabilityScopePort for RefusingAvailabilityScopePort {
     async fn display_availability(
         &self,
-        _company_id: Uuid,
         _item_ids: &[Uuid],
         _warehouse_id: Uuid,
     ) -> Result<Vec<ScopedAvailability>, AvailabilityScopeError> {
@@ -194,7 +195,6 @@ impl AvailabilityScopePort for RefusingAvailabilityScopePort {
 
     async fn checkout_free_qty(
         &self,
-        _company_id: Uuid,
         _demands: &[CheckoutDemand],
         _warehouse_id: Uuid,
     ) -> Result<Vec<CheckoutFreeQty>, AvailabilityScopeError> {
@@ -203,7 +203,6 @@ impl AvailabilityScopePort for RefusingAvailabilityScopePort {
 
     async fn sold_out(
         &self,
-        _company_id: Uuid,
         _item_ids: &[Uuid],
         _warehouse_id: Uuid,
     ) -> Result<SoldOutVerdict, AvailabilityScopeError> {
@@ -230,11 +229,11 @@ impl AvailabilityScopeRead {
         }
     }
 
-    /// Fail-loud pivot validation: the warehouse must exist, be live, belong
-    /// to the company, and be a concrete stock warehouse.
-    async fn validate_pivot(&self, company_id: Uuid, warehouse_id: Uuid) -> Result<(), AvailabilityScopeError> {
-        match self.warehouses.fetch_pivot_warehouse(&self.db_pool, company_id, warehouse_id).await? {
-            None => Err(AvailabilityScopeError::UnknownWarehouse(warehouse_id, company_id)),
+    /// Fail-loud pivot validation: the warehouse must exist, be live, and be
+    /// a concrete stock warehouse.
+    async fn validate_pivot(&self, warehouse_id: Uuid) -> Result<(), AvailabilityScopeError> {
+        match self.warehouses.fetch_pivot_warehouse(&self.db_pool, warehouse_id).await? {
+            None => Err(AvailabilityScopeError::UnknownWarehouse(warehouse_id)),
             Some(true) => Err(AvailabilityScopeError::GroupPivot(warehouse_id)),
             Some(false) => Ok(()),
         }
@@ -246,13 +245,12 @@ impl AvailabilityScopeRead {
     /// (the caller-side guards have already refused otherwise).
     async fn scoped_rows(
         &self,
-        company_id: Uuid,
         item_ids: &[Uuid],
         warehouse_id: Uuid,
     ) -> Result<Vec<ScopedAvailability>, AvailabilityScopeError> {
         let rows = self
             .quants
-            .fetch_warehouse_on_hand(&self.db_pool, company_id, item_ids, warehouse_id)
+            .fetch_warehouse_on_hand(&self.db_pool, item_ids, warehouse_id)
             .await?;
         let by_item: std::collections::HashMap<Uuid, (Decimal, Decimal)> = rows
             .into_iter()
@@ -293,18 +291,16 @@ impl AvailabilityScopeRead {
 impl AvailabilityScopePort for AvailabilityScopeRead {
     async fn display_availability(
         &self,
-        company_id: Uuid,
         item_ids: &[Uuid],
         warehouse_id: Uuid,
     ) -> Result<Vec<ScopedAvailability>, AvailabilityScopeError> {
         Self::guard_item_set(item_ids)?;
-        self.validate_pivot(company_id, warehouse_id).await?;
-        self.scoped_rows(company_id, item_ids, warehouse_id).await
+        self.validate_pivot(warehouse_id).await?;
+        self.scoped_rows(item_ids, warehouse_id).await
     }
 
     async fn checkout_free_qty(
         &self,
-        company_id: Uuid,
         demands: &[CheckoutDemand],
         warehouse_id: Uuid,
     ) -> Result<Vec<CheckoutFreeQty>, AvailabilityScopeError> {
@@ -318,8 +314,8 @@ impl AvailabilityScopePort for AvailabilityScopeRead {
                 return Err(AvailabilityScopeError::NegativeHeld(d.item_id));
             }
         }
-        self.validate_pivot(company_id, warehouse_id).await?;
-        let rows = self.scoped_rows(company_id, &item_ids, warehouse_id).await?;
+        self.validate_pivot(warehouse_id).await?;
+        let rows = self.scoped_rows(&item_ids, warehouse_id).await?;
         Ok(rows
             .into_iter()
             .zip(demands.iter())
@@ -333,13 +329,12 @@ impl AvailabilityScopePort for AvailabilityScopeRead {
 
     async fn sold_out(
         &self,
-        company_id: Uuid,
         item_ids: &[Uuid],
         warehouse_id: Uuid,
     ) -> Result<SoldOutVerdict, AvailabilityScopeError> {
         Self::guard_item_set(item_ids)?;
-        self.validate_pivot(company_id, warehouse_id).await?;
-        let per_item = self.scoped_rows(company_id, item_ids, warehouse_id).await?;
+        self.validate_pivot(warehouse_id).await?;
+        let per_item = self.scoped_rows(item_ids, warehouse_id).await?;
         let sold_out = per_item.iter().all(|row| row.available_qty <= Decimal::ZERO);
         Ok(SoldOutVerdict { sold_out, per_item })
     }
@@ -354,12 +349,11 @@ mod tests {
         let port = RefusingAvailabilityScopePort;
         let id = Uuid::new_v4();
         assert!(matches!(
-            port.display_availability(Uuid::new_v4(), &[id], Uuid::new_v4()).await,
+            port.display_availability(&[id], Uuid::new_v4()).await,
             Err(AvailabilityScopeError::Unwired(_))
         ));
         assert!(matches!(
             port.checkout_free_qty(
-                Uuid::new_v4(),
                 &[CheckoutDemand { item_id: id, held_qty: Decimal::ZERO }],
                 Uuid::new_v4()
             )
@@ -367,7 +361,7 @@ mod tests {
             Err(AvailabilityScopeError::Unwired(_))
         ));
         assert!(matches!(
-            port.sold_out(Uuid::new_v4(), &[id], Uuid::new_v4()).await,
+            port.sold_out(&[id], Uuid::new_v4()).await,
             Err(AvailabilityScopeError::Unwired(_))
         ));
     }

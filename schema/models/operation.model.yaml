@@ -14,11 +14,11 @@
 # generic write path can hand-set the projection; the only writers are the
 # move pipeline and its projection trigger.
 #
-# Company fence (ADR-0014): OperationType is configuration master data —
-# shared_blank with a nullable company (the [False] escape; global types like
-# a virtual adjustment type seed company-NULL). Transfer is a TRANSACTION —
-# strict; its company_id column mirrors the operation type's company
-# (derived at write time) and is NOT NULL whenever the type is company-owned.
+# Tenancy: none, by design (ADR-0029). The module is tenant-agnostic; the
+# composing service's decorator owns org scoping. OperationType is
+# configuration master data — global types anchor at the tenant ROOT under
+# allow_root; a Transfer anchors like its operation type (derived at write
+# time).
 # =============================================================================
 
 models:
@@ -60,10 +60,6 @@ models:
         attributes: ["@default(10)"]
         description: "Sort order"
 
-      company_id:
-        type: uuid?
-        attributes: ["@exclude_from_foreign_key_check"]
-        description: "Owning company; NULL = global type visible to every company (shared_blank, ADR-0014) # logical FK to organization.Company.id"
 
       warehouse_id:
         type: uuid?
@@ -116,8 +112,6 @@ models:
 
     indexes:
       - type: index
-        fields: [company_id]
-      - type: index
         fields: [warehouse_id]
       - type: index
         fields: [code]
@@ -139,7 +133,7 @@ models:
       name:
         type: string
         attributes: ["@required", "@max(40)", "@default(\"/\")"]
-        description: "Reference (sequence-filled; unique per company — guard R3)"
+        description: "Reference (sequence-filled; unique per org unit — guard R3)"
 
       origin:
         type: string?
@@ -176,10 +170,6 @@ models:
         attributes: ["@exclude_from_foreign_key_check"]
         description: "Contact (supplier on receipts, customer on deliveries) # logical FK to party.Party.id"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "STRICT transaction fence; mirrors the operation type's company at write time (derived, not user-set) # logical FK to organization.Company.id"
 
       move_type:
         type: MoveType
@@ -244,10 +234,6 @@ models:
         inverse: picking
 
     indexes:
-      - type: unique
-        fields: [name, company_id]
-        where: "deleted_at IS NULL"
-        description: "R3 — transfer reference unique per company (_name_uniq)"
       - type: index
         fields: [state]
         description: "The projected value is still indexed (hot filter)"
@@ -265,8 +251,6 @@ models:
       - type: index
         fields: [batch_id]
         description: "Batch membership lookups (the SB-1 projection input)"
-      - type: index
-        fields: [company_id]
 
 # =============================================================================
 # Enums

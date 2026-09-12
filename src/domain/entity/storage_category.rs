@@ -55,7 +55,6 @@ pub struct StorageCategory {
     pub max_weight: Option<Decimal>,
     pub allow_new_product: StorageAllowNewProduct,
     pub active: bool,
-    pub company_id: Option<Uuid>,
     #[serde(default)]
     #[sqlx(json)]
     pub metadata: AuditMetadata,
@@ -75,7 +74,6 @@ impl StorageCategory {
             max_weight: None,
             allow_new_product,
             active,
-            company_id: None,
             metadata: AuditMetadata::default(),
         }
     }
@@ -141,12 +139,6 @@ impl StorageCategory {
         self
     }
 
-    /// Set the company_id field (chainable)
-    pub fn with_company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     // ==========================================================
     // Partial Update
     // ==========================================================
@@ -166,9 +158,6 @@ impl StorageCategory {
                 }
                 "active" => {
                     if let Ok(v) = serde_json::from_value(value) { self.active = v; }
-                }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
                 }
                 _ => {} // ignore unknown fields
             }
@@ -224,15 +213,11 @@ impl backbone_orm::EntityRepoMeta for StorageCategory {
     fn column_types() -> std::collections::HashMap<String, String> {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("allow_new_product".to_string(), "storage_allow_new_product".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
         &["name"]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -246,7 +231,6 @@ pub struct StorageCategoryBuilder {
     max_weight: Option<Decimal>,
     allow_new_product: Option<StorageAllowNewProduct>,
     active: Option<bool>,
-    company_id: Option<Uuid>,
 }
 
 impl StorageCategoryBuilder {
@@ -274,12 +258,6 @@ impl StorageCategoryBuilder {
         self
     }
 
-    /// Set the company_id field (optional)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Build the StorageCategory entity
     ///
     /// Returns Err if any required field without a default is missing.
@@ -292,7 +270,6 @@ impl StorageCategoryBuilder {
             max_weight: self.max_weight,
             allow_new_product: self.allow_new_product.unwrap_or_default(),
             active: self.active.unwrap_or(true),
-            company_id: self.company_id,
             metadata: AuditMetadata::default(),
         })
     }

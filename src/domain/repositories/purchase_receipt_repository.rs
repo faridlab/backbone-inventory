@@ -45,7 +45,6 @@ pub struct PurchaseReceiptPaginatedResult {
 #[derive(Debug, Clone, Default)]
 pub struct PurchaseReceiptFilter {
     pub receipt_number: Option<String>,
-    pub company_id: Option<Uuid>,
     pub branch_id: Option<Uuid>,
     pub supplier_id: Option<Uuid>,
     pub source_po_id: Option<Uuid>,
@@ -64,7 +63,7 @@ pub struct PurchaseReceiptFilter {
 impl PurchaseReceiptFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.receipt_number.is_some() || self.company_id.is_some() || self.branch_id.is_some() || self.supplier_id.is_some() || self.source_po_id.is_some() || self.warehouse_id.is_some() || self.currency.is_some() || self.inventory_account_id.is_some() || self.grir_account_id.is_some() || self.transfer_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some() || self.notes.is_some()
+        self.receipt_number.is_some() || self.branch_id.is_some() || self.supplier_id.is_some() || self.source_po_id.is_some() || self.warehouse_id.is_some() || self.currency.is_some() || self.inventory_account_id.is_some() || self.grir_account_id.is_some() || self.transfer_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some() || self.notes.is_some()
     }
 }
 

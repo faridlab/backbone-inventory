@@ -37,8 +37,6 @@ pub struct CreateScrapReasonTagDto {
     pub name: String,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     pub active: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -59,8 +57,6 @@ pub struct UpdateScrapReasonTagDto {
     pub name: String,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     pub active: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -83,14 +79,12 @@ pub struct PatchScrapReasonTagDto {
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 impl PatchScrapReasonTagDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.name.is_some() || self.active.is_some() || self.company_id.is_some()
+        self.name.is_some() || self.active.is_some()
     }
 }
 
@@ -112,7 +106,6 @@ pub struct ScrapReasonTagResponseDto {
     pub name: String,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     pub active: bool,
-    pub company_id: Option<Uuid>,
     pub metadata: AuditMetadata,
 }
 
@@ -172,7 +165,6 @@ pub struct ScrapReasonTagSummaryDto {
     pub id: Uuid,
     pub name: String,
     pub active: bool,
-    pub company_id: Option<Uuid>,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -186,7 +178,6 @@ impl From<ScrapReasonTag> for ScrapReasonTagResponseDto {
             id: entity.id,
             name: entity.name,
             active: entity.active,
-            company_id: entity.company_id,
             metadata: entity.metadata,
         }
     }
@@ -199,7 +190,6 @@ impl From<ScrapReasonTag> for ScrapReasonTagSummaryDto {
             id: entity.id,
             name: entity.name,
             active: entity.active,
-            company_id: entity.company_id,
             created_at,
         }
     }
@@ -211,7 +201,6 @@ impl From<CreateScrapReasonTagDto> for ScrapReasonTag {
             id: Uuid::new_v4(),
             name: dto.name,
             active: dto.active,
-            company_id: dto.company_id,
             metadata: AuditMetadata::default(),
         }
     }
@@ -223,7 +212,6 @@ impl From<&ScrapReasonTag> for ScrapReasonTagResponseDto {
             id: entity.id.clone(),
             name: entity.name.clone(),
             active: entity.active.clone(),
-            company_id: entity.company_id.clone(),
             metadata: entity.metadata.clone(),
         }
     }
@@ -239,7 +227,6 @@ impl backbone_core::ApplyUpdateDto<UpdateScrapReasonTagDto> for ScrapReasonTag {
     fn apply_update(mut self, dto: UpdateScrapReasonTagDto) -> backbone_core::ServiceResult<Self> {
         self.name = dto.name;
         self.active = dto.active;
-        self.company_id = dto.company_id;
         Ok(self)
     }
 }

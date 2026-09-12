@@ -47,13 +47,12 @@ pub struct StorageCategoryCapacityFilter {
     pub storage_category_id: Option<Uuid>,
     pub item_id: Option<Uuid>,
     pub package_type_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
 }
 
 impl StorageCategoryCapacityFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.storage_category_id.is_some() || self.item_id.is_some() || self.package_type_id.is_some() || self.company_id.is_some()
+        self.storage_category_id.is_some() || self.item_id.is_some() || self.package_type_id.is_some()
     }
 }
 

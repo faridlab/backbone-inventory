@@ -55,13 +55,12 @@ pub struct ScrapFilter {
     pub owner_id: Option<Uuid>,
     pub picking_id: Option<Uuid>,
     pub move_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
 }
 
 impl ScrapFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.name.is_some() || self.state.is_some() || self.origin.is_some() || self.item_id.is_some() || self.location_id.is_some() || self.scrap_location_id.is_some() || self.lot_id.is_some() || self.package_id.is_some() || self.owner_id.is_some() || self.picking_id.is_some() || self.move_id.is_some() || self.company_id.is_some()
+        self.name.is_some() || self.state.is_some() || self.origin.is_some() || self.item_id.is_some() || self.location_id.is_some() || self.scrap_location_id.is_some() || self.lot_id.is_some() || self.package_id.is_some() || self.owner_id.is_some() || self.picking_id.is_some() || self.move_id.is_some()
     }
 }
 

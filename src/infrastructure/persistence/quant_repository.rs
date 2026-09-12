@@ -8,8 +8,8 @@
 //! aggregate, both driven by the engine, never by a second counter here.
 //!
 //! 4-layer rule: services orchestrate, repositories hold SQL. Every write method takes the CALLER'S
-//! connection (the movement's transaction), and the caller has already bound the company scope
-//! (ADR-0008) — an unbound connection is fenced to zero rows and would read every quant as absent.
+//! connection (the movement's transaction), and the caller has already relayed the ambient org
+//! scope onto it.
 
 use rust_decimal::Decimal;
 use sqlx::{PgPool, Row};
@@ -78,10 +78,10 @@ impl QuantDims {
     /// A stable text key for the transaction-scoped advisory lock that serializes creation of the
     /// quant row for this dimension tuple (two competing first-writers would otherwise both pass
     /// the NOT EXISTS guard — NULLs are distinct in the partial unique index).
-    fn lock_key(&self, company_id: Uuid) -> String {
+    fn lock_key(&self) -> String {
         let opt = |v: Option<Uuid>| v.map(|u| u.to_string()).unwrap_or_else(|| "NULL".into());
         format!(
-            "quant:{company_id}:{}:{}:{}:{}:{}",
+            "quant:{}:{}:{}:{}:{}",
             self.item_id, self.location_id, opt(self.lot_id), opt(self.package_id), opt(self.owner_id)
         )
     }
@@ -105,21 +105,20 @@ impl QuantRepository {
     pub async fn lock_or_init(
         &self,
         conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
         dims: QuantDims,
     ) -> Result<QuantRow, sqlx::Error> {
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
-            .bind(dims.lock_key(company_id))
+            .bind(dims.lock_key())
             .execute(&mut *conn)
             .await?;
-        if let Some(row) = Self::fetch_for_update(conn, company_id, dims).await? {
+        if let Some(row) = Self::fetch_for_update(conn, dims).await? {
             return Ok(row);
         }
         sqlx::query(
             r#"INSERT INTO inventory.stock_quants
                  (id, item_id, location_id, lot_id, package_id, owner_id, quantity,
-                  reserved_quantity, available_quantity, company_id)
-               SELECT $1,$2,$3,$4,$5,$6,0,0,0,$7
+                  reserved_quantity, available_quantity)
+               SELECT $1,$2,$3,$4,$5,$6,0,0,0
                WHERE NOT EXISTS (
                  SELECT 1 FROM inventory.stock_quants q
                  WHERE q.item_id=$2 AND q.location_id=$3
@@ -131,12 +130,11 @@ impl QuantRepository {
         )
         .bind(Uuid::new_v4()).bind(dims.item_id).bind(dims.location_id)
         .bind(dims.lot_id).bind(dims.package_id).bind(dims.owner_id)
-        .bind(company_id)
         .execute(&mut *conn)
         .await?;
         // Either this call won the insert race, or the advisory lock means it never races: the
         // re-select under FOR UPDATE returns exactly one row either way.
-        Self::fetch_for_update(conn, company_id, dims)
+        Self::fetch_for_update(conn, dims)
             .await?
             .ok_or_else(|| sqlx::Error::RowNotFound)
     }
@@ -144,21 +142,20 @@ impl QuantRepository {
     /// The `FOR UPDATE` re-select used by [`Self::lock_or_init`]. NULL-safe on every dimension.
     async fn fetch_for_update(
         conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
         dims: QuantDims,
     ) -> Result<Option<QuantRow>, sqlx::Error> {
         let row = sqlx::query(
             r#"SELECT id, item_id, location_id, lot_id, package_id, owner_id, quantity,
                       reserved_quantity, in_date
                FROM inventory.stock_quants
-               WHERE company_id=$1 AND item_id=$2 AND location_id=$3
-                 AND lot_id IS NOT DISTINCT FROM $4
-                 AND package_id IS NOT DISTINCT FROM $5
-                 AND owner_id IS NOT DISTINCT FROM $6
+               WHERE item_id=$1 AND location_id=$2
+                 AND lot_id IS NOT DISTINCT FROM $3
+                 AND package_id IS NOT DISTINCT FROM $4
+                 AND owner_id IS NOT DISTINCT FROM $5
                  AND (metadata->>'deleted_at') IS NULL
                FOR UPDATE"#,
         )
-        .bind(company_id).bind(dims.item_id).bind(dims.location_id)
+        .bind(dims.item_id).bind(dims.location_id)
         .bind(dims.lot_id).bind(dims.package_id).bind(dims.owner_id)
         .fetch_optional(&mut *conn)
         .await?;
@@ -229,7 +226,6 @@ impl QuantRepository {
     pub async fn fetch_reservation_candidates(
         &self,
         conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
         item_id: Uuid,
         location_id: Uuid,
     ) -> Result<Vec<QuantRow>, sqlx::Error> {
@@ -237,12 +233,12 @@ impl QuantRepository {
             r#"SELECT id, item_id, location_id, lot_id, package_id, owner_id, quantity,
                       reserved_quantity, in_date
                FROM inventory.stock_quants
-               WHERE company_id=$1 AND item_id=$2 AND location_id=$3
+               WHERE item_id=$1 AND location_id=$2
                  AND quantity - reserved_quantity > 0
                  AND (metadata->>'deleted_at') IS NULL
                ORDER BY in_date NULLS LAST, id"#,
         )
-        .bind(company_id).bind(item_id).bind(location_id)
+        .bind(item_id).bind(location_id)
         .fetch_all(&mut *conn)
         .await?;
         Ok(rows.into_iter().map(quant_row_of).collect())
@@ -262,7 +258,6 @@ impl QuantRepository {
         &self,
         conn: &mut sqlx::PgConnection,
         quant_id: Uuid,
-        company_id: Uuid,
         dims: QuantDims,
     ) -> Result<QuantRow, sqlx::Error> {
         let row = sqlx::query(
@@ -272,12 +267,11 @@ impl QuantRepository {
                FROM (
                    SELECT COALESCE(SUM(l.quantity), 0) AS mirror_qty
                    FROM inventory.stock_move_lines l
-                   WHERE l.company_id = $2
-                     AND l.item_id = $3
-                     AND l.location_id = $4
-                     AND l.lot_id IS NOT DISTINCT FROM $5
-                     AND l.package_id IS NOT DISTINCT FROM $6
-                     AND l.owner_id IS NOT DISTINCT FROM $7
+                   WHERE l.item_id = $2
+                     AND l.location_id = $3
+                     AND l.lot_id IS NOT DISTINCT FROM $4
+                     AND l.package_id IS NOT DISTINCT FROM $5
+                     AND l.owner_id IS NOT DISTINCT FROM $6
                      AND l.state::text NOT IN ('done', 'cancel')
                      AND (l.metadata->>'deleted_at') IS NULL
                ) m
@@ -286,7 +280,6 @@ impl QuantRepository {
                          q.quantity, q.reserved_quantity, q.in_date"#,
         )
         .bind(quant_id)
-        .bind(company_id)
         .bind(dims.item_id)
         .bind(dims.location_id)
         .bind(dims.lot_id)
@@ -299,8 +292,8 @@ impl QuantRepository {
 }
 
 /// On-hand aggregation at one location — the `available = quantity - reserved` READ (T2), summed
-/// over the location's quant grain. Pool-based (each read its own unit of work) and explicitly
-/// company-fenced by argument, riding the RLS fence like every read in the suite.
+/// over the location's quant grain. Pool-based (each read its own unit of work), riding the
+/// ambient org scope like every read in the suite.
 pub struct QuantOnHandRow {
     pub on_hand_qty: Decimal,
     pub reserved_qty: Decimal,
@@ -308,12 +301,11 @@ pub struct QuantOnHandRow {
 }
 
 impl QuantRepository {
-    /// SUM(quantity) / SUM(reserved_quantity) over one (company, item, location). Zeroed row when
+    /// SUM(quantity) / SUM(reserved_quantity) over one (item, location). Zeroed row when
     /// no quant exists (an unreceived item is unavailable, not an error).
     pub async fn fetch_on_hand(
         &self,
         pool: &PgPool,
-        company_id: Uuid,
         item_id: Uuid,
         location_id: Uuid,
     ) -> Result<QuantOnHandRow, sqlx::Error> {
@@ -325,10 +317,10 @@ impl QuantRepository {
                        COALESCE(SUM(reserved_quantity), 0) AS reserved_qty,
                        COUNT(*) AS quant_count
                    FROM inventory.stock_quants
-                   WHERE company_id=$1 AND item_id=$2 AND location_id=$3
+                   WHERE item_id=$1 AND location_id=$2
                      AND (metadata->>'deleted_at') IS NULL"#,
             )
-            .bind(company_id).bind(item_id).bind(location_id),
+            .bind(item_id).bind(location_id),
         )
         .await?;
         Ok(QuantOnHandRow {
@@ -344,14 +336,13 @@ impl QuantRepository {
     /// `available_quantity` column — the caller computes `on_hand − reserved` per call, so the
     /// number is fresh off the reservation triangle regardless of any stored-compute staleness.
     ///
-    /// Batch over `item_ids = ANY($2)`; items with no quant rows in the warehouse are simply
+    /// Batch over `item_ids = ANY($1)`; items with no quant rows in the warehouse are simply
     /// absent from the result (the caller projects them as zeroed, unavailable rows — an
-    /// unreceived item is unavailable, not an error). Pool-based, explicitly company-fenced by
-    /// argument, and run through `company_scope` so the read rides the RLS fence (ADR-0008).
+    /// unreceived item is unavailable, not an error). Pool-based and org-scoped: the read rides
+    /// the ambient org scope the composing service set per request (ADR-0029).
     pub async fn fetch_warehouse_on_hand(
         &self,
         pool: &PgPool,
-        company_id: Uuid,
         item_ids: &[Uuid],
         warehouse_id: Uuid,
     ) -> Result<Vec<QuantWarehouseRow>, sqlx::Error> {
@@ -364,15 +355,13 @@ impl QuantRepository {
                        COALESCE(SUM(q.reserved_quantity), 0) AS reserved_qty
                    FROM inventory.stock_quants q
                    JOIN inventory.locations l ON l.id = q.location_id
-                   WHERE q.company_id = $1
-                     AND q.item_id = ANY($2)
-                     AND l.warehouse_id = $3
+                   WHERE q.item_id = ANY($1)
+                     AND l.warehouse_id = $2
                      AND l.usage = 'internal'::location_usage
                      AND (q.metadata->>'deleted_at') IS NULL
                      AND (l.metadata->>'deleted_at') IS NULL
                    GROUP BY q.item_id"#,
             )
-            .bind(company_id)
             .bind(item_ids)
             .bind(warehouse_id),
         )

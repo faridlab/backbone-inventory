@@ -44,9 +44,9 @@ async fn pool() -> PgPool {
     PgPool::connect(&url).await.expect("connect DB")
 }
 
-async fn warehouse(w: &InventoryWriteService, company: Uuid) -> Uuid {
+async fn warehouse(w: &InventoryWriteService) -> Uuid {
     w.create_warehouse(NewWarehouse {
-        company_id: company, code: uq("WH"), name: uq("Main"),
+        code: uq("WH"), name: uq("Main"),
         warehouse_type: None, parent_warehouse_id: None, is_group: false,
     }).await.unwrap()
 }
@@ -81,62 +81,62 @@ impl GlPostSink for RecordingSink {
 
 /// The warehouse's internal stock location (the door bootstraps `Stock` on first use).
 /// `None` before the warehouse has ever been touched by a door.
-async fn stock_location(pool: &PgPool, company: Uuid, wh: Uuid) -> Option<Uuid> {
+async fn stock_location(pool: &PgPool, wh: Uuid) -> Option<Uuid> {
     sqlx::query_scalar::<_, Uuid>(
         r#"SELECT id FROM inventory.locations
-           WHERE company_id=$1 AND warehouse_id=$2 AND usage='internal' AND active
+           WHERE warehouse_id=$1 AND usage='internal' AND active
              AND (metadata->>'deleted_at') IS NULL
            ORDER BY (metadata->>'created_at') NULLS LAST, id LIMIT 1"#,
     )
-    .bind(company).bind(wh)
+    .bind(wh)
     .fetch_optional(pool).await.unwrap()
 }
 
 /// Quant on-hand at a location (0 when neither the location nor the quant exists yet —
 /// a location the door never bootstrapped holds nothing by definition).
-async fn on_hand_at(pool: &PgPool, company: Uuid, item: Uuid, loc: Option<Uuid>) -> Decimal {
+async fn on_hand_at(pool: &PgPool, item: Uuid, loc: Option<Uuid>) -> Decimal {
     match loc {
         None => Decimal::ZERO,
         Some(l) => sqlx::query_scalar::<_, Decimal>(
             r#"SELECT COALESCE(SUM(quantity), 0) FROM inventory.stock_quants
-               WHERE company_id=$1 AND item_id=$2 AND location_id=$3
+               WHERE item_id=$1 AND location_id=$2
                  AND (metadata->>'deleted_at') IS NULL"#,
         )
-        .bind(company).bind(item).bind(l)
+        .bind(item).bind(l)
         .fetch_one(pool).await.unwrap(),
     }
 }
 
 /// The warehouse Bin's balance — the second estate (the pre-convergence record of truth).
-async fn bin_balance(pool: &PgPool, company: Uuid, item: Uuid, wh: Uuid) -> (Decimal, Decimal) {
+async fn bin_balance(pool: &PgPool, item: Uuid, wh: Uuid) -> (Decimal, Decimal) {
     let row = sqlx::query(
-        "SELECT actual_qty, stock_value FROM inventory.bins WHERE company_id=$1 AND item_id=$2 AND warehouse_id=$3",
+        "SELECT actual_qty, stock_value FROM inventory.bins WHERE item_id=$1 AND warehouse_id=$2",
     )
-    .bind(company).bind(item).bind(wh)
+    .bind(item).bind(wh)
     .fetch_one(pool).await.unwrap();
     (row.get("actual_qty"), row.get("stock_value"))
 }
 
 /// The append-only ledger's sums at the warehouse grain: (Σ actual_qty, Σ value diff).
-async fn ledger_sums(pool: &PgPool, company: Uuid, item: Uuid, wh: Uuid) -> (Decimal, Decimal) {
+async fn ledger_sums(pool: &PgPool, item: Uuid, wh: Uuid) -> (Decimal, Decimal) {
     sqlx::query_as(
         r#"SELECT COALESCE(SUM(actual_qty),0), COALESCE(SUM(stock_value_difference),0)
            FROM inventory.stock_ledger_entries
-           WHERE company_id=$1 AND item_id=$2 AND warehouse_id=$3
+           WHERE item_id=$1 AND warehouse_id=$2
              AND (metadata->>'deleted_at') IS NULL"#,
     )
-    .bind(company).bind(item).bind(wh)
+    .bind(item).bind(wh)
     .fetch_one(pool).await.unwrap()
 }
 
 /// The engine-minted moves a voucher door stamped under one origin (voucher number),
 /// with their states — the door's physical legs must ALL live here.
-async fn moves_of_origin(pool: &PgPool, company: Uuid, origin: &str) -> Vec<(String, String)> {
+async fn moves_of_origin(pool: &PgPool, origin: &str) -> Vec<(String, String)> {
     sqlx::query(
         r#"SELECT name, state::text AS state FROM inventory.stock_moves
-           WHERE company_id=$1 AND origin=$2 AND (metadata->>'deleted_at') IS NULL ORDER BY name"#,
+           WHERE origin=$1 AND (metadata->>'deleted_at') IS NULL ORDER BY name"#,
     )
-    .bind(company).bind(origin)
+    .bind(origin)
     .fetch_all(pool).await.unwrap()
     .iter()
     .map(|r| (r.get("name"), r.get("state")))
@@ -145,24 +145,24 @@ async fn moves_of_origin(pool: &PgPool, company: Uuid, origin: &str) -> Vec<(Str
 
 /// Count SLE rows the door wrote under its own voucher type (the legacy direct-write
 /// signature — must be ZERO from now on; every leg rides the move that minted it).
-async fn legacy_voucher_sle_rows(pool: &PgPool, company: Uuid, item: Uuid) -> i64 {
+async fn legacy_voucher_sle_rows(pool: &PgPool, item: Uuid) -> i64 {
     sqlx::query_scalar::<_, i64>(
         r#"SELECT COUNT(*) FROM inventory.stock_ledger_entries
-           WHERE company_id=$1 AND item_id=$2
+           WHERE item_id=$1
              AND voucher_type IN ('purchase_receipt','delivery_note')
              AND (metadata->>'deleted_at') IS NULL"#,
     )
-    .bind(company).bind(item)
+    .bind(item)
     .fetch_one(pool).await.unwrap()
 }
 
 /// The full estate-agreement check — the detector's core. Asserts the two stock estates and
 /// the ledger all tell the SAME story at the warehouse grain.
-async fn assert_estates_agree(pool: &PgPool, company: Uuid, item: Uuid, wh: Uuid, what: &str) {
-    let loc = stock_location(pool, company, wh).await;
-    let on_hand = on_hand_at(pool, company, item, loc).await;
-    let (bin_qty, bin_value) = bin_balance(pool, company, item, wh).await;
-    let (led_qty, led_value) = ledger_sums(pool, company, item, wh).await;
+async fn assert_estates_agree(pool: &PgPool, item: Uuid, wh: Uuid, what: &str) {
+    let loc = stock_location(pool, wh).await;
+    let on_hand = on_hand_at(pool, item, loc).await;
+    let (bin_qty, bin_value) = bin_balance(pool, item, wh).await;
+    let (led_qty, led_value) = ledger_sums(pool, item, wh).await;
     assert_eq!(on_hand, bin_qty,
         "{what}: quant on-hand at the stock location ({on_hand}) must equal the Bin qty ({bin_qty}) — the two stock estates diverged");
     assert_eq!(led_qty, bin_qty,
@@ -174,11 +174,11 @@ async fn assert_estates_agree(pool: &PgPool, company: Uuid, item: Uuid, wh: Uuid
 // --- door fixtures --------------------------------------------------------------
 
 async fn create_and_submit_receipt(
-    w: &InventoryWriteService, company: Uuid, wh: Uuid, item: Uuid, qty: &str, rate: &str,
+    w: &InventoryWriteService, wh: Uuid, item: Uuid, qty: &str, rate: &str,
     sink: &dyn GlPostSink,
 ) -> Uuid {
     let id = w.create_purchase_receipt(NewReceipt {
-        receipt_number: uq("PR"), company_id: company, branch_id: None,
+        receipt_number: uq("PR"), branch_id: None,
         supplier_id: Uuid::new_v4(), source_po_id: None, warehouse_id: wh,
         posting_date: day(), currency: "IDR".into(),
         inventory_account_id: Uuid::new_v4(), grir_account_id: Uuid::new_v4(),
@@ -189,11 +189,11 @@ async fn create_and_submit_receipt(
 }
 
 async fn create_and_submit_delivery(
-    w: &InventoryWriteService, company: Uuid, wh: Uuid, item: Uuid, qty: &str,
+    w: &InventoryWriteService, wh: Uuid, item: Uuid, qty: &str,
     sink: &dyn GlPostSink,
 ) -> Uuid {
     let id = w.create_delivery_note(NewDelivery {
-        delivery_number: uq("DN"), company_id: company, branch_id: None,
+        delivery_number: uq("DN"), branch_id: None,
         customer_id: Uuid::new_v4(), source_so_id: None, warehouse_id: wh,
         posting_date: day(), currency: "IDR".into(),
         cogs_account_id: Uuid::new_v4(), inventory_account_id: Uuid::new_v4(),
@@ -212,17 +212,17 @@ async fn create_and_submit_delivery(
 async fn submit_receipt_moves_quants_and_ledger_together() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
-    let wh = warehouse(&w, company).await;
+    let item = Uuid::new_v4();
+    let wh = warehouse(&w).await;
 
     let (sink, posts) = RecordingSink::new();
-    let before = on_hand_at(&pool, company, item, stock_location(&pool, company, wh).await).await;
+    let before = on_hand_at(&pool, item, stock_location(&pool, wh).await).await;
     assert_eq!(before, Decimal::ZERO, "a fresh warehouse holds nothing");
 
     let receipt_number = {
         // create + submit through the door (10 units @ 100 → value 1000)
         let id = w.create_purchase_receipt(NewReceipt {
-            receipt_number: uq("PR"), company_id: company, branch_id: None,
+            receipt_number: uq("PR"), branch_id: None,
             supplier_id: Uuid::new_v4(), source_po_id: None, warehouse_id: wh,
             posting_date: day(), currency: "IDR".into(),
             inventory_account_id: Uuid::new_v4(), grir_account_id: Uuid::new_v4(),
@@ -235,13 +235,13 @@ async fn submit_receipt_moves_quants_and_ledger_together() {
     };
 
     // (1) on-hand flipped by the door qty
-    let loc = stock_location(&pool, company, wh).await.expect("door bootstrapped the stock location");
-    let after = on_hand_at(&pool, company, item, Some(loc)).await;
+    let loc = stock_location(&pool, wh).await.expect("door bootstrapped the stock location");
+    let after = on_hand_at(&pool, item, Some(loc)).await;
     assert_eq!(after, before + d("10"), "quant on-hand at the stock location must move by the door qty");
 
     // (2) both estates + the ledger agree
-    assert_estates_agree(&pool, company, item, wh, "after submit_receipt").await;
-    let (_, bin_value) = bin_balance(&pool, company, item, wh).await;
+    assert_estates_agree(&pool, item, wh, "after submit_receipt").await;
+    let (_, bin_value) = bin_balance(&pool, item, wh).await;
     assert_eq!(bin_value, d("1000.00"));
 
     // (3) the GL leg matches what the moves carried (10 @ 100)
@@ -251,9 +251,9 @@ async fn submit_receipt_moves_quants_and_ledger_together() {
 
     // (4) the door's legs are engine-minted: one DONE move under the voucher origin,
     //     and ZERO ledger rows under the legacy voucher type.
-    let moves = moves_of_origin(&pool, company, &receipt_number).await;
+    let moves = moves_of_origin(&pool, &receipt_number).await;
     assert_eq!(moves, vec![({format!("{receipt_number}/1")}.to_string(), "done".to_string())]);
-    assert_eq!(legacy_voucher_sle_rows(&pool, company, item).await, 0,
+    assert_eq!(legacy_voucher_sle_rows(&pool, item).await, 0,
         "the receipt door must not write SLE rows under its own voucher type any more");
 }
 
@@ -264,16 +264,16 @@ async fn submit_receipt_moves_quants_and_ledger_together() {
 async fn submit_delivery_moves_quants_and_ledger_together() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
-    let wh = warehouse(&w, company).await;
+    let item = Uuid::new_v4();
+    let wh = warehouse(&w).await;
 
     let (rsink, _) = RecordingSink::new();
-    create_and_submit_receipt(&w, company, wh, item, "10", "100", &rsink).await;
+    create_and_submit_receipt(&w, wh, item, "10", "100", &rsink).await;
 
     let (sink, posts) = RecordingSink::new();
     let delivery_number = {
         let id = w.create_delivery_note(NewDelivery {
-            delivery_number: uq("DN"), company_id: company, branch_id: None,
+            delivery_number: uq("DN"), branch_id: None,
             customer_id: Uuid::new_v4(), source_so_id: None, warehouse_id: wh,
             posting_date: day(), currency: "IDR".into(),
             cogs_account_id: Uuid::new_v4(), inventory_account_id: Uuid::new_v4(),
@@ -286,23 +286,23 @@ async fn submit_delivery_moves_quants_and_ledger_together() {
     };
 
     // (1) on-hand flipped DOWN by the door qty
-    let loc = stock_location(&pool, company, wh).await.expect("stock location");
-    assert_eq!(on_hand_at(&pool, company, item, Some(loc)).await, d("6"),
+    let loc = stock_location(&pool, wh).await.expect("stock location");
+    assert_eq!(on_hand_at(&pool, item, Some(loc)).await, d("6"),
         "quant on-hand must drop by exactly the delivered qty");
 
     // (2) both estates + the ledger agree
-    assert_estates_agree(&pool, company, item, wh, "after submit_delivery").await;
+    assert_estates_agree(&pool, item, wh, "after submit_delivery").await;
 
     // (3) the COGS leg matches the value the move carried off (4 @ avg 100)
     let posts = posts.lock().unwrap().clone();
     assert_eq!(posts, vec![CapturedPost { posting_type: "original".into(), total: d("400.00") }]);
-    let (_, bin_value) = bin_balance(&pool, company, item, wh).await;
+    let (_, bin_value) = bin_balance(&pool, item, wh).await;
     assert_eq!(bin_value, d("600.00"), "1000 received − 400 COGS");
 
     // (4) engine-minted legs; legacy signature gone
-    let moves = moves_of_origin(&pool, company, &delivery_number).await;
+    let moves = moves_of_origin(&pool, &delivery_number).await;
     assert_eq!(moves, vec![({format!("{delivery_number}/1")}.to_string(), "done".to_string())]);
-    assert_eq!(legacy_voucher_sle_rows(&pool, company, item).await, 0);
+    assert_eq!(legacy_voucher_sle_rows(&pool, item).await, 0);
 }
 
 /// CANCEL GOODS-IN: cancelling a submitted receipt must mint REVERSE moves through the
@@ -312,27 +312,27 @@ async fn submit_delivery_moves_quants_and_ledger_together() {
 async fn cancel_receipt_reverses_through_the_engine_and_estates_agree() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
-    let wh = warehouse(&w, company).await;
+    let item = Uuid::new_v4();
+    let wh = warehouse(&w).await;
 
     let (rsink, _) = RecordingSink::new();
-    let rid = create_and_submit_receipt(&w, company, wh, item, "10", "100", &rsink).await;
+    let rid = create_and_submit_receipt(&w, wh, item, "10", "100", &rsink).await;
     let receipt_number = sqlx::query_scalar::<_, String>(
         "SELECT receipt_number FROM inventory.purchase_receipts WHERE id=$1",
     ).bind(rid).fetch_one(&pool).await.unwrap();
-    let loc = stock_location(&pool, company, wh).await.expect("stock location");
-    assert_eq!(on_hand_at(&pool, company, item, Some(loc)).await, d("10"));
+    let loc = stock_location(&pool, wh).await.expect("stock location");
+    assert_eq!(on_hand_at(&pool, item, Some(loc)).await, d("10"));
 
     let (sink, posts) = RecordingSink::new();
     w.cancel_purchase_receipt(rid, &sink).await.unwrap();
 
     // (1) on-hand returned by exactly the door qty
-    assert_eq!(on_hand_at(&pool, company, item, Some(loc)).await, Decimal::ZERO,
+    assert_eq!(on_hand_at(&pool, item, Some(loc)).await, Decimal::ZERO,
         "cancel must draw the received qty back out of the stock location");
 
     // (2) both estates + the ledger agree — the compensating entries balance to zero
-    assert_estates_agree(&pool, company, item, wh, "after cancel_receipt").await;
-    let (bin_qty, bin_value) = bin_balance(&pool, company, item, wh).await;
+    assert_estates_agree(&pool, item, wh, "after cancel_receipt").await;
+    let (bin_qty, bin_value) = bin_balance(&pool, item, wh).await;
     assert_eq!((bin_qty, bin_value), (Decimal::ZERO, Decimal::ZERO),
         "the Bin returns to its pre-receipt state");
 
@@ -341,13 +341,13 @@ async fn cancel_receipt_reverses_through_the_engine_and_estates_agree() {
     assert_eq!(posts, vec![CapturedPost { posting_type: "reversal".into(), total: d("1000.00") }]);
 
     // (4) the reverse leg is a DONE engine move under the SAME origin, named REV
-    let mut moves = moves_of_origin(&pool, company, &receipt_number).await;
+    let mut moves = moves_of_origin(&pool, &receipt_number).await;
     moves.sort();
     assert_eq!(moves, vec![
         ({format!("{receipt_number}/1")}.to_string(), "done".to_string()),
         ({format!("{receipt_number}/REV/1")}.to_string(), "done".to_string()),
     ], "forward + reverse legs, both engine-minted and done");
-    assert_eq!(legacy_voucher_sle_rows(&pool, company, item).await, 0);
+    assert_eq!(legacy_voucher_sle_rows(&pool, item).await, 0);
 }
 
 /// CANCEL GOODS-OUT: cancelling a submitted delivery must mint REVERSE moves through the
@@ -358,29 +358,29 @@ async fn cancel_receipt_reverses_through_the_engine_and_estates_agree() {
 async fn cancel_delivery_reverses_through_the_engine_and_estates_agree() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
-    let wh = warehouse(&w, company).await;
+    let item = Uuid::new_v4();
+    let wh = warehouse(&w).await;
 
     let (rsink, _) = RecordingSink::new();
-    create_and_submit_receipt(&w, company, wh, item, "10", "100", &rsink).await;
+    create_and_submit_receipt(&w, wh, item, "10", "100", &rsink).await;
     let (dsink, _) = RecordingSink::new();
-    let did = create_and_submit_delivery(&w, company, wh, item, "4", &dsink).await;
+    let did = create_and_submit_delivery(&w, wh, item, "4", &dsink).await;
     let delivery_number = sqlx::query_scalar::<_, String>(
         "SELECT delivery_number FROM inventory.delivery_notes WHERE id=$1",
     ).bind(did).fetch_one(&pool).await.unwrap();
-    let loc = stock_location(&pool, company, wh).await.expect("stock location");
-    assert_eq!(on_hand_at(&pool, company, item, Some(loc)).await, d("6"));
+    let loc = stock_location(&pool, wh).await.expect("stock location");
+    assert_eq!(on_hand_at(&pool, item, Some(loc)).await, d("6"));
 
     let (sink, posts) = RecordingSink::new();
     w.cancel_delivery_note(did, &sink).await.unwrap();
 
     // (1) on-hand returned by exactly the delivered qty
-    assert_eq!(on_hand_at(&pool, company, item, Some(loc)).await, d("10"),
+    assert_eq!(on_hand_at(&pool, item, Some(loc)).await, d("10"),
         "cancel must put the delivered qty back into the stock location");
 
     // (2) both estates + the ledger agree — and the Bin is restored to its pre-delivery value
-    assert_estates_agree(&pool, company, item, wh, "after cancel_delivery").await;
-    let (bin_qty, bin_value) = bin_balance(&pool, company, item, wh).await;
+    assert_estates_agree(&pool, item, wh, "after cancel_delivery").await;
+    let (bin_qty, bin_value) = bin_balance(&pool, item, wh).await;
     assert_eq!((bin_qty, bin_value), (d("10"), d("1000.00")),
         "qty AND value return to the pre-delivery state (the exact COGS comes home)");
 
@@ -389,13 +389,13 @@ async fn cancel_delivery_reverses_through_the_engine_and_estates_agree() {
     assert_eq!(posts, vec![CapturedPost { posting_type: "reversal".into(), total: d("400.00") }]);
 
     // (4) the reverse leg is a DONE engine move under the SAME origin, named REV
-    let mut moves = moves_of_origin(&pool, company, &delivery_number).await;
+    let mut moves = moves_of_origin(&pool, &delivery_number).await;
     moves.sort();
     assert_eq!(moves, vec![
         ({format!("{delivery_number}/1")}.to_string(), "done".to_string()),
         ({format!("{delivery_number}/REV/1")}.to_string(), "done".to_string()),
     ]);
-    assert_eq!(legacy_voucher_sle_rows(&pool, company, item).await, 0);
+    assert_eq!(legacy_voucher_sle_rows(&pool, item).await, 0);
 }
 
 /// A receipt whose goods were already issued cannot be cancelled — the refusal must leave
@@ -404,15 +404,15 @@ async fn cancel_delivery_reverses_through_the_engine_and_estates_agree() {
 async fn refused_receipt_cancel_leaves_both_estates_untouched() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
-    let wh = warehouse(&w, company).await;
+    let item = Uuid::new_v4();
+    let wh = warehouse(&w).await;
 
     // Receive 10 @ 100, deliver 8 — only 2 remain, so cancelling the receipt (which needs
     // all 10 back) must refuse.
     let (rsink, _) = RecordingSink::new();
-    let rid = create_and_submit_receipt(&w, company, wh, item, "10", "100", &rsink).await;
+    let rid = create_and_submit_receipt(&w, wh, item, "10", "100", &rsink).await;
     let (dsink, _) = RecordingSink::new();
-    create_and_submit_delivery(&w, company, wh, item, "8", &dsink).await;
+    create_and_submit_delivery(&w, wh, item, "8", &dsink).await;
 
     let (sink, posts) = RecordingSink::new();
     let err = w.cancel_purchase_receipt(rid, &sink).await.unwrap_err();
@@ -420,8 +420,8 @@ async fn refused_receipt_cancel_leaves_both_estates_untouched() {
         "got {err:?}");
 
     // The refusal changed nothing: on-hand still 2, estates still agree, no reversal posted.
-    let loc = stock_location(&pool, company, wh).await.expect("stock location");
-    assert_eq!(on_hand_at(&pool, company, item, Some(loc)).await, d("2"));
-    assert_estates_agree(&pool, company, item, wh, "after a refused cancel").await;
+    let loc = stock_location(&pool, wh).await.expect("stock location");
+    assert_eq!(on_hand_at(&pool, item, Some(loc)).await, d("2"));
+    assert_estates_agree(&pool, item, wh, "after a refused cancel").await;
     assert!(posts.lock().unwrap().is_empty(), "a refused cancel posts no GL");
 }

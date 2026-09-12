@@ -51,9 +51,6 @@ pub struct CreateReorderingRuleDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "warehouse_id")]
     pub warehouse_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[serde(alias = "item_min_qty")]
     pub item_min_qty: Decimal,
     #[serde(alias = "item_max_qty")]
@@ -104,9 +101,6 @@ pub struct UpdateReorderingRuleDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "warehouse_id")]
     pub warehouse_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[serde(alias = "item_min_qty")]
     pub item_min_qty: Decimal,
     #[serde(alias = "item_max_qty")]
@@ -160,9 +154,6 @@ pub struct PatchReorderingRuleDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
     pub warehouse_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "item_min_qty")]
     pub item_min_qty: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "item_max_qty")]
@@ -186,7 +177,7 @@ pub struct PatchReorderingRuleDto {
 impl PatchReorderingRuleDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.name.is_some() || self.trigger.is_some() || self.active.is_some() || self.snoozed_until.is_some() || self.item_id.is_some() || self.location_id.is_some() || self.warehouse_id.is_some() || self.company_id.is_some() || self.item_min_qty.is_some() || self.item_max_qty.is_some() || self.route_id.is_some() || self.qty_on_hand.is_some() || self.qty_forecast.is_some() || self.qty_to_order.is_some() || self.qty_to_order_manual.is_some() || self.lead_days.is_some() || self.deadline_date.is_some()
+        self.name.is_some() || self.trigger.is_some() || self.active.is_some() || self.snoozed_until.is_some() || self.item_id.is_some() || self.location_id.is_some() || self.warehouse_id.is_some() || self.item_min_qty.is_some() || self.item_max_qty.is_some() || self.route_id.is_some() || self.qty_on_hand.is_some() || self.qty_forecast.is_some() || self.qty_to_order.is_some() || self.qty_to_order_manual.is_some() || self.lead_days.is_some() || self.deadline_date.is_some()
     }
 }
 
@@ -216,8 +207,6 @@ pub struct ReorderingRuleResponseDto {
     pub location_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub warehouse_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     pub item_min_qty: Decimal,
     pub item_max_qty: Decimal,
     pub route_id: Option<Uuid>,
@@ -305,7 +294,6 @@ impl From<ReorderingRule> for ReorderingRuleResponseDto {
             item_id: entity.item_id,
             location_id: entity.location_id,
             warehouse_id: entity.warehouse_id,
-            company_id: entity.company_id,
             item_min_qty: entity.item_min_qty,
             item_max_qty: entity.item_max_qty,
             route_id: entity.route_id,
@@ -344,7 +332,6 @@ impl From<CreateReorderingRuleDto> for ReorderingRule {
             item_id: dto.item_id,
             location_id: dto.location_id,
             warehouse_id: dto.warehouse_id,
-            company_id: dto.company_id,
             item_min_qty: dto.item_min_qty,
             item_max_qty: dto.item_max_qty,
             route_id: dto.route_id,
@@ -370,7 +357,6 @@ impl From<&ReorderingRule> for ReorderingRuleResponseDto {
             item_id: entity.item_id.clone(),
             location_id: entity.location_id.clone(),
             warehouse_id: entity.warehouse_id.clone(),
-            company_id: entity.company_id.clone(),
             item_min_qty: entity.item_min_qty.clone(),
             item_max_qty: entity.item_max_qty.clone(),
             route_id: entity.route_id.clone(),
@@ -400,7 +386,6 @@ impl backbone_core::ApplyUpdateDto<UpdateReorderingRuleDto> for ReorderingRule {
         self.item_id = dto.item_id;
         self.location_id = dto.location_id;
         self.warehouse_id = dto.warehouse_id;
-        self.company_id = dto.company_id;
         self.item_min_qty = dto.item_min_qty;
         self.item_max_qty = dto.item_max_qty;
         self.route_id = dto.route_id;

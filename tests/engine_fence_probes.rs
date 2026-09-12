@@ -1,35 +1,28 @@
-//! Armed-fence lifecycle probes for the stock-move engine and its read paths.
+//! Stock-move engine probes on the module-native schema, plus the tenancy posture probe.
 //!
-//! These probes MUST run against a fenced database: a non-superuser role connecting to a
-//! database where the inventory tables carry their row-level-security fence (ENABLE + FORCE,
-//! policy `company_id = current_setting('app.company_id') ...`) — exactly the posture the
-//! module's own migrations create and the composing service runs under. The behavior suites
-//! run as the migration owner (superuser), which BYPASSES row-level security, so they are
-//! structurally blind to the unbound-read defect class these probes exist to hold shut: any
-//! read issued on a pooled connection or before the transaction's `app.company_id` bind sees
-//! zero rows and the verb 404s (or a silent fallback fires) for a perfectly legitimate move.
+//! The behavioral probes run against the scratch database (export `DATABASE_URL`; default
+//! :5433/backbone_inventory) as the migration owner — the owner pool bypasses row-level
+//! security, so what they exercise is the engine itself: the full lifecycle
+//! `create_move → action_confirm → action_assign → action_done`, one `action_cancel` path, one
+//! `recompute_orderpoint` pass, the receipt door's location valuation-override resolution, the
+//! `unreserve_move` release arm, a `repost_move_gl` re-drive against the real backbone-accounting
+//! ledger, and the procurement provisioning CRUD (`create_route` / `create_rule` /
+//! `create_orderpoint`).
 //!
-//! Probes drive the REAL services (the same `InventoryWriteService` / `ProcurementService`
-//! constructors a composing service builds) connected AS the restricted role, and exercise:
-//! the full lifecycle `create_move → action_confirm → action_assign → action_done`, one
-//! `action_cancel` path, one `recompute_orderpoint` pass, the receipt door's location
-//! valuation-override resolution, the `unreserve_move` release arm, a `repost_move_gl`
-//! re-drive against the real accounting ledger, and the procurement provisioning CRUD
-//! (`create_route` / `create_rule` / `create_orderpoint`) — every one of these 404'd,
-//! no-op'd, fell back to the header account, or failed the RLS WITH CHECK under an armed
-//! fence before the bind-before-fetch / bind-before-write fixes they pin.
+//! The tenancy posture probe pins the module-side half of the fence (ADR-0029): the module
+//! ships NO tenant column and NO row-level-security policy of its own. What it ships instead
+//! is the half-fence the composing service's tenancy decorator completes: every inventory base
+//! table carries ENABLE + FORCE ROW LEVEL SECURITY with zero policies. A plain non-superuser,
+//! NOBYPASSRLS role is therefore default-DENIED — zero rows, writes refused — no matter what
+//! legacy variable is set, while the owner pool still sees the rows it seeded (the denial is
+//! the absent policy set, not an empty database).
 //!
-//! Gated on `INVENTORY_FENCE_DSN`: a DSN for the restricted, non-superuser, non-owner role
-//! (e.g. `postgresql://inv_fence_app:<pw>@127.0.0.1:5433/<db>`). The database must already
-//! carry the module's migrations (they arm the fence), the reference-data seed, and — for
-//! the GL re-drive probe, which posts through the REAL backbone-accounting PostingService —
-//! the accounting schema's up-migrations. The role needs USAGE on the inventory schema plus
-//! SELECT/INSERT/UPDATE/DELETE on its tables and USAGE on its sequences, and the same grants
-//! on the accounting schema for the GL leg. Skips with a printed reason when the DSN is
-//! absent, so an unfenced dev database does not fail the run.
+//! The GL re-drive probe needs the accounting schema's up-migrations on the same database (it
+//! posts through the REAL backbone-accounting PostingService — the same ACL the composing
+//! service ships).
 
 use rust_decimal::Decimal;
-use sqlx::PgPool;
+use sqlx::{Connection, PgPool, Row};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -59,21 +52,10 @@ fn uq(p: &str) -> String {
     format!("{p}-{}", &Uuid::new_v4().simple().to_string()[..8])
 }
 
-fn fence_dsn() -> Option<String> {
-    std::env::var("INVENTORY_FENCE_DSN").ok()
-}
-
-macro_rules! fence_or_skip {
-    ($dsn:ident) => {
-        let Some($dsn) = fence_dsn() else {
-            eprintln!(
-                "skipping: armed-fence probes need a fenced database — set INVENTORY_FENCE_DSN \
-                 to a restricted-role DSN on a database with the inventory fence armed \
-                 (see this file's header for the required grants)"
-            );
-            return;
-        };
-    };
+async fn pool() -> PgPool {
+    let url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgresql://postgres:postgres@localhost:5433/backbone_inventory".to_string());
+    PgPool::connect(&url).await.expect("connect DB")
 }
 
 /// A GL sink that acknowledges every post and records the envelopes it saw.
@@ -103,7 +85,9 @@ impl GlPostSink for AckSink {
 /// Map inventory's envelope into the REAL backbone-accounting PostingService — the same ACL
 /// the composing service ships. A repost through this sink lands a real journal, so the
 /// re-drive's idempotency (source-identity dedupe, no duplicate journal lines) is proven
-/// against the actual ledger, not an acknowledging stub.
+/// against the actual ledger, not an acknowledging stub. The envelope's `company_id` is the
+/// documented legacy twin (ADR-0029) — accounting's request shape still carries it, and no
+/// statement keys on it.
 struct RealLedgerSink {
     svc: PostingService,
 }
@@ -147,30 +131,12 @@ impl GlPostSink for RealLedgerSink {
     }
 }
 
-/// A connection from the RESTRICTED pool with `app.company_id` set at session level: every
-/// raw seeding/assertion statement below runs as the fenced role inside the company's scope,
-/// mirroring what the application role sees. The setting rides this one connection only.
-async fn scoped_conn(
-    pool: &PgPool,
-    company: Uuid,
-) -> sqlx::pool::PoolConnection<sqlx::Postgres> {
-    let mut conn = pool.acquire().await.expect("acquire restricted connection");
-    sqlx::query("SELECT set_config('app.company_id', $1, false)")
-        .bind(company.to_string())
-        .execute(&mut *conn)
-        .await
-        .expect("bind app.company_id on probe connection");
-    conn
-}
-
-/// Insert a location row as the fenced role (the company scope must be set — see
-/// [`scoped_conn`]). `override_acct` optionally stamps the location's valuation-account
+/// Insert a location row. `override_acct` optionally stamps the location's valuation-account
 /// override, the column the door's account-resolution chain reads. The `parent_path` chains
 /// from the row's own id — the subtree queries walk `parent_path LIKE parent || '%'`, so a
 /// flat "" path would make every location a root of every other and double-count moves.
 async fn loc(
-    conn: &mut sqlx::PgConnection,
-    company: Uuid,
+    pool: &PgPool,
     usage: &str,
     wh: Option<Uuid>,
     override_acct: Option<Uuid>,
@@ -179,21 +145,20 @@ async fn loc(
     let name = uq("LOC");
     sqlx::query(
         r#"INSERT INTO inventory.locations
-             (id, name, complete_name, usage, parent_path, company_id, warehouse_id,
+             (id, name, complete_name, usage, parent_path, warehouse_id,
               valuation_account_id)
-           VALUES ($1,$2,$3,$4::location_usage,$5,$6,$7,$8)"#,
+           VALUES ($1,$2,$3,$4::location_usage,$5,$6,$7)"#,
     )
     .bind(id)
     .bind(&name)
     .bind(&name)
     .bind(usage)
     .bind(format!("{id}/"))
-    .bind(company)
     .bind(wh)
     .bind(override_acct)
-    .execute(conn)
+    .execute(pool)
     .await
-    .expect("insert location as fenced role");
+    .expect("insert location");
     id
 }
 
@@ -202,8 +167,7 @@ async fn loc(
 /// and bins (valuation, warehouse grain) — a move draws from both, so a probe that seeds
 /// only the quant estate fails the bin's availability guard.
 async fn seed_bin(
-    conn: &mut sqlx::PgConnection,
-    company: Uuid,
+    pool: &PgPool,
     item: Uuid,
     wh: Uuid,
     qty: &str,
@@ -211,48 +175,44 @@ async fn seed_bin(
 ) {
     sqlx::query(
         r#"INSERT INTO inventory.bins
-             (id, company_id, item_id, warehouse_id, actual_qty, reserved_qty, valuation_rate, stock_value)
-           VALUES ($1,$2,$3,$4,$5,0,$6,$7)"#,
+             (id, item_id, warehouse_id, actual_qty, reserved_qty, valuation_rate, stock_value)
+           VALUES ($1,$2,$3,$4,0,$5,$6)"#,
     )
     .bind(Uuid::new_v4())
-    .bind(company)
     .bind(item)
     .bind(wh)
     .bind(d(qty))
     .bind(d(rate))
     .bind(d(qty) * d(rate))
-    .execute(conn)
+    .execute(pool)
     .await
-    .expect("seed bin as fenced role");
+    .expect("seed bin");
 }
 
 /// Seed on-hand stock at a location (one untracked-dims quant row).
 async fn seed_quant(
-    conn: &mut sqlx::PgConnection,
-    company: Uuid,
+    pool: &PgPool,
     item: Uuid,
     location: Uuid,
     qty: &str,
 ) {
     sqlx::query(
         r#"INSERT INTO inventory.stock_quants
-             (id, item_id, location_id, quantity, reserved_quantity, available_quantity, company_id)
-           VALUES ($1,$2,$3,$4,0,$4,$5)"#,
+             (id, item_id, location_id, quantity, reserved_quantity, available_quantity)
+           VALUES ($1,$2,$3,$4,0,$4)"#,
     )
     .bind(Uuid::new_v4())
     .bind(item)
     .bind(location)
     .bind(d(qty))
-    .bind(company)
-    .execute(conn)
+    .execute(pool)
     .await
-    .expect("seed quant as fenced role");
+    .expect("seed quant");
 }
 
-fn new_move(company: Uuid, item: Uuid, src: Uuid, dst: Uuid, qty: &str) -> NewStockMove {
+fn new_move(item: Uuid, src: Uuid, dst: Uuid, qty: &str) -> NewStockMove {
     NewStockMove {
         name: uq("MV"),
-        company_id: company,
         item_id: item,
         demand_qty: d(qty),
         price_unit: Decimal::ZERO,
@@ -272,25 +232,20 @@ fn new_move(company: Uuid, item: Uuid, src: Uuid, dst: Uuid, qty: &str) -> NewSt
     }
 }
 
-// ── probe 1: the full lifecycle through the fixed verbs ─────────────────────────
+// ── probe 1: the full lifecycle through the state verbs ─────────────────────────
 
-/// `create_move → action_confirm → action_assign → action_done` as the restricted role under
-/// the armed fence. Before the state verbs bound the company scope before their move fetch,
-/// every one of the four verbs after the mint 404'd here (`NotFound`) — the unbound read saw
-/// zero rows. The probe also asserts the physical estate the done verb wrote (quant flipped
-/// at both endpoints, SLE row minted), so a silent no-op cannot pass for a lifecycle.
+/// `create_move → action_confirm → action_assign → action_done` through the real verbs. The
+/// probe drives the mint-to-done lifecycle and asserts the physical estate the done verb
+/// wrote (quant flipped at both endpoints, SLE row minted), so a silent no-op cannot pass
+/// for a lifecycle.
 #[tokio::test]
-async fn fenced_lifecycle_confirm_assign_done_writes_real_rows() {
-    fence_or_skip!(dsn);
-    let pool = PgPool::connect(&dsn).await.expect("connect as restricted role");
+async fn lifecycle_confirm_assign_done_writes_real_rows() {
+    let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
     let item = Uuid::new_v4();
-    let mut conn = scoped_conn(&pool, company).await;
 
     let wh = w
         .create_warehouse(NewWarehouse {
-            company_id: company,
             code: uq("WH"),
             name: uq("Main"),
             warehouse_type: None,
@@ -298,83 +253,75 @@ async fn fenced_lifecycle_confirm_assign_done_writes_real_rows() {
             is_group: false,
         })
         .await
-        .expect("create_warehouse under fence");
-    let stock = loc(&mut conn, company, "internal", Some(wh), None).await;
-    let customer = loc(&mut conn, company, "customer", None, None).await;
-    seed_quant(&mut conn, company, item, stock, "10").await;
-    seed_bin(&mut conn, company, item, wh, "10", "50").await;
+        .expect("create_warehouse");
+    let stock = loc(&pool, "internal", Some(wh), None).await;
+    let customer = loc(&pool, "customer", None, None).await;
+    seed_quant(&pool, item, stock, "10").await;
+    seed_bin(&pool, item, wh, "10", "50").await;
 
     let mv = w
-        .create_move(new_move(company, item, stock, customer, "6"))
+        .create_move(new_move(item, stock, customer, "6"))
         .await
-        .expect("create_move under fence");
+        .expect("create_move");
 
-    let confirmed = w.action_confirm(company, mv).await.expect("confirm under fence");
+    let confirmed = w.action_confirm(mv).await.expect("confirm");
     assert_eq!(confirmed, "confirmed");
 
-    let assigned = w.action_assign(company, mv).await.expect("assign under fence");
-    assert_eq!(assigned.state, "assigned", "10 on hand covers demand 6 under the fence");
+    let assigned = w.action_assign(mv).await.expect("assign");
+    assert_eq!(assigned.state, "assigned", "10 on hand covers demand 6");
 
     let done = w
-        .action_done(company, mv, BackorderPolicy::Never, &MoveGlDirective::default(), &AckSink)
+        .action_done(mv, BackorderPolicy::Never, &MoveGlDirective::default(), &AckSink)
         .await
-        .expect("done under fence");
+        .expect("done");
     assert_eq!(done.done_qty, d("6"));
 
-    // Real rows, read back through the fence as the restricted role.
+    // Real rows, read back as the owner.
     let state: String = sqlx::query_scalar("SELECT state::text FROM inventory.stock_moves WHERE id=$1")
         .bind(mv)
-        .fetch_one(&mut *conn)
+        .fetch_one(&pool)
         .await
-        .expect("move row visible in scope");
+        .expect("move row visible");
     assert_eq!(state, "done");
     let src_qty: Decimal = sqlx::query_scalar(
-        "SELECT quantity FROM inventory.stock_quants WHERE company_id=$1 AND item_id=$2 AND location_id=$3",
+        "SELECT quantity FROM inventory.stock_quants WHERE item_id=$1 AND location_id=$2",
     )
-    .bind(company)
     .bind(item)
     .bind(stock)
-    .fetch_one(&mut *conn)
+    .fetch_one(&pool)
     .await
-    .expect("src quant visible in scope");
+    .expect("src quant visible");
     assert_eq!(src_qty, d("4"), "6 drawn from the source quant");
     let dst_qty: Decimal = sqlx::query_scalar(
-        "SELECT quantity FROM inventory.stock_quants WHERE company_id=$1 AND item_id=$2 AND location_id=$3",
+        "SELECT quantity FROM inventory.stock_quants WHERE item_id=$1 AND location_id=$2",
     )
-    .bind(company)
     .bind(item)
     .bind(customer)
-    .fetch_one(&mut *conn)
+    .fetch_one(&pool)
     .await
-    .expect("dest quant visible in scope");
+    .expect("dest quant visible");
     assert_eq!(dst_qty, d("6"), "6 landed at the destination quant");
     let sle: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM inventory.stock_ledger_entries WHERE company_id=$1 AND voucher_id=$2",
+        "SELECT COUNT(*) FROM inventory.stock_ledger_entries WHERE voucher_id=$1",
     )
-    .bind(company)
     .bind(mv)
-    .fetch_one(&mut *conn)
+    .fetch_one(&pool)
     .await
-    .expect("SLE rows visible in scope");
+    .expect("SLE rows visible");
     assert!(sle >= 1, "the done verb minted its ledger rows (found {sle})");
 }
 
 // ── probe 2: the cancel path ─────────────────────────────────────────────────────
 
-/// `create → confirm → assign → cancel` as the restricted role: cancel's fetch must see the
-/// reserved move (it 404'd before the bind), release the reservation, and land `cancel`.
+/// `create → confirm → assign → cancel`: cancel releases the reservation and lands `cancel`.
 #[tokio::test]
-async fn fenced_cancel_releases_the_reservation() {
-    fence_or_skip!(dsn);
-    let pool = PgPool::connect(&dsn).await.expect("connect as restricted role");
+async fn cancel_releases_the_reservation() {
+    let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
     let item = Uuid::new_v4();
-    let mut conn = scoped_conn(&pool, company).await;
 
     let wh = w
         .create_warehouse(NewWarehouse {
-            company_id: company,
             code: uq("WH"),
             name: uq("Main"),
             warehouse_type: None,
@@ -383,31 +330,30 @@ async fn fenced_cancel_releases_the_reservation() {
         })
         .await
         .unwrap();
-    let stock = loc(&mut conn, company, "internal", Some(wh), None).await;
-    let customer = loc(&mut conn, company, "customer", None, None).await;
-    seed_quant(&mut conn, company, item, stock, "5").await;
+    let stock = loc(&pool, "internal", Some(wh), None).await;
+    let customer = loc(&pool, "customer", None, None).await;
+    seed_quant(&pool, item, stock, "5").await;
 
-    let mv = w.create_move(new_move(company, item, stock, customer, "5")).await.unwrap();
-    w.action_confirm(company, mv).await.unwrap();
-    let assigned = w.action_assign(company, mv).await.unwrap();
+    let mv = w.create_move(new_move(item, stock, customer, "5")).await.unwrap();
+    w.action_confirm(mv).await.unwrap();
+    let assigned = w.action_assign(mv).await.unwrap();
     assert_eq!(assigned.state, "assigned");
 
-    let released = w.action_cancel(company, mv).await.expect("cancel under fence");
+    let released = w.action_cancel(mv).await.expect("cancel");
     assert_eq!(released, d("5"), "the whole reservation came back");
 
     let state: String = sqlx::query_scalar("SELECT state::text FROM inventory.stock_moves WHERE id=$1")
         .bind(mv)
-        .fetch_one(&mut *conn)
+        .fetch_one(&pool)
         .await
         .unwrap();
     assert_eq!(state, "cancel");
     let reserved: Decimal = sqlx::query_scalar(
-        "SELECT reserved_quantity FROM inventory.stock_quants WHERE company_id=$1 AND item_id=$2 AND location_id=$3",
+        "SELECT reserved_quantity FROM inventory.stock_quants WHERE item_id=$1 AND location_id=$2",
     )
-    .bind(company)
     .bind(item)
     .bind(stock)
-    .fetch_one(&mut *conn)
+    .fetch_one(&pool)
     .await
     .unwrap();
     assert_eq!(reserved, d("0"), "the authoritative counter drained back to zero");
@@ -415,21 +361,17 @@ async fn fenced_cancel_releases_the_reservation() {
 
 // ── probe 3: the orderpoint compute read model ───────────────────────────────────
 
-/// `recompute_orderpoint` as the restricted role: the orderpoint fetch and the compute/stamp
-/// writes all ride one company-bound transaction. Before the fix the unbound fetch 404'd (or,
-/// unfenced, stamped computes across the fence boundary).
+/// `recompute_orderpoint`: the orderpoint fetch and the compute/stamp write ride one
+/// transaction, the forecast counts an incoming confirmed move, and the stamped computes
+/// are readable afterward.
 #[tokio::test]
-async fn fenced_recompute_orderpoint_stamps_the_computes() {
-    fence_or_skip!(dsn);
-    let pool = PgPool::connect(&dsn).await.expect("connect as restricted role");
+async fn recompute_orderpoint_stamps_the_computes() {
+    let pool = pool().await;
     let svc = ProcurementService::new(pool.clone());
-    let company = Uuid::new_v4();
     let item = Uuid::new_v4();
-    let mut conn = scoped_conn(&pool, company).await;
 
     let wh = InventoryWriteService::new(pool.clone())
         .create_warehouse(NewWarehouse {
-            company_id: company,
             code: uq("WH"),
             name: uq("Main"),
             warehouse_type: None,
@@ -438,13 +380,11 @@ async fn fenced_recompute_orderpoint_stamps_the_computes() {
         })
         .await
         .unwrap();
-    let stock = loc(&mut conn, company, "internal", Some(wh), None).await;
-    let supplier = loc(&mut conn, company, "supplier", None, None).await;
-    seed_quant(&mut conn, company, item, stock, "4").await;
+    let stock = loc(&pool, "internal", Some(wh), None).await;
+    let supplier = loc(&pool, "supplier", None, None).await;
+    seed_quant(&pool, item, stock, "4").await;
 
-    // Provisioned through the SERVICE CRUD (the real provisioning path) — the insert rides a
-    // transaction whose `app.company_id` is bound before the duplicate-check read and the
-    // write, so the fence's WITH CHECK admits it.
+    // Provisioned through the SERVICE CRUD (the real provisioning path).
     let op = svc
         .create_orderpoint(NewOrderpoint {
             name: uq("OP"),
@@ -452,74 +392,60 @@ async fn fenced_recompute_orderpoint_stamps_the_computes() {
             item_id: item,
             location_id: stock,
             warehouse_id: wh,
-            company_id: company,
             item_min_qty: d("8"),
             item_max_qty: d("12"),
             route_id: None,
         })
         .await
-        .expect("create orderpoint through the service under the fence");
+        .expect("create orderpoint through the service");
     // An incoming confirmed move the forecast must count (5 landing from the supplier).
     sqlx::query(
         r#"INSERT INTO inventory.stock_moves
              (id, name, state, item_id, demand_qty, quantity, price_unit, procure_method,
-              location_id, location_dest_id, company_id, move_orig_ids, move_dest_ids)
-           VALUES ($1,$2,'confirmed',$3,5,0,0,'make_to_stock',$4,$5,$6,'{}'::uuid[],'{}'::uuid[])"#,
+              location_id, location_dest_id, move_orig_ids, move_dest_ids)
+           VALUES ($1,$2,'confirmed',$3,5,0,0,'make_to_stock',$4,$5,'{}'::uuid[],'{}'::uuid[])"#,
     )
     .bind(Uuid::new_v4())
     .bind(uq("MV-IN"))
     .bind(item)
     .bind(supplier)
     .bind(stock)
-    .bind(company)
-    .execute(&mut *conn)
+    .execute(&pool)
     .await
-    .expect("insert incoming move as fenced role");
+    .expect("insert incoming move");
 
     let computes = svc
-        .recompute_orderpoint(company, op)
+        .recompute_orderpoint(op)
         .await
-        .expect("recompute under fence");
+        .expect("recompute");
     assert_eq!(computes.qty_on_hand, d("4"));
     assert_eq!(computes.qty_forecast, d("9"), "on hand 4 + incoming 5");
 
     let stamped: Decimal = sqlx::query_scalar(
-        "SELECT qty_forecast FROM inventory.reordering_rules WHERE id=$1 AND company_id=$2",
+        "SELECT qty_forecast FROM inventory.reordering_rules WHERE id=$1",
     )
     .bind(op)
-    .bind(company)
-    .fetch_one(&mut *conn)
+    .fetch_one(&pool)
     .await
-    .expect("stamped computes visible in scope");
-    assert_eq!(stamped, d("9"), "the compute wrote through the fence's WITH CHECK");
-
-    // A cross-company id must read as absent (fail-closed), not operable.
-    let other = Uuid::new_v4();
-    let err = svc.recompute_orderpoint(other, op).await;
-    assert!(err.is_err(), "an orderpoint of another company cannot be recomputed");
+    .expect("stamped computes visible");
+    assert_eq!(stamped, d("9"), "the compute stamped the rule");
 }
 
 // ── probe 4: the location valuation-override read on the receipt door ───────────
 
 /// The receipt door's inventory-leg account resolves the STOCK location's
-/// `valuation_account_id` override when set, else the receipt header's account. The override
-/// read runs on a pooled connection: under an armed fence an unscoped read cannot see a
-/// company-owned location at all and the chain silently falls back to the header account —
-/// the wrong ledger. The probe stamps the override on the company's stock location, submits
-/// a receipt as the restricted role, and asserts the posted envelope's inventory debit used
-/// the OVERRIDE account.
+/// `valuation_account_id` override when set, else the receipt header's account. The probe
+/// stamps the override on the warehouse's stock location, submits a receipt, and asserts the
+/// posted envelope's inventory debit used the OVERRIDE account — not a silent fallback to
+/// the header account.
 #[tokio::test]
-async fn fenced_receipt_picks_up_the_location_valuation_override() {
-    fence_or_skip!(dsn);
-    let pool = PgPool::connect(&dsn).await.expect("connect as restricted role");
+async fn receipt_picks_up_the_location_valuation_override() {
+    let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
     let item = Uuid::new_v4();
-    let mut conn = scoped_conn(&pool, company).await;
 
     let wh = w
         .create_warehouse(NewWarehouse {
-            company_id: company,
             code: uq("WH"),
             name: uq("Main"),
             warehouse_type: None,
@@ -532,12 +458,11 @@ async fn fenced_receipt_picks_up_the_location_valuation_override() {
     let grir_acct = Uuid::new_v4();
     let override_acct = Uuid::new_v4();
     // The warehouse's stock location carries the valuation-account override.
-    let stock = loc(&mut conn, company, "internal", Some(wh), Some(override_acct)).await;
+    let stock = loc(&pool, "internal", Some(wh), Some(override_acct)).await;
 
     let rid = w
         .create_purchase_receipt(NewReceipt {
             receipt_number: uq("PR"),
-            company_id: company,
             branch_id: None,
             supplier_id: Uuid::new_v4(),
             source_po_id: None,
@@ -554,15 +479,13 @@ async fn fenced_receipt_picks_up_the_location_valuation_override() {
             }],
         })
         .await
-        .expect("create receipt under fence");
+        .expect("create receipt");
 
     let sink = Arc::new(RecordingSink::default());
-    let outcome = backbone_orm::company_scope::with_company_scope(
-        Some(company),
-        w.submit_purchase_receipt(rid, sink.as_ref()),
-    )
-    .await
-    .expect("submit receipt under fence");
+    let outcome = w
+        .submit_purchase_receipt(rid, sink.as_ref())
+        .await
+        .expect("submit receipt");
     assert!(outcome.posted, "the receipt posted its envelope");
 
     let posts = sink.posts.lock().unwrap();
@@ -578,30 +501,27 @@ async fn fenced_receipt_picks_up_the_location_valuation_override() {
     assert_eq!(
         debit.account_id, override_acct,
         "the inventory debit resolved the location's valuation-account override, not the \
-         header account — an unscoped read cannot see a company-owned location under the \
-         fence and would silently book {header_acct}"
+         header account — a read that cannot see the location would silently book {header_acct}"
     );
     assert_ne!(debit.account_id, header_acct);
 
-    // The receipt's move also completed end-to-end through the fixed verbs under the fence.
+    // The receipt's move also completed end-to-end through the state verbs.
     let move_state: String = sqlx::query_scalar(
         r#"SELECT m.state::text FROM inventory.stock_moves m
-           WHERE m.company_id=$1 AND m.origin=$2 LIMIT 1"#,
+           WHERE m.origin=$1 LIMIT 1"#,
     )
-    .bind(company)
     .bind(env.source_reference.clone().expect("envelope carries the receipt number"))
-    .fetch_one(&mut *conn)
+    .fetch_one(&pool)
     .await
-    .expect("the receipt's line move is visible in scope");
+    .expect("the receipt's line move is visible");
     assert_eq!(move_state, "done");
     // The stock location the override was stamped on is the move's destination.
     let dst: Uuid = sqlx::query_scalar(
         r#"SELECT location_dest_id FROM inventory.stock_moves
-           WHERE company_id=$1 AND origin=$2 LIMIT 1"#,
+           WHERE origin=$1 LIMIT 1"#,
     )
-    .bind(company)
     .bind(env.source_reference.clone().unwrap())
-    .fetch_one(&mut *conn)
+    .fetch_one(&pool)
     .await
     .unwrap();
     assert_eq!(dst, stock, "the door resolved the warehouse's stock location");
@@ -609,26 +529,19 @@ async fn fenced_receipt_picks_up_the_location_valuation_override() {
 
 // ── probe 5: the unreserve release arm ──────────────────────────────────────────
 
-/// `create → confirm → assign → unreserve_move` as the restricted role. Before the release
-/// verb bound the company scope before its move fetch, the unbound read saw zero rows and a
-/// legitimate reserved move 404'd — so the voucher doors' partial-assign rollback (release
-/// whatever a partial reservation took) could never fire under the fence. The probe asserts
-/// the release completed AND the reservation actually returned to available: the mirror
-/// lines zero out, the authoritative `reserved_quantity` drains back to zero and
-/// `available_quantity` is whole again. The move's state is deliberately untouched — the
-/// release arm frees the hold; the state verbs own the transitions.
+/// `create → confirm → assign → unreserve_move`. The probe asserts the release completed AND
+/// the reservation actually returned to available: the mirror lines zero out, the
+/// authoritative `reserved_quantity` drains back to zero and `available_quantity` is whole
+/// again. The move's state is deliberately untouched — the release arm frees the hold; the
+/// state verbs own the transitions.
 #[tokio::test]
-async fn fenced_unreserve_returns_the_reservation_to_available() {
-    fence_or_skip!(dsn);
-    let pool = PgPool::connect(&dsn).await.expect("connect as restricted role");
+async fn unreserve_returns_the_reservation_to_available() {
+    let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
     let item = Uuid::new_v4();
-    let mut conn = scoped_conn(&pool, company).await;
 
     let wh = w
         .create_warehouse(NewWarehouse {
-            company_id: company,
             code: uq("WH"),
             name: uq("Main"),
             warehouse_type: None,
@@ -637,38 +550,36 @@ async fn fenced_unreserve_returns_the_reservation_to_available() {
         })
         .await
         .unwrap();
-    let stock = loc(&mut conn, company, "internal", Some(wh), None).await;
-    let customer = loc(&mut conn, company, "customer", None, None).await;
-    seed_quant(&mut conn, company, item, stock, "5").await;
+    let stock = loc(&pool, "internal", Some(wh), None).await;
+    let customer = loc(&pool, "customer", None, None).await;
+    seed_quant(&pool, item, stock, "5").await;
 
-    let mv = w.create_move(new_move(company, item, stock, customer, "5")).await.unwrap();
-    w.action_confirm(company, mv).await.unwrap();
-    let assigned = w.action_assign(company, mv).await.unwrap();
+    let mv = w.create_move(new_move(item, stock, customer, "5")).await.unwrap();
+    w.action_confirm(mv).await.unwrap();
+    let assigned = w.action_assign(mv).await.unwrap();
     assert_eq!(assigned.state, "assigned");
 
     let (reserved, available): (Decimal, Decimal) = sqlx::query_as(
         "SELECT reserved_quantity, available_quantity FROM inventory.stock_quants \
-         WHERE company_id=$1 AND item_id=$2 AND location_id=$3",
+         WHERE item_id=$1 AND location_id=$2",
     )
-    .bind(company)
     .bind(item)
     .bind(stock)
-    .fetch_one(&mut *conn)
+    .fetch_one(&pool)
     .await
     .unwrap();
     assert_eq!((reserved, available), (d("5"), d("0")), "the assign held the whole bin");
 
-    let released = w.unreserve_move(company, mv).await.expect("unreserve under fence");
+    let released = w.unreserve_move(mv).await.expect("unreserve");
     assert_eq!(released, d("5"), "the release reports the quantity the lines held");
 
     let (reserved, available): (Decimal, Decimal) = sqlx::query_as(
         "SELECT reserved_quantity, available_quantity FROM inventory.stock_quants \
-         WHERE company_id=$1 AND item_id=$2 AND location_id=$3",
+         WHERE item_id=$1 AND location_id=$2",
     )
-    .bind(company)
     .bind(item)
     .bind(stock)
-    .fetch_one(&mut *conn)
+    .fetch_one(&pool)
     .await
     .unwrap();
     assert_eq!(
@@ -680,13 +591,13 @@ async fn fenced_unreserve_returns_the_reservation_to_available() {
         "SELECT COALESCE(SUM(quantity),0) FROM inventory.stock_move_lines WHERE move_id=$1",
     )
     .bind(mv)
-    .fetch_one(&mut *conn)
+    .fetch_one(&pool)
     .await
     .unwrap();
     assert_eq!(line_qty, d("0"), "the mirror lines zeroed out");
     let state: String = sqlx::query_scalar("SELECT state::text FROM inventory.stock_moves WHERE id=$1")
         .bind(mv)
-        .fetch_one(&mut *conn)
+        .fetch_one(&pool)
         .await
         .unwrap();
     assert_eq!(state, "assigned", "the release arm holds the state; verbs transition it");
@@ -694,21 +605,16 @@ async fn fenced_unreserve_returns_the_reservation_to_available() {
 
 // ── probe 6: the GL re-drive sweep path ─────────────────────────────────────────
 
-/// `repost_move_gl` as the restricted role, against the REAL accounting ledger. Before the
-/// re-drive verb bound the company scope before its move fetch, the unbound read saw zero
-/// rows and a GL redrive sweep 404'd every stuck leg under the fence. The probe drives a
-/// move to `done` with its GL posted (one real journal), simulates the crash window (the post
-/// landed, the status write was lost → `posting_state='failed'`), re-drives through the
-/// fence, and asserts accounting's source-identity dedupe returned the ORIGINAL journal —
-/// no duplicate journal lines — and that an already-posted move short-circuits.
+/// `repost_move_gl` against the REAL accounting ledger. The probe drives a move to `done`
+/// with its GL posted (one real journal), simulates the crash window (the post landed, the
+/// status write was lost → `posting_state='failed'`), re-drives, and asserts accounting's
+/// source-identity dedupe returned the ORIGINAL journal — no duplicate journal lines — and
+/// that an already-posted move short-circuits.
 #[tokio::test]
-async fn fenced_repost_gl_redrives_idempotently() {
-    fence_or_skip!(dsn);
-    let pool = PgPool::connect(&dsn).await.expect("connect as restricted role");
+async fn repost_gl_redrives_idempotently() {
+    let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
     let item = Uuid::new_v4();
-    let mut conn = scoped_conn(&pool, company).await;
 
     // The GL legs' accounts (a real chart pair: COGS detail + Inventory detail).
     let (cogs_acct, inv_acct) = (Uuid::new_v4(), Uuid::new_v4());
@@ -718,20 +624,19 @@ async fn fenced_repost_gl_redrives_idempotently() {
     ] {
         sqlx::query(
             r#"INSERT INTO accounting.accounts
-                 (id, company_id, account_number, account_code, name, account_type,
+                 (id, account_number, account_code, name, account_type,
                   account_subtype, normal_balance, is_header, is_detail, status)
-               VALUES ($1,$2,$3,$3,$4,$5::account_type,$6::account_subtype,'debit',FALSE,TRUE,
+               VALUES ($1,$2,$2,$3,$4::account_type,$5::account_subtype,'debit',FALSE,TRUE,
                        'active'::account_status)"#,
         )
         .bind(id)
-        .bind(company)
         .bind(num)
         .bind(name)
         .bind(at)
         .bind(st)
-        .execute(&mut *conn)
+        .execute(&pool)
         .await
-        .expect("seed account as fenced role");
+        .expect("seed account");
     }
     let adapter = RealLedgerSink {
         svc: PostingService::new(Arc::new(SqlxPostingRepository::new(pool.clone()))),
@@ -739,7 +644,6 @@ async fn fenced_repost_gl_redrives_idempotently() {
 
     let wh = w
         .create_warehouse(NewWarehouse {
-            company_id: company,
             code: uq("WH"),
             name: uq("Main"),
             warehouse_type: None,
@@ -748,10 +652,10 @@ async fn fenced_repost_gl_redrives_idempotently() {
         })
         .await
         .unwrap();
-    let stock = loc(&mut conn, company, "internal", Some(wh), None).await;
-    let customer = loc(&mut conn, company, "customer", None, None).await;
-    seed_quant(&mut conn, company, item, stock, "10").await;
-    seed_bin(&mut conn, company, item, wh, "10", "100").await;
+    let stock = loc(&pool, "internal", Some(wh), None).await;
+    let customer = loc(&pool, "customer", None, None).await;
+    seed_quant(&pool, item, stock, "10").await;
+    seed_bin(&pool, item, wh, "10", "100").await;
 
     let gl = MoveGlDirective {
         cogs_account_id: Some(cogs_acct),
@@ -760,66 +664,54 @@ async fn fenced_repost_gl_redrives_idempotently() {
         adjustment_account_id: None,
         currency: "IDR".into(),
     };
-    // The ambient scope mirrors the composing service's request posture: pooled reads inside
-    // the re-drive (the move's ledger-leg values, the posting repository) ride it.
-    let mv = backbone_orm::company_scope::with_company_scope(
-        Some(company),
-        w.create_move(new_move(company, item, stock, customer, "4")),
-    )
-    .await
-    .unwrap();
-    backbone_orm::company_scope::with_company_scope(Some(company), w.action_confirm(company, mv))
+    let mv = w
+        .create_move(new_move(item, stock, customer, "4"))
         .await
         .unwrap();
-    backbone_orm::company_scope::with_company_scope(Some(company), w.action_assign(company, mv))
+    w.action_confirm(mv).await.unwrap();
+    w.action_assign(mv).await.unwrap();
+    let done = w
+        .action_done(mv, BackorderPolicy::Never, &gl, &adapter)
         .await
-        .unwrap();
-    let done = backbone_orm::company_scope::with_company_scope(
-        Some(company),
-        w.action_done(company, mv, BackorderPolicy::Never, &gl, &adapter),
-    )
-    .await
-    .expect("done (with GL) under fence");
+        .expect("done (with GL)");
     assert!(done.gl_posted, "the original post landed");
     let journals: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM accounting.journals WHERE company_id=$1",
+        "SELECT COUNT(*) FROM accounting.journals WHERE source_type='inventory' AND source_id=$1",
     )
-    .bind(company)
-    .fetch_one(&mut *conn)
+    .bind(mv)
+    .fetch_one(&pool)
     .await
     .unwrap();
     assert_eq!(journals, 1, "exactly one journal before the re-drive");
     let orig_jid: Uuid = sqlx::query_scalar(
-        "SELECT id FROM accounting.journals WHERE company_id=$1",
+        "SELECT id FROM accounting.journals WHERE source_type='inventory' AND source_id=$1",
     )
-    .bind(company)
-    .fetch_one(&mut *conn)
+    .bind(mv)
+    .fetch_one(&pool)
     .await
     .unwrap();
 
     // The crash window: the post landed but the status write was lost.
     sqlx::query("UPDATE inventory.stock_moves SET posting_state='failed'::gl_posting_state WHERE id=$1")
         .bind(mv)
-        .execute(&mut *conn)
+        .execute(&pool)
         .await
         .expect("simulate the lost status write");
 
-    // The re-drive through the fence: the fetch must see the move, the envelope re-builds
-    // from the committed ledger legs, and accounting's dedupe on the source identity
-    // returns the ORIGINAL journal instead of a second one.
-    let out = backbone_orm::company_scope::with_company_scope(
-        Some(company),
-        w.repost_move_gl(company, mv, &gl, &adapter),
-    )
-    .await
-    .expect("repost under fence");
+    // The re-drive: the fetch sees the move, the envelope re-builds from the committed
+    // ledger legs, and accounting's dedupe on the source identity returns the ORIGINAL
+    // journal instead of a second one.
+    let out = w
+        .repost_move_gl(mv, &gl, &adapter)
+        .await
+        .expect("repost");
     assert!(out.posted, "the re-drive healed the leg");
     assert_eq!(out.journal_id, Some(orig_jid), "dedupe returned the original journal");
     let journals: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM accounting.journals WHERE company_id=$1",
+        "SELECT COUNT(*) FROM accounting.journals WHERE source_type='inventory' AND source_id=$1",
     )
-    .bind(company)
-    .fetch_one(&mut *conn)
+    .bind(mv)
+    .fetch_one(&pool)
     .await
     .unwrap();
     assert_eq!(journals, 1, "no second journal — no duplicate journal lines");
@@ -827,42 +719,34 @@ async fn fenced_repost_gl_redrives_idempotently() {
         "SELECT COUNT(*) FROM accounting.journal_lines WHERE journal_id=$1",
     )
     .bind(orig_jid)
-    .fetch_one(&mut *conn)
+    .fetch_one(&pool)
     .await
     .unwrap();
     assert_eq!(lines, 2, "still exactly the original Dr/Cr pair");
 
     // An already-posted move short-circuits without re-emitting.
-    let noop = backbone_orm::company_scope::with_company_scope(
-        Some(company),
-        w.repost_move_gl(company, mv, &gl, &adapter),
-    )
-    .await
-    .expect("settled repost under fence");
+    let noop = w
+        .repost_move_gl(mv, &gl, &adapter)
+        .await
+        .expect("settled repost");
     assert!(noop.posted);
     assert!(noop.journal_id.is_none(), "settled short-circuit re-emits nothing");
 }
 
 // ── probe 7: procurement provisioning through the CRUD path ─────────────────────
 
-/// `create_route → create_rule → create_orderpoint` over the service as the restricted
-/// role. Before each provisioning write rode its own scope-bound transaction, the INSERTs
-/// failed the fence's WITH CHECK (an unbound write cannot provision a company-owned
-/// route/rule/orderpoint) and the duplicate-check read saw nothing. The probe provisions a
+/// `create_route → create_rule → create_orderpoint` over the service. Each provisioning
+/// write rides its own transaction with its duplicate-check read; the probe provisions a
 /// full replenishment configuration and asserts `orderpoint_exists` — the service's own
-/// duplicate guard — sees the row as the fenced role.
+/// duplicate guard — sees the row, and that a duplicate is the typed error, not a 500.
 #[tokio::test]
-async fn fenced_procurement_provisions_through_the_crud_path() {
-    fence_or_skip!(dsn);
-    let pool = PgPool::connect(&dsn).await.expect("connect as restricted role");
+async fn procurement_provisions_through_the_crud_path() {
+    let pool = pool().await;
     let svc = ProcurementService::new(pool.clone());
-    let company = Uuid::new_v4();
     let item = Uuid::new_v4();
-    let mut conn = scoped_conn(&pool, company).await;
 
     let wh = InventoryWriteService::new(pool.clone())
         .create_warehouse(NewWarehouse {
-            company_id: company,
             code: uq("WH"),
             name: uq("Main"),
             warehouse_type: None,
@@ -871,36 +755,34 @@ async fn fenced_procurement_provisions_through_the_crud_path() {
         })
         .await
         .unwrap();
-    let stock = loc(&mut conn, company, "internal", Some(wh), None).await;
+    let stock = loc(&pool, "internal", Some(wh), None).await;
 
-    // A company-owned incoming operation type (the rule's R11 reference). Its default
-    // endpoints are the shared virtual roots the reference seed carries.
+    // An incoming operation type (the rule's R11 reference). Its default endpoints are the
+    // shared virtual roots the reference seed carries.
     let pt = Uuid::new_v4();
     sqlx::query(
         r#"INSERT INTO inventory.operation_types
-             (id, name, sequence_code, code, company_id, default_location_src_id,
+             (id, name, sequence_code, code, default_location_src_id,
               default_location_dest_id)
-           VALUES ($1,$2,$3,'incoming'::picking_code,$4,
+           VALUES ($1,$2,$3,'incoming'::picking_code,
                    '2c72e32f-0000-0000-0000-000000000001'::uuid,
                    '2c72e32f-0000-0000-0000-000000000002'::uuid)"#,
     )
     .bind(pt)
     .bind(uq("PT"))
     .bind(uq("IN"))
-    .bind(company)
-    .execute(&mut *conn)
+    .execute(&pool)
     .await
-    .expect("seed operation type as fenced role");
+    .expect("seed operation type");
 
     let route = svc
         .create_route(NewRoute {
             name: uq("RT"),
             active: true,
             sequence: 10,
-            company_id: Some(company),
         })
         .await
-        .expect("create_route under fence");
+        .expect("create_route");
     let rule = svc
         .create_rule(NewRouteRule {
             name: uq("RULE"),
@@ -914,11 +796,10 @@ async fn fenced_procurement_provisions_through_the_crud_path() {
             picking_type_id: pt,
             route_id: route,
             warehouse_id: Some(wh),
-            company_id: Some(company),
             propagate_cancel: false,
         })
         .await
-        .expect("create_rule under fence (R11 pre-check reads included)");
+        .expect("create_rule (R13 pre-check reads included)");
     let op = svc
         .create_orderpoint(NewOrderpoint {
             name: uq("OP"),
@@ -926,36 +807,33 @@ async fn fenced_procurement_provisions_through_the_crud_path() {
             item_id: item,
             location_id: stock,
             warehouse_id: wh,
-            company_id: company,
             item_min_qty: d("4"),
             item_max_qty: d("9"),
             route_id: Some(route),
         })
         .await
-        .expect("create_orderpoint under fence");
+        .expect("create_orderpoint");
 
-    // Every row is really there, read back through the fence as the restricted role.
+    // Every row is really there, read back as the owner.
     let routes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM inventory.routes WHERE id=$1")
         .bind(route)
-        .fetch_one(&mut *conn)
+        .fetch_one(&pool)
         .await
         .unwrap();
-    let rules: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM inventory.route_rules WHERE id=$1 AND company_id=$2")
+    let rules: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM inventory.route_rules WHERE id=$1")
         .bind(rule)
-        .bind(company)
-        .fetch_one(&mut *conn)
+        .fetch_one(&pool)
         .await
         .unwrap();
     assert_eq!((routes, rules), (1, 1), "the route and the rule landed");
 
-    // The service's own duplicate guard sees the row as the fenced role — the read that
-    // was blind (always zero) before it rode the scope-bound transaction.
-    let existing = ProcurementRepository::orderpoint_exists(&mut *conn, item, stock, company)
+    // The service's own duplicate guard sees the row — the read that guards the mint.
+    let existing = ProcurementRepository::orderpoint_exists(&pool, item, stock)
         .await
-        .expect("orderpoint_exists under fence");
+        .expect("orderpoint_exists");
     assert_eq!(existing, 1, "the duplicate guard sees the provisioned orderpoint");
 
-    // A duplicate (item, location, company) is still the typed R6 error, not a 500.
+    // A duplicate (item, location) is still the typed R6 error, not a 500.
     let err = svc
         .create_orderpoint(NewOrderpoint {
             name: uq("OP2"),
@@ -963,21 +841,204 @@ async fn fenced_procurement_provisions_through_the_crud_path() {
             item_id: item,
             location_id: stock,
             warehouse_id: wh,
-            company_id: company,
             item_min_qty: d("4"),
             item_max_qty: d("9"),
             route_id: None,
         })
         .await
         .expect_err("the duplicate must be refused");
-    assert_eq!(err.code(), "orderpoint_exists", "the R6 typed error survives the fence");
+    assert_eq!(err.code(), "orderpoint_exists", "the R6 typed error survives");
     let orderpoints: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM inventory.reordering_rules WHERE id=$1 AND company_id=$2",
+        "SELECT COUNT(*) FROM inventory.reordering_rules WHERE id=$1",
     )
     .bind(op)
-    .bind(company)
-    .fetch_one(&mut *conn)
+    .fetch_one(&pool)
     .await
     .unwrap();
     assert_eq!(orderpoints, 1, "the refused duplicate minted no second row");
+}
+
+// ── probe 8: the tenancy posture (ADR-0029) ─────────────────────────────────────
+
+const ROLE: &str = "inventory_tenancy_probe";
+const PWD: &str = "probe";
+
+/// Shed the probe role's grants, then drop it. Leftover grants (from a run whose teardown
+/// never reached the drop) make plain DROP ROLE fail with 2BP01 — DROP OWNED BY first keeps
+/// both bootstrap and teardown idempotent across runs.
+async fn drop_role(admin: &PgPool) {
+    let _ = sqlx::query(&format!("DROP OWNED BY {ROLE}")).execute(admin).await;
+    let _ = sqlx::query(&format!("DROP ROLE IF EXISTS {ROLE}")).execute(admin).await;
+}
+
+async fn bootstrap_role(admin: &PgPool, tables: &[&str]) {
+    drop_role(admin).await;
+    for stmt in [
+        format!("CREATE ROLE {ROLE} LOGIN PASSWORD '{PWD}' NOSUPERUSER NOBYPASSRLS"),
+        format!("GRANT USAGE ON SCHEMA inventory TO {ROLE}"),
+    ]
+    .into_iter()
+    .chain(tables.iter().map(|t| {
+        format!("GRANT SELECT, INSERT, UPDATE ON TABLE inventory.{t} TO {ROLE}")
+    })) {
+        sqlx::query(&stmt).execute(admin).await.unwrap();
+    }
+}
+
+/// The module's base tables — the set whose company-fence artifacts the strip migration
+/// removed (policies, company-leading indexes, the company_id column).
+const BASE_TABLES: &[&str] = &[
+    "warehouses",
+    "stock_items",
+    "locations",
+    "lots",
+    "packages",
+    "operation_types",
+    "transfers",
+    "routes",
+    "route_rules",
+    "reordering_rules",
+    "stock_moves",
+    "stock_move_lines",
+    "stock_quants",
+    "stock_ledger_entries",
+    "bins",
+    "stock_entries",
+    "stock_entry_items",
+    "purchase_receipts",
+    "purchase_receipt_items",
+    "delivery_notes",
+    "delivery_note_items",
+    "stock_reconciliations",
+    "stock_reconciliation_items",
+    "inventory_company_settings",
+    "landed_costs",
+    "landed_cost_lines",
+    "landed_cost_adjustment_lines",
+    "picking_batches",
+    "scraps",
+    "scrap_reason_tags",
+    "package_types",
+    "storage_categories",
+    "storage_category_capacities",
+    "putaway_rules",
+];
+
+/// The tenancy posture, pinned from below (ADR-0029): every inventory base table carries
+/// ENABLE + FORCE ROW LEVEL SECURITY (the decorator completes the fence with its org-scoped
+/// policies) and the module ships ZERO policies of its own; no company_id column survives
+/// anywhere in the schema; a plain NOBYPASSRLS role is default-denied — reads return zero
+/// rows even with the legacy company variable set, and its writes are refused — while the
+/// owner pool still sees the rows it seeded.
+#[tokio::test]
+async fn tenancy_posture_flags_without_policies() {
+    let pool = pool().await;
+
+    // Sanity: the half-fence is armed on every base table (ENABLE + FORCE — the owner is
+    // fenced too once policies exist).
+    let armed: Vec<String> = sqlx::query(
+        "SELECT c.relname FROM pg_class c \
+         JOIN pg_namespace n ON n.oid = c.relnamespace \
+         WHERE n.nspname = 'inventory' AND c.relkind = 'r' \
+           AND c.relrowsecurity AND c.relforcerowsecurity \
+         ORDER BY c.relname",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("pg_class")
+    .iter()
+    .map(|r| r.get::<String, _>("relname"))
+    .collect();
+    for table in BASE_TABLES {
+        assert!(
+            armed.iter().any(|t| t == table),
+            "{table} must carry ENABLE + FORCE ROW LEVEL SECURITY"
+        );
+    }
+
+    // The module ships NO tenancy policy: under ADR-0029 isolation belongs to the composing
+    // service's decorator, never to the module.
+    let policies: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM pg_policies WHERE schemaname = 'inventory'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("pg_policies");
+    assert_eq!(policies, 0, "the module declares no tenancy policy");
+
+    // The company columns are gone from every inventory table.
+    let company_cols: i64 = sqlx::query_scalar(
+        r#"SELECT count(*) FROM information_schema.columns
+            WHERE table_schema = 'inventory' AND column_name = 'company_id'"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("information_schema");
+    assert_eq!(company_cols, 0, "no company_id column survives the strip");
+
+    // A non-owner NOBYPASSRLS session: with no policy there is nothing to admit it, so it is
+    // default-denied regardless of any legacy company variable — while the owner still sees
+    // the seeded row (the denial is the fence, not an empty database).
+    bootstrap_role(&pool, &["locations"]).await;
+    let restricted = PgPool::connect(&format!(
+        "postgresql://{ROLE}:{PWD}@localhost:5433/backbone_inventory"
+    ))
+    .await
+    .expect("probe-role connect");
+
+    let loc_id = Uuid::new_v4();
+    let name = uq("LOC");
+    sqlx::query(
+        r#"INSERT INTO inventory.locations
+             (id, name, complete_name, usage, parent_path)
+           VALUES ($1,$2,$2,'internal',$3)"#,
+    )
+    .bind(loc_id)
+    .bind(&name)
+    .bind(format!("{loc_id}/"))
+    .execute(&pool)
+    .await
+    .expect("seed location as owner");
+
+    let mut app = sqlx::PgConnection::connect(&format!(
+        "postgresql://{ROLE}:{PWD}@localhost:5433/backbone_inventory"
+    ))
+    .await
+    .expect("app-role connect");
+    sqlx::query("SELECT set_config('app.company_id', $1, false)")
+        .bind(Uuid::new_v4().to_string())
+        .execute(&mut app)
+        .await
+        .expect("set legacy variable");
+    let seen: i64 = sqlx::query_scalar("SELECT count(*) FROM inventory.locations WHERE id=$1")
+        .bind(loc_id)
+        .fetch_one(&mut app)
+        .await
+        .expect("location count as the app role");
+    assert_eq!(seen, 0, "no policy admits the app role, even with the legacy variable set");
+    let owner_seen: i64 = sqlx::query_scalar("SELECT count(*) FROM inventory.locations WHERE id=$1")
+        .bind(loc_id)
+        .fetch_one(&pool)
+        .await
+        .expect("location count as owner");
+    assert_eq!(owner_seen, 1, "the owner sees the seeded row");
+    let insert = sqlx::query(
+        r#"INSERT INTO inventory.locations
+             (id, name, complete_name, usage, parent_path)
+           VALUES ($1,$2,$2,'internal',$3)"#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(uq("LOC"))
+    .bind("probe/".to_string())
+    .execute(&mut app)
+    .await;
+    match insert {
+        Err(e) => assert!(
+            e.to_string().contains("row-level security") || e.to_string().contains("policy"),
+            "wrong error: {e}"
+        ),
+        Ok(_) => panic!("a default-denied role must not insert"),
+    }
+
+    drop_role(&pool).await;
 }

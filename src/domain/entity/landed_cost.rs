@@ -53,7 +53,6 @@ impl std::ops::Deref for LandedCostId {
 pub struct LandedCost {
     pub id: Uuid,
     pub lc_number: String,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub target_receipt_id: Uuid,
     pub transfer_id: Option<Uuid>,
@@ -78,11 +77,10 @@ impl LandedCost {
     }
 
     /// Create a new LandedCost with required fields
-    pub fn new(lc_number: String, company_id: Uuid, target_receipt_id: Uuid, currency: String, posting_date: NaiveDate, state: LandedCostState, amount_total: Decimal, posting_state: GlPostingState) -> Self {
+    pub fn new(lc_number: String, target_receipt_id: Uuid, currency: String, posting_date: NaiveDate, state: LandedCostState, amount_total: Decimal, posting_state: GlPostingState) -> Self {
         Self {
             id: Uuid::new_v4(),
             lc_number,
-            company_id,
             branch_id: None,
             target_receipt_id,
             transfer_id: None,
@@ -201,9 +199,6 @@ impl LandedCost {
                 "lc_number" => {
                     if let Ok(v) = serde_json::from_value(value) { self.lc_number = v; }
                 }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 "branch_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.branch_id = v; }
                 }
@@ -294,7 +289,6 @@ impl backbone_orm::EntityRepoMeta for LandedCost {
     fn column_types() -> std::collections::HashMap<String, String> {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("branch_id".to_string(), "uuid".to_string());
         m.insert("target_receipt_id".to_string(), "uuid".to_string());
         m.insert("transfer_id".to_string(), "uuid".to_string());
@@ -307,9 +301,6 @@ impl backbone_orm::EntityRepoMeta for LandedCost {
     fn search_fields() -> &'static [&'static str] {
         &["lc_number", "currency"]
     }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
-    }
 }
 
 /// Builder for LandedCost entity
@@ -319,7 +310,6 @@ impl backbone_orm::EntityRepoMeta for LandedCost {
 #[derive(Debug, Clone, Default)]
 pub struct LandedCostBuilder {
     lc_number: Option<String>,
-    company_id: Option<Uuid>,
     branch_id: Option<Uuid>,
     target_receipt_id: Option<Uuid>,
     transfer_id: Option<Uuid>,
@@ -338,12 +328,6 @@ impl LandedCostBuilder {
     /// Set the lc_number field (required)
     pub fn lc_number(mut self, value: String) -> Self {
         self.lc_number = Some(value);
-        self
-    }
-
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
         self
     }
 
@@ -424,14 +408,12 @@ impl LandedCostBuilder {
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<LandedCost, String> {
         let lc_number = self.lc_number.ok_or_else(|| "lc_number is required".to_string())?;
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
         let target_receipt_id = self.target_receipt_id.ok_or_else(|| "target_receipt_id is required".to_string())?;
         let posting_date = self.posting_date.ok_or_else(|| "posting_date is required".to_string())?;
 
         Ok(LandedCost {
             id: Uuid::new_v4(),
             lc_number,
-            company_id,
             branch_id: self.branch_id,
             target_receipt_id,
             transfer_id: self.transfer_id,

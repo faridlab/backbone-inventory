@@ -4,7 +4,7 @@
 # Description: Internal movement — transfer between warehouses, repack, or a bare
 # issue/receipt. A transfer writes a PAIRED SLE (out of `from`, into `to`) at the
 # same moving-average value → NO GL effect (value conserved). Issue/receipt legs
-# and repack that change value are Tier-3 (parked). company/item are logical FKs;
+# and repack that change value are Tier-3 (parked). item is a logical FK (catalog.Item);
 # from/to warehouses are intra-module FKs.
 # =============================================================================
 
@@ -24,10 +24,6 @@ models:
         attributes: ["@required", "@max(40)"]
         description: "Human reference (the post's voucher_no)"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "Owning company # logical FK to organization.Company.id"
 
       stock_entry_type:
         type: StockEntryType
@@ -88,8 +84,6 @@ models:
         fields: [entry_number]
         where: "deleted_at IS NULL"
       - type: index
-        fields: [company_id, stock_entry_type, status]
-      - type: index
         fields: [transfer_id]
         description: "Minted-transfer lookup (voucher -> picking projection)"
 
@@ -108,10 +102,6 @@ models:
         attributes: ["@required", "@foreign_key(StockEntry.id)"]
         description: "Owning stock entry"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "Owning company # logical FK to organization.Company.id; denormalized from StockEntry to FORCE RLS on the child (ADR-0010 Decision A)"
 
       item_id:
         type: uuid

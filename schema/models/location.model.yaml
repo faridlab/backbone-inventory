@@ -7,18 +7,18 @@
 # move line keys off. `usage` drives stock semantics: only `internal` holds
 # on-hand stock; `view` is a grouping node that can never hold stock
 # (guard R13); `inventory` is the scrap/adjustment sink; `transit` is the
-# inter-company holding pen.
+# inter-unit holding pen.
 #
 # Tree shape: self-referential `location_id` parent + materialized
 # `parent_path` (`_parent_store` in Odoo). The `_parent_path_id_idx
 # (parent_path, id)` index is load-bearing for subtree walks and is
 # preserved verbatim (spec flag: verbatim partial indexes).
 #
-# Company fence (ADR-0014): MASTER DATA, `shared_blank`. `company_id` is a
-# genuine nullable column (NOT derived): shared root locations (the virtual
-# supplier/customer trees) seed with company NULL and are visible to every
-# company — the port of Odoo's `[False]` escape. Company-owned locations
-# carry the company and stay fenced.
+# Tenancy: none, by design (ADR-0029). The module is tenant-agnostic; the
+# composing service's decorator owns org scoping. Shared root locations
+# (the virtual supplier/customer trees) anchor at the tenant ROOT under
+# allow_root and every entitled scope sees them through the scope union; a
+# location anchored at a regular unit is that unit's private location.
 # =============================================================================
 
 models:
@@ -65,12 +65,8 @@ models:
       barcode:
         type: string?
         attributes: ["@max(64)"]
-        description: "Scannable barcode (unique per company — guard R4)"
+        description: "Scannable barcode (unique per org unit — guard R4)"
 
-      company_id:
-        type: uuid?
-        attributes: ["@exclude_from_foreign_key_check"]
-        description: "Owning company; NULL = shared location visible to every company (shared_blank, ADR-0014) # logical FK to organization.Company.id"
 
       warehouse_id:
         type: uuid?
@@ -106,10 +102,6 @@ models:
         description: "Audit metadata"
 
     indexes:
-      - type: unique
-        fields: [barcode, company_id]
-        where: "deleted_at IS NULL"
-        description: "R4 — barcode unique per company (NULL barcodes unrestricted, as in Odoo _barcode_company_uniq)"
       - type: index
         name: _parent_path_id_idx
         fields: [parent_path, id]
@@ -125,9 +117,6 @@ models:
       - type: index
         fields: [storage_category_id]
         description: "Storage-capacity joins (the T12 derivation source)"
-      - type: index
-        fields: [company_id]
-        description: "Derived company filter (NULL = shared row, readable by all)"
 
 # =============================================================================
 # Enums
@@ -151,4 +140,4 @@ enums:
       - name: production
         description: "Production (WIP)"
       - name: transit
-        description: "Transit — inter-company holding"
+        description: "Transit — inter-unit holding"

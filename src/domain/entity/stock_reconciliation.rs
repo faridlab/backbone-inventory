@@ -53,7 +53,6 @@ impl std::ops::Deref for StockReconciliationId {
 pub struct StockReconciliation {
     pub id: Uuid,
     pub recon_number: String,
-    pub company_id: Uuid,
     pub warehouse_id: Uuid,
     pub posting_date: NaiveDate,
     pub net_difference: Decimal,
@@ -77,11 +76,10 @@ impl StockReconciliation {
     }
 
     /// Create a new StockReconciliation with required fields
-    pub fn new(recon_number: String, company_id: Uuid, warehouse_id: Uuid, posting_date: NaiveDate, net_difference: Decimal, inventory_account_id: Uuid, adjustment_account_id: Uuid, status: DocStatus, posting_state: GlPostingState) -> Self {
+    pub fn new(recon_number: String, warehouse_id: Uuid, posting_date: NaiveDate, net_difference: Decimal, inventory_account_id: Uuid, adjustment_account_id: Uuid, status: DocStatus, posting_state: GlPostingState) -> Self {
         Self {
             id: Uuid::new_v4(),
             recon_number,
-            company_id,
             warehouse_id,
             posting_date,
             net_difference,
@@ -192,9 +190,6 @@ impl StockReconciliation {
                 "recon_number" => {
                     if let Ok(v) = serde_json::from_value(value) { self.recon_number = v; }
                 }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 "warehouse_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.warehouse_id = v; }
                 }
@@ -282,7 +277,6 @@ impl backbone_orm::EntityRepoMeta for StockReconciliation {
     fn column_types() -> std::collections::HashMap<String, String> {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("warehouse_id".to_string(), "uuid".to_string());
         m.insert("inventory_account_id".to_string(), "uuid".to_string());
         m.insert("adjustment_account_id".to_string(), "uuid".to_string());
@@ -296,9 +290,6 @@ impl backbone_orm::EntityRepoMeta for StockReconciliation {
     fn search_fields() -> &'static [&'static str] {
         &["recon_number"]
     }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
-    }
 }
 
 /// Builder for StockReconciliation entity
@@ -308,7 +299,6 @@ impl backbone_orm::EntityRepoMeta for StockReconciliation {
 #[derive(Debug, Clone, Default)]
 pub struct StockReconciliationBuilder {
     recon_number: Option<String>,
-    company_id: Option<Uuid>,
     warehouse_id: Option<Uuid>,
     posting_date: Option<NaiveDate>,
     net_difference: Option<Decimal>,
@@ -326,12 +316,6 @@ impl StockReconciliationBuilder {
     /// Set the recon_number field (required)
     pub fn recon_number(mut self, value: String) -> Self {
         self.recon_number = Some(value);
-        self
-    }
-
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
         self
     }
 
@@ -406,7 +390,6 @@ impl StockReconciliationBuilder {
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<StockReconciliation, String> {
         let recon_number = self.recon_number.ok_or_else(|| "recon_number is required".to_string())?;
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
         let warehouse_id = self.warehouse_id.ok_or_else(|| "warehouse_id is required".to_string())?;
         let posting_date = self.posting_date.ok_or_else(|| "posting_date is required".to_string())?;
         let inventory_account_id = self.inventory_account_id.ok_or_else(|| "inventory_account_id is required".to_string())?;
@@ -415,7 +398,6 @@ impl StockReconciliationBuilder {
         Ok(StockReconciliation {
             id: Uuid::new_v4(),
             recon_number,
-            company_id,
             warehouse_id,
             posting_date,
             net_difference: self.net_difference.unwrap_or(Decimal::from(0)),

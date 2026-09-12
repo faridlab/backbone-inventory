@@ -52,8 +52,6 @@ pub struct CreateLocationDto {
     #[cfg_attr(feature = "validation", validate(length(max = 64)))]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub barcode: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
     pub warehouse_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
@@ -101,8 +99,6 @@ pub struct UpdateLocationDto {
     #[cfg_attr(feature = "validation", validate(length(max = 64)))]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub barcode: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
     pub warehouse_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
@@ -153,8 +149,6 @@ pub struct PatchLocationDto {
     #[cfg_attr(feature = "validation", validate(length(max = 64)))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub barcode: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
     pub warehouse_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
@@ -173,7 +167,7 @@ pub struct PatchLocationDto {
 impl PatchLocationDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.name.is_some() || self.complete_name.is_some() || self.active.is_some() || self.usage.is_some() || self.location_id.is_some() || self.parent_path.is_some() || self.barcode.is_some() || self.company_id.is_some() || self.warehouse_id.is_some() || self.cyclic_inventory_frequency.is_some() || self.last_inventory_date.is_some() || self.next_inventory_date.is_some() || self.valuation_account_id.is_some() || self.storage_category_id.is_some()
+        self.name.is_some() || self.complete_name.is_some() || self.active.is_some() || self.usage.is_some() || self.location_id.is_some() || self.parent_path.is_some() || self.barcode.is_some() || self.warehouse_id.is_some() || self.cyclic_inventory_frequency.is_some() || self.last_inventory_date.is_some() || self.next_inventory_date.is_some() || self.valuation_account_id.is_some() || self.storage_category_id.is_some()
     }
 }
 
@@ -202,7 +196,6 @@ pub struct LocationResponseDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub parent_path: String,
     pub barcode: Option<String>,
-    pub company_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
     pub cyclic_inventory_frequency: i32,
@@ -288,7 +281,6 @@ impl From<Location> for LocationResponseDto {
             location_id: entity.location_id,
             parent_path: entity.parent_path,
             barcode: entity.barcode,
-            company_id: entity.company_id,
             warehouse_id: entity.warehouse_id,
             cyclic_inventory_frequency: entity.cyclic_inventory_frequency,
             last_inventory_date: entity.last_inventory_date,
@@ -324,7 +316,6 @@ impl From<CreateLocationDto> for Location {
             location_id: dto.location_id,
             parent_path: dto.parent_path,
             barcode: dto.barcode,
-            company_id: dto.company_id,
             warehouse_id: dto.warehouse_id,
             cyclic_inventory_frequency: dto.cyclic_inventory_frequency,
             last_inventory_date: dto.last_inventory_date,
@@ -347,7 +338,6 @@ impl From<&Location> for LocationResponseDto {
             location_id: entity.location_id.clone(),
             parent_path: entity.parent_path.clone(),
             barcode: entity.barcode.clone(),
-            company_id: entity.company_id.clone(),
             warehouse_id: entity.warehouse_id.clone(),
             cyclic_inventory_frequency: entity.cyclic_inventory_frequency.clone(),
             last_inventory_date: entity.last_inventory_date.clone(),
@@ -374,7 +364,6 @@ impl backbone_core::ApplyUpdateDto<UpdateLocationDto> for Location {
         self.location_id = dto.location_id;
         self.parent_path = dto.parent_path;
         self.barcode = dto.barcode;
-        self.company_id = dto.company_id;
         self.warehouse_id = dto.warehouse_id;
         self.cyclic_inventory_frequency = dto.cyclic_inventory_frequency;
         self.last_inventory_date = dto.last_inventory_date;

@@ -7,7 +7,6 @@
 
 use async_trait::async_trait;
 use anyhow::Result;
-use uuid::Uuid;
 
 use crate::domain::entity::Route;
 
@@ -49,13 +48,12 @@ pub struct RouteFilter {
     pub product_selectable: Option<bool>,
     pub product_categ_selectable: Option<bool>,
     pub warehouse_selectable: Option<bool>,
-    pub company_id: Option<Uuid>,
 }
 
 impl RouteFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.name.is_some() || self.active.is_some() || self.product_selectable.is_some() || self.product_categ_selectable.is_some() || self.warehouse_selectable.is_some() || self.company_id.is_some()
+        self.name.is_some() || self.active.is_some() || self.product_selectable.is_some() || self.product_categ_selectable.is_some() || self.warehouse_selectable.is_some()
     }
 }
 

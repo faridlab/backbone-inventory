@@ -45,7 +45,6 @@ pub struct LandedCostPaginatedResult {
 #[derive(Debug, Clone, Default)]
 pub struct LandedCostFilter {
     pub lc_number: Option<String>,
-    pub company_id: Option<Uuid>,
     pub branch_id: Option<Uuid>,
     pub target_receipt_id: Option<Uuid>,
     pub transfer_id: Option<Uuid>,
@@ -60,7 +59,7 @@ pub struct LandedCostFilter {
 impl LandedCostFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.lc_number.is_some() || self.company_id.is_some() || self.branch_id.is_some() || self.target_receipt_id.is_some() || self.transfer_id.is_some() || self.currency.is_some() || self.state.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some() || self.notes.is_some()
+        self.lc_number.is_some() || self.branch_id.is_some() || self.target_receipt_id.is_some() || self.transfer_id.is_some() || self.currency.is_some() || self.state.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some() || self.notes.is_some()
     }
 }
 

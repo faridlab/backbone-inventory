@@ -3,8 +3,12 @@
 //! Hand-authored (user-owned). Read all stock documents + **validated create** (warehouse,
 //! stock-item, purchase-receipt draft, delivery-note draft); generic create/update/delete CRUD is
 //! NOT mounted, so no caller can write an SLE/Bin directly or persist an inconsistent document.
-//! Every validated write derives its tenant from a signed Bearer token (`CompanyContext`) rather than
-//! from the request body — a client cannot name the company it writes into.
+//!
+//! The module ships BARE of authentication (ADR-0029, the org-composed shape): the composing
+//! service wraps this router in its org scope middleware (`org_auth` + the tenant router), whose
+//! request-dedicated connection fences every statement these routes issue. Handlers extract
+//! [`OrgContext`] purely to read the acting node — the branch a document opens at is the signed
+//! `acting_unit_id`, never a body field — and no tenant key crosses the wire in a body.
 //!
 //! Submitting a movement (which writes the SLE, updates the Bin, and emits the GL post) needs a
 //! `GlPostSink` from the composing service, so it is service/job-driven — proven by the seam test,
@@ -12,11 +16,8 @@
 
 use std::sync::Arc;
 
-use axum::{
-    extract::State, http::StatusCode, middleware::from_fn_with_state, response::IntoResponse,
-    routing::post, Json, Router,
-};
-use backbone_auth::company::{company_auth, CompanyContext, CompanyVerifier};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
+use backbone_auth::org::OrgContext;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -63,17 +64,17 @@ fn err(e: InventoryError) -> axum::response::Response {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CreateWarehouseBody {
-    // No `company_id`: the tenant is derived from the signed token via `CompanyContext`, never from
-    // the request body — a client must not be able to name the tenant it writes into.
+    // No tenant field: tenancy is composition-installed (ADR-0029) — the composing service's
+    // org scope middleware fences the insert; the body never names a tenant.
     code: String,
     name: String,
     #[serde(default)] warehouse_type: Option<String>,
     #[serde(default)] parent_warehouse_id: Option<Uuid>,
     #[serde(default)] is_group: bool,
 }
-async fn create_warehouse(State(svc): State<Arc<InventoryWriteService>>, tenant: CompanyContext, Json(b): Json<CreateWarehouseBody>) -> axum::response::Response {
+async fn create_warehouse(State(svc): State<Arc<InventoryWriteService>>, Json(b): Json<CreateWarehouseBody>) -> axum::response::Response {
     match svc.create_warehouse(NewWarehouse {
-        company_id: tenant.company_id, code: b.code, name: b.name, warehouse_type: b.warehouse_type,
+        code: b.code, name: b.name, warehouse_type: b.warehouse_type,
         parent_warehouse_id: b.parent_warehouse_id, is_group: b.is_group,
     }).await {
         Ok(id) => (StatusCode::CREATED, Json(IdResponse { id })).into_response(),
@@ -97,7 +98,9 @@ struct ReceiptLineBody {
 #[serde(rename_all = "camelCase")]
 struct CreateReceiptBody {
     receipt_number: String,
-    // Tenant (company/branch) comes from the signed token (`CompanyContext`), not the body.
+    // Tenancy is composition-installed (ADR-0029): no tenant field — the composing service's
+    // org scope middleware fences the insert. The branch is a business column, not the
+    // tenancy axis: it comes from the signed acting node.
     supplier_id: Uuid,
     #[serde(default)] source_po_id: Option<Uuid>,
     warehouse_id: Uuid,
@@ -107,9 +110,9 @@ struct CreateReceiptBody {
     grir_account_id: Uuid,
     lines: Vec<ReceiptLineBody>,
 }
-async fn create_receipt(State(svc): State<Arc<InventoryWriteService>>, tenant: CompanyContext, Json(b): Json<CreateReceiptBody>) -> axum::response::Response {
+async fn create_receipt(State(svc): State<Arc<InventoryWriteService>>, org: OrgContext, Json(b): Json<CreateReceiptBody>) -> axum::response::Response {
     let r = NewReceipt {
-        receipt_number: b.receipt_number, company_id: tenant.company_id, branch_id: tenant.branch_id,
+        receipt_number: b.receipt_number, branch_id: Some(org.acting_unit_id),
         supplier_id: b.supplier_id, source_po_id: b.source_po_id, warehouse_id: b.warehouse_id,
         posting_date: b.posting_date, currency: b.currency, inventory_account_id: b.inventory_account_id, grir_account_id: b.grir_account_id,
         lines: b.lines.into_iter().map(|l| ReceiptLine {
@@ -130,7 +133,9 @@ struct DeliveryLineBody { item_id: Uuid, quantity: Decimal }
 #[serde(rename_all = "camelCase")]
 struct CreateDeliveryBody {
     delivery_number: String,
-    // Tenant (company/branch) comes from the signed token (`CompanyContext`), not the body.
+    // Tenancy is composition-installed (ADR-0029): no tenant field — the composing service's
+    // org scope middleware fences the insert. The branch is a business column, not the
+    // tenancy axis: it comes from the signed acting node.
     customer_id: Uuid,
     #[serde(default)] source_so_id: Option<Uuid>,
     warehouse_id: Uuid,
@@ -140,9 +145,9 @@ struct CreateDeliveryBody {
     inventory_account_id: Uuid,
     lines: Vec<DeliveryLineBody>,
 }
-async fn create_delivery(State(svc): State<Arc<InventoryWriteService>>, tenant: CompanyContext, Json(b): Json<CreateDeliveryBody>) -> axum::response::Response {
+async fn create_delivery(State(svc): State<Arc<InventoryWriteService>>, org: OrgContext, Json(b): Json<CreateDeliveryBody>) -> axum::response::Response {
     let dn = NewDelivery {
-        delivery_number: b.delivery_number, company_id: tenant.company_id, branch_id: tenant.branch_id,
+        delivery_number: b.delivery_number, branch_id: Some(org.acting_unit_id),
         customer_id: b.customer_id, source_so_id: b.source_so_id, warehouse_id: b.warehouse_id,
         posting_date: b.posting_date, currency: b.currency, cogs_account_id: b.cogs_account_id, inventory_account_id: b.inventory_account_id,
         lines: b.lines.into_iter().map(|l| DeliveryLine { item_id: l.item_id, quantity: l.quantity }).collect(),
@@ -177,7 +182,9 @@ struct LcLineBody {
 #[serde(rename_all = "camelCase")]
 struct CreateLandedCostBody {
     lc_number: String,
-    // Tenant (company/branch) comes from the signed token (`CompanyContext`), not the body.
+    // Tenancy is composition-installed (ADR-0029): no tenant field — the composing service's
+    // org scope middleware fences the insert. The branch is a business column, not the
+    // tenancy axis: it comes from the signed acting node.
     target_receipt_id: Uuid,
     posting_date: chrono::NaiveDate,
     #[serde(default = "default_currency")] currency: String,
@@ -186,13 +193,12 @@ struct CreateLandedCostBody {
 }
 async fn create_landed_cost(
     State(svc): State<Arc<InventoryWriteService>>,
-    tenant: CompanyContext,
+    org: OrgContext,
     Json(b): Json<CreateLandedCostBody>,
 ) -> axum::response::Response {
     let lc = crate::application::service::inventory_write_service::NewLandedCost {
         lc_number: b.lc_number,
-        company_id: tenant.company_id,
-        branch_id: tenant.branch_id,
+        branch_id: Some(org.acting_unit_id),
         target_receipt_id: b.target_receipt_id,
         posting_date: b.posting_date,
         currency: b.currency,
@@ -211,7 +217,6 @@ async fn create_landed_cost(
 struct LcOutcomeBody { id: Uuid, posted: bool, gl_amount: Decimal }
 async fn validate_landed_cost(
     State(svc): State<Arc<InventoryWriteService>>,
-    _tenant: CompanyContext,
     axum::extract::Path(lc_id): axum::extract::Path<Uuid>,
 ) -> axum::response::Response {
     match svc.validate_landed_cost_deferred(lc_id).await {
@@ -221,11 +226,10 @@ async fn validate_landed_cost(
 }
 async fn cancel_landed_cost(
     State(svc): State<Arc<InventoryWriteService>>,
-    _tenant: CompanyContext,
     axum::extract::Path(lc_id): axum::extract::Path<Uuid>,
 ) -> axum::response::Response {
-    // `tenant` proves the caller's company; the service re-reads the document and binds ITS
-    // company before any write (a document of another company is simply NotFound to the fence).
+    // Tenancy is composition-installed (ADR-0029): the composing service's org scope middleware
+    // fences the document read — a document outside the caller's scope is simply NotFound.
     match svc.cancel_landed_cost(lc_id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => err(e),
@@ -269,10 +273,9 @@ struct CreateBatchBody {
 }
 async fn create_batch(
     State(svc): State<Arc<InventoryWriteService>>,
-    tenant: CompanyContext,
     Json(b): Json<CreateBatchBody>,
 ) -> axum::response::Response {
-    match svc.create_batch(tenant.company_id, b.name, b.is_wave, None).await {
+    match svc.create_batch(b.name, b.is_wave, None).await {
         Ok(h) => (StatusCode::CREATED, Json(batch_header_body(h))).into_response(),
         Err(e) => err(e),
     }
@@ -282,31 +285,28 @@ async fn create_batch(
 struct BatchMemberBodyIn { picking_id: Uuid }
 async fn add_batch_member(
     State(svc): State<Arc<InventoryWriteService>>,
-    tenant: CompanyContext,
     axum::extract::Path(batch_id): axum::extract::Path<Uuid>,
     Json(b): Json<BatchMemberBodyIn>,
 ) -> axum::response::Response {
-    match svc.add_picking_to_batch(tenant.company_id, batch_id, b.picking_id).await {
+    match svc.add_picking_to_batch(batch_id, b.picking_id).await {
         Ok(h) => (StatusCode::OK, Json(batch_header_body(h))).into_response(),
         Err(e) => err(e),
     }
 }
 async fn remove_batch_member(
     State(svc): State<Arc<InventoryWriteService>>,
-    tenant: CompanyContext,
     axum::extract::Path((batch_id, picking_id)): axum::extract::Path<(Uuid, Uuid)>,
 ) -> axum::response::Response {
-    match svc.remove_picking_from_batch(tenant.company_id, batch_id, picking_id).await {
+    match svc.remove_picking_from_batch(batch_id, picking_id).await {
         Ok(h) => (StatusCode::OK, Json(batch_header_body(h))).into_response(),
         Err(e) => err(e),
     }
 }
 async fn get_batch(
     State(svc): State<Arc<InventoryWriteService>>,
-    tenant: CompanyContext,
     axum::extract::Path(batch_id): axum::extract::Path<Uuid>,
 ) -> axum::response::Response {
-    match svc.fetch_batch(tenant.company_id, batch_id).await {
+    match svc.fetch_batch(batch_id).await {
         Ok((h, members)) => (StatusCode::OK, Json(BatchProbeBody {
             batch: batch_header_body(h),
             members: members.into_iter().map(|m| BatchMemberBody {
@@ -354,11 +354,11 @@ struct CreateScrapBody {
 }
 async fn create_scrap(
     State(svc): State<Arc<InventoryWriteService>>,
-    tenant: CompanyContext,
     Json(b): Json<CreateScrapBody>,
 ) -> axum::response::Response {
+    // Tenancy is composition-installed (ADR-0029): the composing service's org scope middleware
+    // fences the mint; no tenant field rides the body.
     let s = crate::application::service::inventory_scrap::NewScrap {
-        company_id: tenant.company_id,
         item_id: b.item_id,
         scrap_qty: b.scrap_qty,
         location_id: b.location_id,
@@ -380,12 +380,12 @@ async fn create_scrap(
 struct ScrapProcessedBody { scrap_id: Uuid, move_id: Uuid }
 async fn process_scrap(
     State(svc): State<Arc<InventoryWriteService>>,
-    tenant: CompanyContext,
     axum::extract::Path(scrap_id): axum::extract::Path<Uuid>,
 ) -> axum::response::Response {
     // The deferred shape: the physical movement lands whole; the GL leg stays for a
-    // service-driven repost (the composing service's sink is not available here).
-    match svc.process_scrap_deferred(tenant.company_id, scrap_id).await {
+    // service-driven repost (the composing service's sink is not available here). Tenancy is
+    // composition-installed (ADR-0029): the org scope middleware fences the door.
+    match svc.process_scrap_deferred(scrap_id).await {
         Ok(out) => (StatusCode::OK, Json(ScrapProcessedBody {
             scrap_id: out.scrap_id, move_id: out.move_id,
         })).into_response(),
@@ -397,7 +397,7 @@ async fn process_scrap(
 // axum refuses two handlers on one method+path. Its DTO carries everything the door view
 // would (state, move_id, both locations), so a second route would only re-state it; the
 // scrap door's own surface is the mint + process verbs below.
-fn write_routes(svc: Arc<InventoryWriteService>, verifier: CompanyVerifier) -> Router {
+fn write_routes(svc: Arc<InventoryWriteService>) -> Router {
     Router::new()
         .route("/warehouses", post(create_warehouse))
         .route("/purchase-receipts", post(create_receipt))
@@ -423,14 +423,6 @@ fn write_routes(svc: Arc<InventoryWriteService>, verifier: CompanyVerifier) -> R
         // lands whole, GL leg stays for the service-driven repost).
         .route("/scraps", post(create_scrap))
         .route("/scraps/:id/process", post(process_scrap))
-        // Every write above is tenant-scoped: `company_auth` rejects a request whose token is absent,
-        // invalid, or carries no `company_id`, so a handler only ever runs with a proven tenant.
-        //
-        // `route_layer`, not `layer`: `layer` would also wrap this router's fallback, so once merged
-        // every *unmatched* path (e.g. the generic CRUD paths this surface deliberately does not
-        // mount) would answer 401 instead of 404 — leaking "auth required" for routes that do not
-        // exist, and masking the CRUD-bypass probes.
-        .route_layer(from_fn_with_state(verifier, company_auth))
         .with_state(svc)
 }
 
@@ -448,7 +440,8 @@ struct PickingLineBody { item_id: Uuid, demand_qty: Decimal, #[serde(default)] p
 #[serde(rename_all = "camelCase")]
 struct CreatePickingBody {
     name: String,
-    // Tenant comes from the signed token (`CompanyContext`), not the body.
+    // Tenancy is composition-installed (ADR-0029): no tenant field — the composing service's
+    // org scope middleware fences the mint.
     picking_type_id: Uuid,
     location_id: Uuid,
     location_dest_id: Uuid,
@@ -465,12 +458,10 @@ fn default_move_type() -> String { "direct".into() }
 struct PickingCreatedBody { transfer_id: Uuid, move_ids: Vec<Uuid>, projected_state: String }
 async fn create_picking(
     State(svc): State<Arc<InventoryWriteService>>,
-    tenant: CompanyContext,
     Json(b): Json<CreatePickingBody>,
 ) -> axum::response::Response {
     let p = crate::application::service::inventory_transfer::NewPicking {
         name: b.name,
-        company_id: tenant.company_id,
         picking_type_id: b.picking_type_id,
         location_id: b.location_id,
         location_dest_id: b.location_dest_id,
@@ -506,10 +497,9 @@ struct PickingProbeBody {
 }
 async fn get_picking(
     State(svc): State<Arc<InventoryWriteService>>,
-    tenant: CompanyContext,
     axum::extract::Path(transfer_id): axum::extract::Path<Uuid>,
 ) -> axum::response::Response {
-    match svc.fetch_picking(tenant.company_id, transfer_id).await {
+    match svc.fetch_picking(transfer_id).await {
         Ok((h, moves)) => (StatusCode::OK, Json(PickingProbeBody {
             id: h.id, name: h.name, origin: h.origin, picking_type_id: h.picking_type_id,
             location_id: h.location_id, location_dest_id: h.location_dest_id,
@@ -540,10 +530,11 @@ struct StagedCountBody {
 }
 async fn stage_count(
     State(svc): State<Arc<InventoryWriteService>>,
-    tenant: CompanyContext,
     Json(b): Json<StageCountBody>,
 ) -> axum::response::Response {
-    match svc.stage_quant_count(tenant.company_id, b.item_id, b.location_id, b.counted_qty).await {
+    // Tenancy is composition-installed (ADR-0029): the composing service's org scope middleware
+    // fences the quant lookup and the stage write; no tenant field rides the body.
+    match svc.stage_quant_count(b.item_id, b.location_id, b.counted_qty).await {
         Ok(s) => (StatusCode::CREATED, Json(StagedCountBody {
             quant_id: s.quant_id, location_id: s.location_id,
             on_hand_qty: s.on_hand_qty, counted_qty: s.counted_qty, diff_qty: s.diff_qty,
@@ -565,10 +556,9 @@ struct StagedCountRowBody {
 }
 async fn get_staged_counts(
     State(svc): State<Arc<InventoryWriteService>>,
-    tenant: CompanyContext,
     Query(q): Query<StagedCountsQuery>,
 ) -> axum::response::Response {
-    match svc.staged_counts(tenant.company_id, q.location_id).await {
+    match svc.staged_counts(q.location_id).await {
         Ok(rows) => (StatusCode::OK, Json(rows.into_iter().map(|r| StagedCountRowBody {
             quant_id: r.quant_id, item_id: r.item_id,
             on_hand_qty: r.on_hand_qty, counted_qty: r.counted_qty, diff_qty: r.diff_qty,
@@ -580,14 +570,14 @@ async fn get_staged_counts(
 // ── availability read-model (the surface selling consumes to check stock) ────
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AvailabilityQuery { company_id: Uuid, item_id: Uuid, warehouse_id: Uuid }
+struct AvailabilityQuery { item_id: Uuid, warehouse_id: Uuid }
 async fn get_availability(State(svc): State<Arc<InventoryReadService>>, Query(q): Query<AvailabilityQuery>) -> axum::response::Response {
-    match svc.availability(q.company_id, q.item_id, q.warehouse_id).await {
+    match svc.availability(q.item_id, q.warehouse_id).await {
         Ok(view) => (StatusCode::OK, Json(view)).into_response(),
         Err(e) => {
             // The read model returns a raw `sqlx::Error` (no domain taxonomy); log the typed error
             // so a 500 here is diagnosable instead of a bare "availability query failed".
-            tracing::error!(target: "inventory.read", error = ?e, company_id = %q.company_id, item_id = %q.item_id, warehouse_id = %q.warehouse_id, "availability query failed");
+            tracing::error!(target: "inventory.read", error = ?e, item_id = %q.item_id, warehouse_id = %q.warehouse_id, "availability query failed");
             (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorBody { error: "internal_error".into(), message: "availability query failed".into() })).into_response()
         }
     }
@@ -596,11 +586,11 @@ fn read_routes(svc: Arc<InventoryReadService>) -> Router {
     Router::new().route("/availability", axum::routing::get(get_availability)).with_state(svc)
 }
 
-/// The projection/adjustment PROBES (tenant-fenced reads): the picking's projected state,
-/// the batch projection (header + member states), and the pending-count worklist. Same
-/// `company_auth` + `route_layer` posture as the writes — these reads take the tenant from
-/// the token, so a caller cannot probe another company's transfers or staged counts.
-fn probe_routes(svc: Arc<InventoryWriteService>, verifier: CompanyVerifier) -> Router {
+/// The projection/adjustment PROBES: the picking's projected state, the batch projection
+/// (header + member states), and the pending-count worklist. Bare of authentication like the
+/// writes — the composing service's org scope middleware fences these reads, so a caller
+/// cannot probe outside its scope.
+fn probe_routes(svc: Arc<InventoryWriteService>) -> Router {
     Router::new()
         .route("/pickings/:id", axum::routing::get(get_picking))
         .route("/counts", axum::routing::get(get_staged_counts))
@@ -608,7 +598,6 @@ fn probe_routes(svc: Arc<InventoryWriteService>, verifier: CompanyVerifier) -> R
         // surface mounts at the underscore form `/picking_batches`), so the projection probe
         // owns it: the batch header WITH its member pickings' states.
         .route("/picking-batches/:id", axum::routing::get(get_batch))
-        .route_layer(from_fn_with_state(verifier, company_auth))
         .with_state(svc)
 }
 
@@ -620,8 +609,9 @@ struct DeliveryRequestLineBody { item_id: Uuid, quantity: Decimal }
 #[serde(rename_all = "camelCase")]
 struct DeliveryRequestedBody {
     delivery_number: String,
-    // Tenant (company/branch) comes from the signed token (`CompanyContext`), not the body: this
-    // intake persists a Delivery Note, so a body-supplied tenant would be a cross-tenant write.
+    // Tenancy is composition-installed (ADR-0029): no tenant field — this intake persists a
+    // Delivery Note and the composing service's org scope middleware fences it. The branch is
+    // a business column, not the tenancy axis: it comes from the signed acting node.
     customer_id: Uuid,
     #[serde(default)] source_so_id: Option<Uuid>,
     warehouse_id: Uuid,
@@ -631,9 +621,9 @@ struct DeliveryRequestedBody {
     inventory_account_id: Uuid,
     lines: Vec<DeliveryRequestLineBody>,
 }
-async fn post_delivery_requested(State(intake): State<Arc<DeliveryIntake>>, tenant: CompanyContext, Json(b): Json<DeliveryRequestedBody>) -> axum::response::Response {
+async fn post_delivery_requested(State(intake): State<Arc<DeliveryIntake>>, org: OrgContext, Json(b): Json<DeliveryRequestedBody>) -> axum::response::Response {
     let req = DeliveryRequested {
-        delivery_number: b.delivery_number, company_id: tenant.company_id, branch_id: tenant.branch_id,
+        delivery_number: b.delivery_number, branch_id: Some(org.acting_unit_id),
         customer_id: b.customer_id, source_so_id: b.source_so_id, warehouse_id: b.warehouse_id,
         posting_date: b.posting_date, currency: b.currency, cogs_account_id: b.cogs_account_id, inventory_account_id: b.inventory_account_id,
         lines: b.lines.into_iter().map(|l| DeliveryRequestLine { item_id: l.item_id, quantity: l.quantity }).collect(),
@@ -643,48 +633,46 @@ async fn post_delivery_requested(State(intake): State<Arc<DeliveryIntake>>, tena
         Err(e) => err(e),
     }
 }
-fn intake_routes(intake: Arc<DeliveryIntake>, verifier: CompanyVerifier) -> Router {
+fn intake_routes(intake: Arc<DeliveryIntake>) -> Router {
     Router::new()
         .route("/delivery-requests", post(post_delivery_requested))
-        // Same guard as the write surface (and `route_layer` for the same fallback reason): the HTTP
-        // face of the seam persists a document, so it must prove its tenant like any other write.
-        .route_layer(from_fn_with_state(verifier, company_auth))
         .with_state(intake)
 }
 
-/// Mount the inventory module: read stock documents + validated, tenant-scoped creates. Generic
-/// mutation and direct SLE/Bin writes are not exposed. **Prefer this over
-/// `InventoryModule::all_crud_routes()`.**
+/// Mount the inventory module: read stock documents + validated creates. Generic mutation and
+/// direct SLE/Bin writes are not exposed. **Prefer this over `InventoryModule::all_crud_routes()`.**
 ///
-/// The composing service builds one [`CompanyVerifier`] from its JWT secret and passes it here; the
-/// write surface derives `company_id` from the token, so no tenant crosses the wire in a body.
+/// The router ships BARE of authentication (ADR-0029, the org-composed shape): the composing
+/// service wraps it in its org scope middleware (`org_auth` + the tenant router), whose
+/// request-dedicated connection fences every statement these routes issue. Handlers never take a
+/// tenant from the wire — a body carries no tenant field, and the branch a document opens at is
+/// the signed acting node.
 pub fn create_guarded_inventory_routes(
     m: &InventoryModule,
     pool: PgPool,
-    verifier: CompanyVerifier,
 ) -> Router {
     let write = Arc::new(InventoryWriteService::new(pool.clone()));
     let read = Arc::new(InventoryReadService::new(pool.clone()));
     let intake = Arc::new(DeliveryIntake::new(pool));
-    // The generic entity read routes are tenant-scoped by the same `company_auth` layer as the writes:
-    // it establishes the request scope (app.company_id bound on a dedicated connection), and the generic
-    // list/get path runs through `company_scope::fetch_*_scoped`, which rides that connection so RLS
-    // returns only the caller's rows. All five entities are company-fenced. Unauthenticated reads → 401.
+    // The generic entity read routes ride the same composed fence as the writes: once the
+    // composing service wraps this router, every list/get runs on the request's org-scoped,
+    // request-dedicated connection, so RLS returns only rows the caller's scope entitles it
+    // to. Unauthenticated requests never reach a handler — the org guard rejects them first.
     let entity_reads = Router::new()
         .merge(create_warehouse_read_routes(m.warehouse_service.clone()))
         .merge(create_bin_read_routes(m.bin_service.clone()))
         .merge(create_stock_ledger_entry_read_routes(m.stock_ledger_entry_service.clone()))
         .merge(create_purchase_receipt_read_routes(m.purchase_receipt_service.clone()))
         .merge(create_delivery_note_read_routes(m.delivery_note_service.clone()))
-        // Procurement configuration reads (routes, rules, orderpoints) ride the same tenant
-        // fence. Orderpoints are read-only here by design: the `manual` trigger surfaces in the
+        // Procurement configuration reads (routes, rules, orderpoints) ride the same fence.
+        // Orderpoints are read-only here by design: the `manual` trigger surfaces in the
         // replenishment view for a human to order against; the computes recommend, and the
         // ordering verbs stay on the service/job surface (`ProcurementService`).
         .merge(create_route_read_routes(m.route_service.clone()))
         .merge(create_route_rule_read_routes(m.route_rule_service.clone()))
         .merge(create_reordering_rule_read_routes(m.reordering_rule_service.clone()))
         // Satellite + master-data reads (batch/scrap documents; package/storage/putaway
-        // vocabulary): same tenant fence. The DB-level guards (uniques, CHECKs, the T12
+        // vocabulary): same fence. The DB-level guards (uniques, CHECKs, the T12
         // trigger) backstop every writer on these tables.
         .merge(create_picking_batch_read_routes(m.picking_batch_service.clone()))
         .merge(create_scrap_read_routes(m.scrap_service.clone()))
@@ -692,12 +680,11 @@ pub fn create_guarded_inventory_routes(
         .merge(create_package_type_read_routes(m.package_type_service.clone()))
         .merge(create_storage_category_read_routes(m.storage_category_service.clone()))
         .merge(create_storage_category_capacity_read_routes(m.storage_category_capacity_service.clone()))
-        .merge(create_putaway_rule_read_routes(m.putaway_rule_service.clone()))
-        .route_layer(from_fn_with_state(verifier.clone(), company_auth));
+        .merge(create_putaway_rule_read_routes(m.putaway_rule_service.clone()));
     Router::new()
         .merge(entity_reads)
-        .merge(write_routes(write.clone(), verifier.clone()))
+        .merge(write_routes(write.clone()))
         .merge(read_routes(read))
-        .merge(intake_routes(intake, verifier.clone()))
-        .merge(probe_routes(write, verifier))
+        .merge(intake_routes(intake))
+        .merge(probe_routes(write))
 }

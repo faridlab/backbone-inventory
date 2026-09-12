@@ -45,7 +45,6 @@ pub struct LandedCostAdjustmentLinePaginatedResult {
 #[derive(Debug, Clone, Default)]
 pub struct LandedCostAdjustmentLineFilter {
     pub lc_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
     pub move_line_id: Option<Uuid>,
     pub cost_line_id: Option<Uuid>,
 }
@@ -53,7 +52,7 @@ pub struct LandedCostAdjustmentLineFilter {
 impl LandedCostAdjustmentLineFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.lc_id.is_some() || self.company_id.is_some() || self.move_line_id.is_some() || self.cost_line_id.is_some()
+        self.lc_id.is_some() || self.move_line_id.is_some() || self.cost_line_id.is_some()
     }
 }
 

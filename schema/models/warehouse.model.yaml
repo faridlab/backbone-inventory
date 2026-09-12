@@ -1,15 +1,20 @@
 # =============================================================================
 # Domain: Inventory
 # Entity: Warehouse (+ StockItem projection)
-# Description: Warehouse is the one master this pillar owns — a per-company tree
+# Description: Warehouse is the one master this pillar owns — an org-scoped tree
 # (parent/is_group). StockItem is a read-only ACL projection of catalog.Item
 # (never the god-entity), refreshed by ItemCreated/Updated events.
+#
+# Tenancy: none, by design (ADR-0029) — the module is tenant-agnostic; the
+# composing decorator arms RLS with the org-unit fence and stamps the acting
+# unit. Warehouse and StockItem uniqueness re-declares org-scoped in the
+# composing decorator.
 # =============================================================================
 
 models:
   - name: Warehouse
     collection: warehouses
-    description: "A per-company storage location (tree). Group nodes hold no stock."
+    description: "A per-org-unit storage location (tree). Group nodes hold no stock."
 
     fields:
       id:
@@ -17,10 +22,6 @@ models:
         attributes: ["@id", "@default(uuid)"]
         description: "Unique warehouse identifier"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "Owning company # logical FK to organization.Company.id"
 
       code:
         type: string
@@ -53,13 +54,6 @@ models:
         description: "Audit metadata"
 
     indexes:
-      - type: unique
-        fields: [company_id, code]
-        where: "deleted_at IS NULL"
-      - type: unique
-        fields: [company_id, name]
-        where: "deleted_at IS NULL"
-        description: "R1 — warehouse name unique per company (the code half and the name half are both unique)"
       - type: index
         fields: [parent_warehouse_id]
 
@@ -76,12 +70,8 @@ models:
       item_id:
         type: uuid
         attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "Catalog item # logical FK to catalog.Item.id (unique per company)"
+        description: "Catalog item # logical FK to catalog.Item.id (unique per org unit)"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "Owning company # logical FK to organization.Company.id"
 
       stock_uom:
         type: string
@@ -134,9 +124,6 @@ models:
         description: "Audit metadata"
 
     indexes:
-      - type: unique
-        fields: [company_id, item_id]
-        where: "deleted_at IS NULL"
 
 # =============================================================================
 # Enums

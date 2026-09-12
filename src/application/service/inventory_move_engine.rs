@@ -53,7 +53,6 @@
 //! flips, the Bin reblende, the SLE rows and the move state commit as one unit.
 
 use async_trait::async_trait;
-use backbone_orm::company_scope;
 use chrono::Utc;
 use rust_decimal::Decimal;
 use uuid::Uuid;
@@ -67,7 +66,10 @@ use super::inventory_events::{
 };
 use super::inventory_gl::{AccountingPostEnvelope, GlPostLine, GlPostSink};
 use super::inventory_posture::Posture;
-use super::inventory_write_service::{money, rate6, InventoryError, InventoryWriteService, SubmitOutcome};
+use super::inventory_write_service::{
+    legacy_company_echo, money, rate6, relay_ambient_scope, InventoryError, InventoryWriteService,
+    SubmitOutcome,
+};
 use super::procurement_service::{MovePipeline, MovePipelineError};
 
 // --- input vocabulary ---------------------------------------------------------
@@ -76,7 +78,6 @@ use super::procurement_service::{MovePipeline, MovePipelineError};
 #[derive(Debug, Clone)]
 pub struct NewStockMove {
     pub name: String,
-    pub company_id: Uuid,
     pub item_id: Uuid,
     pub demand_qty: Decimal,
     /// Unit valuation price the SLE mint uses on the IN leg (external receipts). 0 = carry the
@@ -167,8 +168,7 @@ impl InventoryWriteService {
 
     /// Create a DRAFT move (spec §1: `draft → waiting/confirmed` happens on confirm, never at
     /// insert). Guards: R9 (src != dest), non-negative demand (R23 at the door), R13 (a quant
-    /// surface can never be a view location — checked for both endpoints that hold stock), R26
-    /// (the move's company must match its internal locations' company).
+    /// surface can never be a view location — checked for both endpoints that hold stock).
     pub async fn create_move(&self, m: NewStockMove) -> Result<Uuid, InventoryError> {
         if m.demand_qty < Decimal::ZERO || m.price_unit < Decimal::ZERO {
             return Err(InventoryError::NegativeQuantity);
@@ -178,13 +178,11 @@ impl InventoryWriteService {
         }
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
-        // Bind the company scope BEFORE any location read. The row-level-security fence hides
-        // every location whose company_id differs from app.company_id (shared rows with no
-        // company stay visible), so an unbound read cannot see the move's own company
-        // locations and every mint would refuse with location_not_found under an armed fence.
-        // Binding is transaction-local: set_config(..., true) scopes it to this transaction,
-        // so it cannot leak onto the pooled connection after commit.
-        company_scope::bind_company_on(&mut tx, m.company_id).await?;
+        // Re-bind the caller's ambient org scope onto this transaction before the location
+        // reads (ADR-0029) — the scope is task-local and a fresh pool transaction carries none
+        // of it. Under the composed shape the decorator's fence bounds every read here;
+        // undecorated (module tests, jobs) the transaction stays plain.
+        relay_ambient_scope(&mut tx).await?;
         let locs = self.moves.fetch_move_locations(&mut tx, m.location_id, m.location_dest_id).await?;
         let (src, dst) = match locs {
             (Some(s), Some(d)) => (s, d),
@@ -194,15 +192,6 @@ impl InventoryWriteService {
         for loc in [&src, &dst] {
             if loc.usage == "view" {
                 return Err(InventoryError::ViewLocationHoldsNoStock { location_id: loc.id });
-            }
-            if loc.usage == "internal" {
-                if loc.company_id != Some(m.company_id) {
-                    return Err(InventoryError::QuantCompanyMismatch {
-                        location_id: loc.id,
-                        location_company: loc.company_id,
-                        move_company: m.company_id,
-                    });
-                }
             }
         }
         self.moves.insert_move(&mut tx, &NewMoveRow {
@@ -217,7 +206,6 @@ impl InventoryWriteService {
             location_id: m.location_id,
             location_dest_id: m.location_dest_id,
             partner_id: m.partner_id,
-            company_id: m.company_id,
             warehouse_id: m.warehouse_id,
             orderpoint_id: m.orderpoint_id,
             move_orig_ids: m.move_orig_ids.clone(),
@@ -247,35 +235,31 @@ impl InventoryWriteService {
     /// `procure_method` gates supply: `make_to_order` / `mts_else_mto` moves are minted by the
     /// procurement (rule) engine, not here — this method only owns the state gate.
     ///
-    /// The caller names its company: the scope is bound BEFORE the move read, and the fetch is
-    /// scoped by `(id, company_id)`. Under an armed row-level-security fence a read that
-    /// preceded the bind would see zero rows and every legitimate move would 404 here; the
-    /// explicit predicate also makes a cross-company id read as absent (fail-closed 404) on an
-    /// unfenced connection.
-    pub async fn action_confirm(&self, company_id: Uuid, move_id: Uuid) -> Result<String, InventoryError> {
+    /// The move read rides the caller's ambient org scope (ADR-0029): under the composed shape
+    /// the decorator's fence bounds it; undecorated (module tests, jobs) it is plain.
+    pub async fn action_confirm(&self, move_id: Uuid) -> Result<String, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, company_id).await?;
-        let mv = self.moves.fetch_move_for_company(&mut tx, company_id, move_id).await?
+        relay_ambient_scope(&mut tx).await?;
+        let mv = self.moves.fetch_move(&mut tx, move_id).await?
             .ok_or(InventoryError::NotFound(move_id))?;
         if mv.state != "draft" {
             return Err(InventoryError::WrongMoveState { move_id, action: "confirm", current: mv.state });
         }
         let to = self.confirm_core(&mut tx, &mv).await?;
-        let company = mv.company_id;
         tx.commit().await?;
         if to == "confirmed" {
             self.sink.publish(InventoryEvent::MoveConfirmed(MoveConfirmed {
-                move_id, company_id: company, item_id: mv.item_id,
+                move_id, company_id: legacy_company_echo(), item_id: mv.item_id,
                 demand_qty: mv.demand_qty, picking_id: mv.picking_id,
             }));
         }
         Ok(to)
     }
 
-    /// The confirm verb's core on the caller's connection (company scope already bound): the
-    /// parents-done check, the guarded transition, and the picking reproject. Shared by the
-    /// public verb (own transaction) and the [`MovePipeline`] port the scheduler drives on its
-    /// per-batch connection.
+    /// The confirm verb's core on the caller's connection (the ambient org scope already bound
+    /// — ADR-0029): the parents-done check, the guarded transition, and the picking reproject.
+    /// Shared by the public verb (own transaction) and the [`MovePipeline`] port the scheduler
+    /// drives on its per-batch connection.
     async fn confirm_core(
         &self,
         conn: &mut sqlx::PgConnection,
@@ -305,33 +289,31 @@ impl InventoryWriteService {
     /// serialize there — one winner per unit of stock, R22/R25), a mirror move-line is minted per
     /// reserved quant grain, and the move state aggregates the mirror.
     ///
-    /// The caller names its company; the scope is bound before the move read and the fetch is
-    /// scoped by `(id, company_id)` — an armed fence cannot blind this verb's own fetch, and a
-    /// cross-company id reads as absent (fail-closed 404) on an unfenced connection.
-    pub async fn action_assign(&self, company_id: Uuid, move_id: Uuid) -> Result<MoveAssignOutcome, InventoryError> {
+    /// The move read rides the caller's ambient org scope (ADR-0029): under the composed shape
+    /// the decorator's fence bounds it; undecorated (module tests, jobs) it is plain.
+    pub async fn action_assign(&self, move_id: Uuid) -> Result<MoveAssignOutcome, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, company_id).await?;
-        let mv = self.moves.fetch_move_for_company(&mut tx, company_id, move_id).await?
+        relay_ambient_scope(&mut tx).await?;
+        let mv = self.moves.fetch_move(&mut tx, move_id).await?
             .ok_or(InventoryError::NotFound(move_id))?;
         if mv.state != "confirmed" && mv.state != "partially_available" {
             return Err(InventoryError::WrongMoveState { move_id, action: "assign", current: mv.state });
         }
         let (to, total) = self.assign_core(&mut tx, &mv).await?;
-        let company = mv.company_id;
         let picking = mv.picking_id;
         tx.commit().await?;
         if to == "assigned" {
             self.sink.publish(InventoryEvent::MoveAssigned(MoveAssigned {
-                move_id, company_id: company, picking_id: picking,
+                move_id, company_id: legacy_company_echo(), picking_id: picking,
             }));
         }
         Ok(MoveAssignOutcome { move_id, state: to, reserved_qty: total })
     }
 
-    /// The assign verb's core on the caller's connection (company scope already bound): the
-    /// reservation loop, the mirror mint, the aggregate state transition, the line re-mirror and
-    /// the picking reproject. Returns `(new_state, reserved_qty)`. Shared by the public verb and
-    /// the [`MovePipeline`] port.
+    /// The assign verb's core on the caller's connection (the ambient org scope already bound —
+    /// ADR-0029): the reservation loop, the mirror mint, the aggregate state transition, the
+    /// line re-mirror and the picking reproject. Returns `(new_state, reserved_qty)`. Shared by
+    /// the public verb and the [`MovePipeline`] port.
     async fn assign_core(
         &self,
         conn: &mut sqlx::PgConnection,
@@ -345,7 +327,7 @@ impl InventoryWriteService {
         if src.usage == "internal" {
             let already = self.move_lines.sum_mirror_qty(conn, mv.id).await?;
             let mut remaining = mv.demand_qty - already;
-            let candidates = self.quants.fetch_reservation_candidates(conn, mv.company_id, mv.item_id, mv.location_id).await?;
+            let candidates = self.quants.fetch_reservation_candidates(conn, mv.item_id, mv.location_id).await?;
             for cand in candidates {
                 if remaining <= Decimal::ZERO { break; }
                 let dims = QuantDims {
@@ -354,7 +336,7 @@ impl InventoryWriteService {
                 };
                 // Lock the quant row, re-read the free availability under the lock (READ COMMITTED
                 // sees the competitor's committed reservation), then reserve the min(free, need).
-                let locked = self.quants.lock_or_init(conn, mv.company_id, dims).await?;
+                let locked = self.quants.lock_or_init(conn, dims).await?;
                 let free = locked.available();
                 if free <= Decimal::ZERO { continue; }
                 let take = if free < remaining { free } else { remaining };
@@ -371,7 +353,6 @@ impl InventoryWriteService {
                     location_id: mv.location_id,
                     location_dest_id: mv.location_dest_id,
                     item_id: mv.item_id,
-                    company_id: mv.company_id,
                     state: mv.state.as_str(), // transient: re-mirrored to the post-assign state below
                 }).await?;
                 reserved += take;
@@ -397,7 +378,6 @@ impl InventoryWriteService {
                     location_id: mv.location_id,
                     location_dest_id: mv.location_dest_id,
                     item_id: mv.item_id,
-                    company_id: mv.company_id,
                     state: mv.state.as_str(), // transient: re-mirrored to the post-assign state below
                 }).await?;
             }
@@ -428,13 +408,12 @@ impl InventoryWriteService {
     /// retries also release-then-re.reserve). The mirror lines zero out; the authoritative
     /// `reserved_quantity` drops by exactly what the lines held.
     ///
-    /// The caller names its company; the scope is bound before the move read and the fetch is
-    /// scoped by `(id, company_id)` — an armed fence cannot blind this verb's own fetch, and a
-    /// cross-company id reads as absent (fail-closed 404) on an unfenced connection.
-    pub async fn unreserve_move(&self, company_id: Uuid, move_id: Uuid) -> Result<Decimal, InventoryError> {
+    /// The move read rides the caller's ambient org scope (ADR-0029): under the composed shape
+    /// the decorator's fence bounds it; undecorated (module tests, jobs) it is plain.
+    pub async fn unreserve_move(&self, move_id: Uuid) -> Result<Decimal, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, company_id).await?;
-        let mv = self.moves.fetch_move_for_company(&mut tx, company_id, move_id).await?
+        relay_ambient_scope(&mut tx).await?;
+        let mv = self.moves.fetch_move(&mut tx, move_id).await?
             .ok_or(InventoryError::NotFound(move_id))?;
         let released = self.unreserve_lines(&mut tx, &mv).await?;
         tx.commit().await?;
@@ -466,8 +445,8 @@ impl InventoryWriteService {
             if !seen_dims.contains(&dims) { seen_dims.push(dims); }
         }
         for dims in seen_dims {
-            let quant = self.quants.lock_or_init(tx, mv.company_id, dims).await?;
-            self.quants.recompute_reserved_from_mirror(tx, quant.id, mv.company_id, dims).await?;
+            let quant = self.quants.lock_or_init(tx, dims).await?;
+            self.quants.recompute_reserved_from_mirror(tx, quant.id, dims).await?;
         }
         Ok(released)
     }
@@ -478,20 +457,18 @@ impl InventoryWriteService {
     /// the two-step quant sync, the V7-ordered valuation, the chain propagation, the backorder
     /// split and the projection all live here.
     ///
-    /// The caller names its company; the scope is bound before the move read and the fetch is
-    /// scoped by `(id, company_id)` — an armed fence cannot blind this verb's own fetch, and a
-    /// cross-company id reads as absent (fail-closed 404) on an unfenced connection.
+    /// The move read rides the caller's ambient org scope (ADR-0029): under the composed shape
+    /// the decorator's fence bounds it; undecorated (module tests, jobs) it is plain.
     pub async fn action_done(
         &self,
-        company_id: Uuid,
         move_id: Uuid,
         backorder: BackorderPolicy,
         gl: &MoveGlDirective,
         sink: &dyn GlPostSink,
     ) -> Result<MoveDoneOutcome, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, company_id).await?;
-        let mv = self.moves.fetch_move_for_company(&mut tx, company_id, move_id).await?
+        relay_ambient_scope(&mut tx).await?;
+        let mv = self.moves.fetch_move(&mut tx, move_id).await?
             .ok_or(InventoryError::NotFound(move_id))?;
         match mv.state.as_str() {
             "assigned" | "partially_available" | "confirmed" => {}
@@ -541,8 +518,8 @@ impl InventoryWriteService {
             };
             if seen_dims.contains(&src_dims) { continue; }
             seen_dims.push(src_dims);
-            let quant = self.quants.lock_or_init(&mut tx, mv.company_id, src_dims).await?;
-            self.quants.recompute_reserved_from_mirror(&mut tx, quant.id, mv.company_id, src_dims).await?;
+            let quant = self.quants.lock_or_init(&mut tx, src_dims).await?;
+            self.quants.recompute_reserved_from_mirror(&mut tx, quant.id, src_dims).await?;
         }
 
         // -- Step 2 of _synchronize_quant (the AVAILABLE step): the physical flip, guarded by R22
@@ -559,7 +536,7 @@ impl InventoryWriteService {
                     item_id: line.item_id, location_id: line.location_id,
                     lot_id: line.lot_id, package_id: line.package_id, owner_id: line.owner_id,
                 };
-                let src_quant = self.quants.lock_or_init(&mut tx, mv.company_id, src_dims).await?;
+                let src_quant = self.quants.lock_or_init(&mut tx, src_dims).await?;
                 if src_quant.quantity < line.quantity {
                     return Err(InventoryError::InsufficientStock {
                         item_id: mv.item_id,
@@ -574,7 +551,7 @@ impl InventoryWriteService {
                 item_id: line.item_id, location_id: line.location_dest_id,
                 lot_id: line.lot_id, package_id: line.result_package_id.or(line.package_id), owner_id: line.owner_id,
             };
-            let dst_quant = self.quants.lock_or_init(&mut tx, mv.company_id, dst_dims).await?;
+            let dst_quant = self.quants.lock_or_init(&mut tx, dst_dims).await?;
             self.quants.apply_qty(&mut tx, dst_quant.id, line.quantity, Decimal::ZERO).await?;
         }
 
@@ -588,9 +565,9 @@ impl InventoryWriteService {
         // physical movement: a move either lands done with its GL leg `pending`, or not at all.
         // A move that builds no envelope (voucher-door legs whose GL is owned by the voucher,
         // value-neutral shapes, a directive without the accounts this leg needs, a `periodic`
-        // company whose real-time posts are suppressed) stays `not_applicable` — the engine
+        // posture whose real-time posts are suppressed) stays `not_applicable` — the engine
         // posts nothing on its behalf.
-        let posture = self.posting_posture_on(&mut tx, mv.company_id).await?;
+        let posture = self.posting_posture_on(&mut tx).await?;
         let envelope = self.move_gl_envelope(&mv, &src, &dst, gl, out_value, in_value, &posture);
         if envelope.is_some() {
             self.moves.set_posting_pending(&mut tx, move_id).await?;
@@ -620,7 +597,6 @@ impl InventoryWriteService {
                 location_id: mv.location_id,
                 location_dest_id: mv.location_dest_id,
                 partner_id: mv.partner_id,
-                company_id: mv.company_id,
                 warehouse_id: mv.warehouse_id,
                 orderpoint_id: mv.orderpoint_id,
                 move_orig_ids: vec![move_id],
@@ -663,7 +639,6 @@ impl InventoryWriteService {
         if let Some(picking) = mv.picking_id {
             projected_state = self.moves.reproject_picking(&mut tx, picking).await?;
         }
-        let company = mv.company_id;
         let picking = mv.picking_id;
         tx.commit().await?;
 
@@ -681,17 +656,11 @@ impl InventoryWriteService {
             gl_amount = env.lines.iter().map(|l| l.debit).sum();
             match sink.post(&env).await {
                 Ok(_) => {
-                    company_scope::with_company_scope(
-                        Some(company),
-                        self.moves.mark_posting_posted(&self.db_pool, move_id),
-                    ).await?;
+                    self.moves.mark_posting_posted(&self.db_pool, move_id).await?;
                     gl_posted = true;
                 }
                 Err(rej) => {
-                    let _ = company_scope::with_company_scope(
-                        Some(company),
-                        self.moves.mark_posting_failed(&self.db_pool, move_id),
-                    ).await;
+                    let _ = self.moves.mark_posting_failed(&self.db_pool, move_id).await;
                     return Err(InventoryError::GlRejected { code: rej.code, message: rej.message });
                 }
             }
@@ -699,24 +668,24 @@ impl InventoryWriteService {
 
         // -- events ----------------------------------------------------------------------------
         self.sink.publish(InventoryEvent::MoveDone(MoveDone {
-            move_id, company_id: company, item_id: mv.item_id,
+            move_id, company_id: legacy_company_echo(), item_id: mv.item_id,
             quantity: done_qty, price_unit: mv.price_unit, is_inventory: mv.is_inventory,
         }));
         if let Some(child) = backorder_move_id {
             self.sink.publish(InventoryEvent::BackorderCreated(BackorderCreated {
-                backorder_id: child, company_id: company, origin_id: move_id,
+                backorder_id: child, company_id: legacy_company_echo(), origin_id: move_id,
             }));
         }
         for ch in released_children {
             self.sink.publish(InventoryEvent::MoveConfirmed(MoveConfirmed {
-                move_id: ch.id, company_id: ch.company_id, item_id: ch.item_id,
+                move_id: ch.id, company_id: legacy_company_echo(), item_id: ch.item_id,
                 demand_qty: ch.demand_qty, picking_id: ch.picking_id,
             }));
         }
         if let Some(p) = picking {
             if let Some(state) = projected_state {
                 self.sink.publish(InventoryEvent::TransferProjected(TransferProjected {
-                    transfer_id: p, company_id: company, state, previous_state: mv.state.clone(),
+                    transfer_id: p, company_id: legacy_company_echo(), state, previous_state: mv.state.clone(),
                 }));
             }
         }
@@ -728,13 +697,12 @@ impl InventoryWriteService {
     /// `* → cancel` (spec §1): frees the reservation first, then propagates to the chained
     /// children (`move_dest_ids`) unless `propagate_cancel=false` — never into a done move.
     ///
-    /// The caller names its company; the scope is bound before the move read and the fetch is
-    /// scoped by `(id, company_id)` — an armed fence cannot blind this verb's own fetch, and a
-    /// cross-company id reads as absent (fail-closed 404) on an unfenced connection.
-    pub async fn action_cancel(&self, company_id: Uuid, move_id: Uuid) -> Result<Decimal, InventoryError> {
+    /// The move read rides the caller's ambient org scope (ADR-0029): under the composed shape
+    /// the decorator's fence bounds it; undecorated (module tests, jobs) it is plain.
+    pub async fn action_cancel(&self, move_id: Uuid) -> Result<Decimal, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, company_id).await?;
-        let mv = self.moves.fetch_move_for_company(&mut tx, company_id, move_id).await?
+        relay_ambient_scope(&mut tx).await?;
+        let mv = self.moves.fetch_move(&mut tx, move_id).await?
             .ok_or(InventoryError::NotFound(move_id))?;
         match mv.state.as_str() {
             "draft" | "waiting" | "confirmed" | "partially_available" | "assigned" => {}
@@ -757,10 +725,9 @@ impl InventoryWriteService {
         if let Some(picking) = mv.picking_id {
             self.moves.reproject_picking(&mut tx, picking).await?;
         }
-        let company = mv.company_id;
         tx.commit().await?;
         self.sink.publish(InventoryEvent::MoveCancelled(MoveCancelled {
-            move_id, company_id: company, released_qty: released,
+            move_id, company_id: legacy_company_echo(), released_qty: released,
         }));
         Ok(released)
     }
@@ -786,20 +753,18 @@ impl InventoryWriteService {
     /// On a fresh rejection the move parks in `failed` again and the error surfaces, as in
     /// `_action_done`.
     ///
-    /// The caller names its company; the scope is bound before the move read and the fetch is
-    /// scoped by `(id, company_id)` — an armed fence cannot blind this verb's own fetch, and a
-    /// cross-company id reads as absent (fail-closed 404) on an unfenced connection.
+    /// The move read rides the caller's ambient org scope (ADR-0029): under the composed shape
+    /// the decorator's fence bounds it; undecorated (module tests, jobs) it is plain.
     pub async fn repost_move_gl(
         &self,
-        company_id: Uuid,
         move_id: Uuid,
         gl: &MoveGlDirective,
         sink: &dyn GlPostSink,
     ) -> Result<SubmitOutcome, InventoryError> {
         let mv = {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, company_id).await?;
-            let mv = self.moves.fetch_move_for_company(&mut tx, company_id, move_id).await?
+            relay_ambient_scope(&mut tx).await?;
+            let mv = self.moves.fetch_move(&mut tx, move_id).await?
                 .ok_or(InventoryError::NotFound(move_id))?;
             tx.commit().await?;
             mv
@@ -822,35 +787,29 @@ impl InventoryWriteService {
         }
         let locs = {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, mv.company_id).await?;
+            relay_ambient_scope(&mut tx).await?;
             let locs = self.moves.fetch_move_locations(&mut tx, mv.location_id, mv.location_dest_id).await?;
             tx.commit().await?;
             locs
         };
         let src = locs.0.ok_or(InventoryError::LocationNotFound(mv.location_id))?;
         let dst = locs.1.ok_or(InventoryError::LocationNotFound(mv.location_dest_id))?;
-        // The SAME posture the original done-transaction consulted: a `periodic` company's
+        // The SAME posture the original done-transaction consulted: a `periodic` posture's
         // move legs retire to `not_applicable` (the real-time post is genuinely not wanted
         // under the current configuration), exactly like a directive that no longer supplies
         // the accounts.
-        let posture = self.posting_posture(mv.company_id).await?;
+        let posture = self.posting_posture().await?;
         if posture.periodic {
-            company_scope::with_company_scope(
-                Some(mv.company_id),
-                self.moves.mark_posting_not_applicable(&self.db_pool, move_id),
-            ).await?;
+            self.moves.mark_posting_not_applicable(&self.db_pool, move_id).await?;
             return Ok(SubmitOutcome {
                 voucher_id: move_id, posted: false, journal_id: None, post_id: None,
                 gl_amount: Decimal::ZERO,
             });
         }
-        let (out_value, in_value) = self.sles.move_leg_values(&self.db_pool, mv.company_id, move_id).await?;
+        let (out_value, in_value) = self.sles.move_leg_values(&self.db_pool, move_id).await?;
         let envelope = self.move_gl_envelope(&mv, &src, &dst, gl, out_value, in_value, &posture);
         let Some(env) = envelope else {
-            company_scope::with_company_scope(
-                Some(mv.company_id),
-                self.moves.mark_posting_not_applicable(&self.db_pool, move_id),
-            ).await?;
+            self.moves.mark_posting_not_applicable(&self.db_pool, move_id).await?;
             return Ok(SubmitOutcome {
                 voucher_id: move_id, posted: false, journal_id: None, post_id: None,
                 gl_amount: Decimal::ZERO,
@@ -860,10 +819,7 @@ impl InventoryWriteService {
         let gl_amount = env.lines.iter().map(|l| l.debit).sum();
         match sink.post(&env).await {
             Ok(ack) => {
-                company_scope::with_company_scope(
-                    Some(mv.company_id),
-                    self.moves.mark_posting_posted(&self.db_pool, move_id),
-                ).await?;
+                self.moves.mark_posting_posted(&self.db_pool, move_id).await?;
                 Ok(SubmitOutcome {
                     voucher_id: move_id, posted: true,
                     journal_id: Some(ack.journal_id), post_id: Some(ack.post_id),
@@ -871,10 +827,7 @@ impl InventoryWriteService {
                 })
             }
             Err(rej) => {
-                let _ = company_scope::with_company_scope(
-                    Some(mv.company_id),
-                    self.moves.mark_posting_failed(&self.db_pool, move_id),
-                ).await;
+                let _ = self.moves.mark_posting_failed(&self.db_pool, move_id).await;
                 Err(InventoryError::GlRejected { code: rej.code, message: rej.message })
             }
         }
@@ -911,7 +864,7 @@ impl InventoryWriteService {
         // path: opposing moves on the same pair serialize instead of deadlocking).
         let mut legs: Vec<(Uuid, crate::infrastructure::persistence::BinBalanceRow)> = Vec::new();
         for wh in [src_wh, dst_wh].into_iter().flatten() {
-            let bal = self.bins.lock_or_init(tx, mv.company_id, mv.item_id, wh).await?;
+            let bal = self.bins.lock_or_init(tx, mv.item_id, wh).await?;
             legs.push((wh, bal));
         }
         // `BinBalanceRow` is not Clone; `Decimal` is Copy, so reconstruct on lookup.
@@ -948,10 +901,10 @@ impl InventoryWriteService {
             let out_rate = if out_qty > Decimal::ZERO {
                 if forced { rate6(out_stock_value / out_qty) } else { bal.valuation_rate }
             } else { Decimal::ZERO };
-            self.bins.update_balance(tx, mv.company_id, mv.item_id, wh, out_qty, out_rate, out_stock_value).await?;
+            self.bins.update_balance(tx, mv.item_id, wh, out_qty, out_rate, out_stock_value).await?;
             sle_no += 1;
             self.sles.insert_sle(tx, &crate::infrastructure::persistence::NewSleRow {
-                company_id: mv.company_id, item_id: mv.item_id, warehouse_id: wh, posting_date,
+                item_id: mv.item_id, warehouse_id: wh, posting_date,
                 actual_qty: -qty, qty_after_txn: out_qty, incoming_rate: Decimal::ZERO,
                 valuation_rate: out_rate, stock_value: out_stock_value,
                 stock_value_difference: -out_value,
@@ -977,10 +930,10 @@ impl InventoryWriteService {
             let in_qty = bal.actual_qty + qty;
             let in_stock_value = bal.stock_value + carried;
             let in_rate = if in_qty > Decimal::ZERO { rate6(in_stock_value / in_qty) } else { Decimal::ZERO };
-            self.bins.update_balance(tx, mv.company_id, mv.item_id, wh, in_qty, in_rate, in_stock_value).await?;
+            self.bins.update_balance(tx, mv.item_id, wh, in_qty, in_rate, in_stock_value).await?;
             sle_no += 1;
             self.sles.insert_sle(tx, &crate::infrastructure::persistence::NewSleRow {
-                company_id: mv.company_id, item_id: mv.item_id, warehouse_id: wh, posting_date,
+                item_id: mv.item_id, warehouse_id: wh, posting_date,
                 actual_qty: qty, qty_after_txn: in_qty, incoming_rate: mv.price_unit,
                 valuation_rate: in_rate, stock_value: in_stock_value,
                 stock_value_difference: carried,
@@ -1051,7 +1004,7 @@ impl InventoryWriteService {
         if self.sles.has_sle_named(tx, "landed_cost", lc_id, &name).await? {
             return Ok(()); // this leg already landed in a prior (crashed) attempt — resume, never double-mint
         }
-        let bal = self.bins.lock_or_init(tx, mv.company_id, mv.item_id, wh).await?;
+        let bal = self.bins.lock_or_init(tx, mv.item_id, wh).await?;
         let new_value = bal.stock_value + delta;
         let new_qty = bal.actual_qty; // a landed cost moves no quantity, only value
         let new_rate = if new_qty > Decimal::ZERO {
@@ -1059,10 +1012,10 @@ impl InventoryWriteService {
         } else {
             Decimal::ZERO
         };
-        self.bins.update_balance(tx, mv.company_id, mv.item_id, wh, new_qty, new_rate, new_value).await?;
+        self.bins.update_balance(tx, mv.item_id, wh, new_qty, new_rate, new_value).await?;
         let sle_no = self.sles.fetch_max_sle_no(tx, "landed_cost", lc_id).await? + 1;
         self.sles.insert_sle(tx, &crate::infrastructure::persistence::NewSleRow {
-            company_id: mv.company_id, item_id: mv.item_id, warehouse_id: wh,
+            item_id: mv.item_id, warehouse_id: wh,
             posting_date: chrono::Utc::now().date_naive(),
             actual_qty: Decimal::ZERO, qty_after_txn: new_qty,
             incoming_rate: Decimal::ZERO, valuation_rate: new_rate,
@@ -1074,8 +1027,8 @@ impl InventoryWriteService {
 
     /// Build the GL envelope for the done move's leg shape, or `None` when the shape posts no GL
     /// (cross-warehouse internal transfer: value-neutral), the directive lacks the accounts, the
-    /// company's `periodic` policy suppresses real-time stock posts, or the move carries neither
-    /// value nor quantity (the explicit account-move gate).
+    /// `periodic` posture suppresses real-time stock posts, or the move carries neither value
+    /// nor quantity (the explicit account-move gate).
     fn move_gl_envelope(
         &self,
         mv: &crate::infrastructure::persistence::MoveRow,
@@ -1086,7 +1039,7 @@ impl InventoryWriteService {
         in_value: Decimal,
         posture: &Posture,
     ) -> Option<AccountingPostEnvelope> {
-        // A `periodic` company posts no real-time stock GL — the closing flow (a later
+        // A `periodic` posture posts no real-time stock GL — the closing flow (a later
         // increment) owns those legs; the move stays `not_applicable`.
         if posture.periodic {
             return None;
@@ -1149,7 +1102,9 @@ impl InventoryWriteService {
         };
         Some(AccountingPostEnvelope {
             idempotency_key: mv.id.to_string(),
-            company_id: mv.company_id,
+            // Legacy twin (ADR-0029): filled from the ambient org scope's company echo for
+            // consumers that still read a tenant off the wire. No module statement keys on it.
+            company_id: legacy_company_echo(),
             branch_id: None,
             source_type: "inventory".into(),
             source_id: mv.id,
@@ -1178,7 +1133,6 @@ impl MovePipeline for InventoryWriteService {
     async fn confirm(
         &self,
         conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
         move_id: Uuid,
     ) -> Result<MoveState, MovePipelineError> {
         let pipe = |e: InventoryError| MovePipelineError { code: e.code(), message: e.to_string() };
@@ -1188,21 +1142,15 @@ impl MovePipeline for InventoryWriteService {
             .await
             .map_err(|e| pipe(InventoryError::Db(e)))?
             .ok_or_else(|| pipe(InventoryError::NotFound(move_id)))?;
-        if mv.company_id != company_id {
-            return Err(MovePipelineError {
-                code: "company_mismatch".into(),
-                message: format!("move {move_id} belongs to another company"),
-            });
-        }
         if mv.state != "draft" {
             return Err(pipe(InventoryError::WrongMoveState { move_id, action: "confirm", current: mv.state }));
         }
-        company_scope::bind_company_on(conn, company_id).await.map_err(|e| pipe(InventoryError::Db(e)))?;
+        relay_ambient_scope(conn).await.map_err(|e| pipe(InventoryError::Db(e)))?;
         let to = self.confirm_core(conn, &mv).await.map_err(pipe)?;
         if to == "confirmed" {
             self.sink.publish(InventoryEvent::MoveConfirmed(MoveConfirmed {
                 move_id,
-                company_id,
+                company_id: legacy_company_echo(),
                 item_id: mv.item_id,
                 demand_qty: mv.demand_qty,
                 picking_id: mv.picking_id,
@@ -1215,7 +1163,6 @@ impl MovePipeline for InventoryWriteService {
     async fn assign(
         &self,
         conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
         move_id: Uuid,
     ) -> Result<MoveState, MovePipelineError> {
         let pipe = |e: InventoryError| MovePipelineError { code: e.code(), message: e.to_string() };
@@ -1225,20 +1172,14 @@ impl MovePipeline for InventoryWriteService {
             .await
             .map_err(|e| pipe(InventoryError::Db(e)))?
             .ok_or_else(|| pipe(InventoryError::NotFound(move_id)))?;
-        if mv.company_id != company_id {
-            return Err(MovePipelineError {
-                code: "company_mismatch".into(),
-                message: format!("move {move_id} belongs to another company"),
-            });
-        }
         if mv.state != "confirmed" && mv.state != "partially_available" {
             return Err(pipe(InventoryError::WrongMoveState { move_id, action: "assign", current: mv.state }));
         }
-        company_scope::bind_company_on(conn, company_id).await.map_err(|e| pipe(InventoryError::Db(e)))?;
+        relay_ambient_scope(conn).await.map_err(|e| pipe(InventoryError::Db(e)))?;
         let (to, _reserved) = self.assign_core(conn, &mv).await.map_err(pipe)?;
         if to == "assigned" {
             self.sink.publish(InventoryEvent::MoveAssigned(MoveAssigned {
-                move_id, company_id, picking_id: mv.picking_id,
+                move_id, company_id: legacy_company_echo(), picking_id: mv.picking_id,
             }));
         }
         to.parse::<MoveState>()

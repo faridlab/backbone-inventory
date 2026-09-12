@@ -34,9 +34,6 @@ use crate::domain::entity::ValuationPolicy;
 #[cfg_attr(feature = "validation", derive(Validate))]
 #[serde(rename_all = "camelCase")]
 pub struct CreateInventoryCompanySettingDto {
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[serde(alias = "cost_method")]
     pub cost_method: InventoryCostMethod,
     #[serde(alias = "valuation_policy")]
@@ -61,9 +58,6 @@ pub struct CreateInventoryCompanySettingDto {
 #[cfg_attr(feature = "validation", derive(Validate))]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateInventoryCompanySettingDto {
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[serde(alias = "cost_method")]
     pub cost_method: InventoryCostMethod,
     #[serde(alias = "valuation_policy")]
@@ -88,9 +82,6 @@ pub struct UpdateInventoryCompanySettingDto {
 #[cfg_attr(feature = "validation", derive(Validate))]
 #[serde(rename_all = "camelCase")]
 pub struct PatchInventoryCompanySettingDto {
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "cost_method")]
     pub cost_method: Option<InventoryCostMethod>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "valuation_policy")]
@@ -105,7 +96,7 @@ pub struct PatchInventoryCompanySettingDto {
 impl PatchInventoryCompanySettingDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.company_id.is_some() || self.cost_method.is_some() || self.valuation_policy.is_some() || self.anglo_saxon_accounting.is_some() || self.stock_interim_delivered_account_id.is_some()
+        self.cost_method.is_some() || self.valuation_policy.is_some() || self.anglo_saxon_accounting.is_some() || self.stock_interim_delivered_account_id.is_some()
     }
 }
 
@@ -123,8 +114,6 @@ impl PatchInventoryCompanySettingDto {
 pub struct InventoryCompanySettingResponseDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     pub cost_method: InventoryCostMethod,
     pub valuation_policy: ValuationPolicy,
     #[cfg_attr(feature = "openapi", schema(example = true))]
@@ -187,9 +176,9 @@ impl InventoryCompanySettingListResponseDto {
 #[serde(rename_all = "camelCase")]
 pub struct InventoryCompanySettingSummaryDto {
     pub id: Uuid,
-    pub company_id: Uuid,
     pub cost_method: InventoryCostMethod,
     pub valuation_policy: ValuationPolicy,
+    pub anglo_saxon_accounting: bool,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -201,7 +190,6 @@ impl From<InventoryCompanySetting> for InventoryCompanySettingResponseDto {
     fn from(entity: InventoryCompanySetting) -> Self {
         Self {
             id: entity.id,
-            company_id: entity.company_id,
             cost_method: entity.cost_method,
             valuation_policy: entity.valuation_policy,
             anglo_saxon_accounting: entity.anglo_saxon_accounting,
@@ -216,9 +204,9 @@ impl From<InventoryCompanySetting> for InventoryCompanySettingSummaryDto {
         let created_at = backbone_core::PersistentEntity::created_at(&entity);
         Self {
             id: entity.id,
-            company_id: entity.company_id,
             cost_method: entity.cost_method,
             valuation_policy: entity.valuation_policy,
+            anglo_saxon_accounting: entity.anglo_saxon_accounting,
             created_at,
         }
     }
@@ -228,7 +216,6 @@ impl From<CreateInventoryCompanySettingDto> for InventoryCompanySetting {
     fn from(dto: CreateInventoryCompanySettingDto) -> Self {
         Self {
             id: Uuid::new_v4(),
-            company_id: dto.company_id,
             cost_method: dto.cost_method,
             valuation_policy: dto.valuation_policy,
             anglo_saxon_accounting: dto.anglo_saxon_accounting,
@@ -242,7 +229,6 @@ impl From<&InventoryCompanySetting> for InventoryCompanySettingResponseDto {
     fn from(entity: &InventoryCompanySetting) -> Self {
         Self {
             id: entity.id.clone(),
-            company_id: entity.company_id.clone(),
             cost_method: entity.cost_method.clone(),
             valuation_policy: entity.valuation_policy.clone(),
             anglo_saxon_accounting: entity.anglo_saxon_accounting.clone(),
@@ -260,7 +246,6 @@ impl backbone_core::FromCreateDto<CreateInventoryCompanySettingDto> for Inventor
 
 impl backbone_core::ApplyUpdateDto<UpdateInventoryCompanySettingDto> for InventoryCompanySetting {
     fn apply_update(mut self, dto: UpdateInventoryCompanySettingDto) -> backbone_core::ServiceResult<Self> {
-        self.company_id = dto.company_id;
         self.cost_method = dto.cost_method;
         self.valuation_policy = dto.valuation_policy;
         self.anglo_saxon_accounting = dto.anglo_saxon_accounting;

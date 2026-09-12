@@ -15,15 +15,17 @@
 //!   as stored computes on the orderpoint row. `qty_to_order = max(forecast, item_max_qty) -
 //!   forecast`, floored at zero; a positive `qty_to_order_manual` overrides the computed figure
 //!   for the order the scheduler mints.
-//! - **Company consistency (R11)** — the SERVICE half of an `enforcement: both` pair: rule
-//!   company == operation-type company == warehouse company whenever both sides are set. The
-//!   DB half is the trigger in migrations/20260826090000_rule_company_consistency.up.sql; a
-//!   raw-SQL writer hits the trigger, a service caller gets the typed error instead.
+//! - **Rule destination (R13-rule)** — a rule must not route into a `view` location; the
+//!   service pre-checks it so a caller gets the typed error instead of a constraint 500.
 //! - **Orderpoint uniqueness (R6)** — the SERVICE half over the unique index
-//!   `(item_id, location_id, company_id)`; the index is the DB backstop.
+//!   `(item_id, location_id)`; the index is the DB backstop.
 //!
 //! This file holds no SQL — every statement lives in
 //! `infrastructure/persistence/procurement_repository.rs` (the module's 4-layer rule).
+//!
+//! Tenancy (ADR-0029): the module is tenant-agnostic. Own transactions re-bind the caller's
+//! ambient org scope before writing (the composed decorator owns isolation); the module itself
+//! carries no tenant value.
 
 use async_trait::async_trait;
 use rust_decimal::Decimal;
@@ -38,16 +40,15 @@ use crate::infrastructure::persistence::procurement_repository::{
 };
 
 use super::inventory_events::{InventoryEvent, InventoryEventSink, OrderpointTriggered};
+use super::inventory_write_service::legacy_company_echo;
 
 // --- errors -------------------------------------------------------------------
 
 #[derive(Debug)]
 pub enum ProcurementError {
-    /// R11: the rule's company disagrees with its operation type's or warehouse's company.
-    RuleCompanyMismatch { rule: Option<Uuid>, picking_type: Option<Uuid>, warehouse: Option<Uuid> },
     /// R13-rule: a rule must not push into a `view` location.
     RuleDestIsView { location_id: Uuid },
-    /// R6: an orderpoint already exists for this (item, location, company).
+    /// R6: an orderpoint already exists for this (item, location).
     OrderpointExists { item_id: Uuid, location_id: Uuid },
     /// No active pull rule matches the demand (route selection found nothing).
     NoRuleForDemand { item_id: Uuid, location_id: Uuid },
@@ -60,7 +61,6 @@ impl ProcurementError {
     pub fn code(&self) -> String {
         // Codes are the stable error_codes declared in schema/hooks/stock.hook.yaml.
         match self {
-            ProcurementError::RuleCompanyMismatch { .. } => "rule_company_mismatch".into(),
             ProcurementError::RuleDestIsView { .. } => "rule_dest_is_view".into(),
             ProcurementError::OrderpointExists { .. } => "orderpoint_exists".into(),
             ProcurementError::NoRuleForDemand { .. } => "no_rule_for_demand".into(),
@@ -80,7 +80,6 @@ impl ProcurementError {
 impl std::fmt::Display for ProcurementError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ProcurementError::RuleCompanyMismatch { .. } => write!(f, "rule_company_mismatch: rule, operation type and warehouse must belong to one company (R11)"),
             ProcurementError::RuleDestIsView { .. } => write!(f, "rule_dest_is_view: a rule destination cannot be a view location (R13)"),
             ProcurementError::OrderpointExists { item_id, location_id } => write!(f, "orderpoint_exists: a reordering rule already covers item {item_id} at location {location_id} (R6)"),
             ProcurementError::NoRuleForDemand { item_id, location_id } => write!(f, "no_rule_for_demand: no active pull rule covers item {item_id} demanded at {location_id}"),
@@ -126,14 +125,12 @@ pub trait MovePipeline: Send + Sync {
     async fn confirm(
         &self,
         conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
         move_id: Uuid,
     ) -> Result<MoveState, MovePipelineError>;
 
     async fn assign(
         &self,
         conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
         move_id: Uuid,
     ) -> Result<MoveState, MovePipelineError>;
 }
@@ -145,7 +142,6 @@ pub struct NewRoute {
     pub name: String,
     pub active: bool,
     pub sequence: i32,
-    pub company_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone)]
@@ -161,7 +157,6 @@ pub struct NewRouteRule {
     pub picking_type_id: Uuid,
     pub route_id: Uuid,
     pub warehouse_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
     pub propagate_cancel: bool,
 }
 
@@ -172,7 +167,6 @@ pub struct NewOrderpoint {
     pub item_id: Uuid,
     pub location_id: Uuid,
     pub warehouse_id: Uuid,
-    pub company_id: Uuid,
     pub item_min_qty: Decimal,
     pub item_max_qty: Decimal,
     pub route_id: Option<Uuid>,
@@ -187,8 +181,7 @@ pub struct ProcurementRequest {
     /// Where the stock is needed (the rule whose destination covers this location supplies it).
     pub location_id: Uuid,
     pub warehouse_id: Option<Uuid>,
-    pub company_id: Uuid,
-    /// Explicit route candidates; None = every active route visible to the company.
+    /// Explicit route candidates; None = every active route.
     pub route_ids: Option<Vec<Uuid>>,
     pub origin: String,
     /// The orderpoint this order answers (present when the scheduler minted it).
@@ -200,7 +193,6 @@ pub struct ProcurementRequest {
 pub struct ReorderOutcome {
     pub orderpoint_id: Uuid,
     pub item_id: Uuid,
-    pub company_id: Uuid,
     pub qty_to_order: Decimal,
     pub forecast_qty: Decimal,
     /// The minted replenishment move (draft until the pipeline confirms it).
@@ -235,49 +227,33 @@ impl ProcurementService {
 
     // -- routes ---------------------------------------------------------------
 
-    /// Create a route (an ordered rule collection). Routes are shared_blank master data: a
-    /// NULL company is the shared/global posture (ADR-0014), e.g. the seeded MTO route.
+    /// Create a route (an ordered rule collection).
     ///
-    /// The write rides its own transaction with `app.company_id` bound BEFORE the insert when
-    /// the route carries a company — under an armed fence an unbound INSERT fails the RLS
-    /// policy's WITH CHECK and provisioning 500s. A shared (NULL-company) route needs no bind:
-    /// the fence policies admit NULL-company rows on both the USING and WITH CHECK arms.
+    /// The write rides its own transaction re-bound to the caller's ambient org scope
+    /// (ADR-0029) — the scope is task-local and a fresh pool transaction carries none of it;
+    /// the composed decorator's fill stamps the acting unit on the INSERT. Undecorated (module
+    /// tests, jobs) the transaction stays plain.
     pub async fn create_route(&self, r: NewRoute) -> Result<Uuid, ProcurementError> {
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
-        if let Some(company_id) = r.company_id {
-            backbone_orm::company_scope::bind_company_on(&mut tx, company_id).await?;
-        }
-        ProcurementRepository::insert_route(&mut *tx, id, &r.name, r.active, r.sequence, r.company_id).await?;
+        super::inventory_write_service::relay_ambient_scope(&mut tx).await?;
+        ProcurementRepository::insert_route(&mut *tx, id, &r.name, r.active, r.sequence).await?;
         tx.commit().await?;
         Ok(id)
     }
 
     // -- rules ----------------------------------------------------------------
 
-    /// Create a procurement rule after the R11 service pre-check (rule company == operation
-    /// type company == warehouse company, whenever both sides are set) and the R13-rule
-    /// destination check. The DB trigger is the backstop for raw writers; this check exists so
-    /// a service caller gets the typed error instead of a constraint 500 (ADR-0015 `both`).
+    /// Create a procurement rule after the R13-rule destination check (never route INTO a view
+    /// location). The DB trigger is the backstop for raw writers; this check exists so a
+    /// service caller gets the typed error instead of a constraint 500.
     ///
-    /// The pre-check reads and the insert ride one transaction with `app.company_id` bound
-    /// BEFORE any of them — under an armed fence an unbound read of the operation type /
-    /// warehouse / location rows sees zero rows (the pre-check would 404 a legitimate rule)
-    /// and an unbound INSERT fails the RLS WITH CHECK. A shared (NULL-company) rule needs no
-    /// bind: the fence policies admit NULL-company rows on both arms.
+    /// The pre-check read and the insert ride one transaction re-bound to the caller's ambient
+    /// org scope (ADR-0029); undecorated (module tests, jobs) the transaction stays plain.
     pub async fn create_rule(&self, r: NewRouteRule) -> Result<Uuid, ProcurementError> {
         let mut tx = self.db_pool.begin().await?;
-        if let Some(company_id) = r.company_id {
-            backbone_orm::company_scope::bind_company_on(&mut tx, company_id).await?;
-        }
-        self.check_rule_consistency(
-            &mut tx,
-            r.picking_type_id,
-            r.warehouse_id,
-            r.company_id,
-            r.location_dest_id,
-        )
-        .await?;
+        super::inventory_write_service::relay_ambient_scope(&mut tx).await?;
+        self.check_rule_destination(&mut tx, r.location_dest_id).await?;
 
         let id = Uuid::new_v4();
         ProcurementRepository::insert_rule(
@@ -294,7 +270,6 @@ impl ProcurementService {
             r.picking_type_id,
             r.route_id,
             r.warehouse_id,
-            r.company_id,
             r.propagate_cancel,
         )
         .await?;
@@ -302,46 +277,13 @@ impl ProcurementService {
         Ok(id)
     }
 
-    /// The R11 + R13-rule service pre-check. Shared by every rule write path here. Runs on the
-    /// caller's connection so the reads share the caller's company scope.
-    async fn check_rule_consistency(
+    /// The R13-rule service pre-check: never route INTO a view location. Runs on the caller's
+    /// connection so the read shares the caller's transaction.
+    async fn check_rule_destination(
         &self,
         conn: &mut sqlx::PgConnection,
-        picking_type_id: Uuid,
-        warehouse_id: Option<Uuid>,
-        rule_company: Option<Uuid>,
         location_dest_id: Uuid,
     ) -> Result<(), ProcurementError> {
-        let (pt_company, wh_company) =
-            ProcurementRepository::rule_company_refs(&mut *conn, picking_type_id, warehouse_id)
-                .await?;
-        if pt_company.is_none() {
-            return Err(ProcurementError::NotFound(picking_type_id));
-        }
-        // R11: every company that IS set must agree. A NULL rule company is the shared
-        // posture and agrees with anything; a set one must match both set counterparts.
-        let mismatch = |rc: Option<Uuid>| {
-            rc.is_some_and(|c| (pt_company.is_some_and(|p| p != c)) || (wh_company.is_some_and(|w| w != c)))
-        };
-        if mismatch(rule_company) {
-            return Err(ProcurementError::RuleCompanyMismatch {
-                rule: rule_company,
-                picking_type: pt_company,
-                warehouse: wh_company,
-            });
-        }
-        // When the rule itself carries no company, its two references must still agree with
-        // each other (a rule cannot bridge two companies).
-        if let (Some(p), Some(w)) = (pt_company, wh_company) {
-            if p != w {
-                return Err(ProcurementError::RuleCompanyMismatch {
-                    rule: rule_company,
-                    picking_type: pt_company,
-                    warehouse: wh_company,
-                });
-            }
-        }
-        // R13-rule: never route INTO a view location.
         if let Some(usage) = ProcurementRepository::location_usage(&mut *conn, location_dest_id).await? {
             if usage == "view" {
                 return Err(ProcurementError::RuleDestIsView { location_id: location_dest_id });
@@ -357,11 +299,10 @@ impl ProcurementService {
     /// ordering the scheduler does.
     pub async fn search_rule(
         &self,
-        company_id: Uuid,
         demand_location_id: Uuid,
         route_ids: Option<Vec<Uuid>>,
     ) -> Result<Option<RuleRow>, ProcurementError> {
-        Ok(ProcurementRepository::search_rule(&self.db_pool, company_id, demand_location_id, route_ids).await?)
+        Ok(ProcurementRepository::search_rule(&self.db_pool, demand_location_id, route_ids).await?)
     }
 
     /// `_run_pull`: mint the inbound DRAFT move a selected pull rule prescribes — FROM the
@@ -394,7 +335,6 @@ impl ProcurementService {
             origin: req.origin.clone(),
             location_id: src,
             location_dest_id: rule.location_dest_id,
-            company_id: req.company_id,
             rule_id: Some(rule.id),
             warehouse_id: rule.warehouse_id.or(req.warehouse_id),
             orderpoint_id: req.orderpoint_id,
@@ -424,7 +364,6 @@ impl ProcurementService {
             origin: upstream_move.name.clone(),
             location_id: src,
             location_dest_id: upstream_move.location_dest_id,
-            company_id: upstream_move.company_id,
             rule_id: Some(rule.id),
             warehouse_id: rule.warehouse_id.or(upstream_move.warehouse_id),
             orderpoint_id: upstream_move.orderpoint_id,
@@ -446,7 +385,7 @@ impl ProcurementService {
         req: &ProcurementRequest,
     ) -> Result<Uuid, ProcurementError> {
         let rule = self
-            .search_rule(req.company_id, req.location_id, req.route_ids.clone())
+            .search_rule(req.location_id, req.route_ids.clone())
             .await?
             .ok_or(ProcurementError::NoRuleForDemand {
                 item_id: req.item_id,
@@ -458,17 +397,16 @@ impl ProcurementService {
     // -- orderpoints (§7, T11) --------------------------------------------------
 
     /// Create an orderpoint (min/max replenishment rule) — the service half of R6: a duplicate
-    /// (item, location, company) coverage is the typed `orderpoint_exists` error; the partial
-    /// unique index is the DB backstop a raw writer hits instead.
+    /// (item, location) coverage is the typed `orderpoint_exists` error; the partial unique
+    /// index is the DB backstop a raw writer hits instead.
     ///
-    /// The duplicate-check read and the insert ride one transaction with `app.company_id`
-    /// bound BEFORE them — under an armed fence an unbound read sees no rows (the duplicate
-    /// guard goes blind) and an unbound INSERT fails the RLS policy's WITH CHECK, so
-    /// provisioning through the fence was impossible before the bind.
+    /// The duplicate-check read and the insert ride one transaction re-bound to the caller's
+    /// ambient org scope (ADR-0029); undecorated (module tests, jobs) it stays plain — the
+    /// composed decorator owns isolation.
     pub async fn create_orderpoint(&self, o: NewOrderpoint) -> Result<Uuid, ProcurementError> {
         let mut tx = self.db_pool.begin().await?;
-        backbone_orm::company_scope::bind_company_on(&mut tx, o.company_id).await?;
-        let existing = ProcurementRepository::orderpoint_exists(&mut *tx, o.item_id, o.location_id, o.company_id).await?;
+        super::inventory_write_service::relay_ambient_scope(&mut tx).await?;
+        let existing = ProcurementRepository::orderpoint_exists(&mut *tx, o.item_id, o.location_id).await?;
         if existing > 0 {
             return Err(ProcurementError::OrderpointExists { item_id: o.item_id, location_id: o.location_id });
         }
@@ -482,7 +420,6 @@ impl ProcurementService {
             o.item_id,
             o.location_id,
             o.warehouse_id,
-            o.company_id,
             o.item_min_qty,
             o.item_max_qty,
             o.route_id,
@@ -511,14 +448,13 @@ impl ProcurementService {
         op: &OrderpointRow,
     ) -> Result<OrderpointComputes, ProcurementError> {
         let f: ForecastComponents =
-            ProcurementRepository::forecast_components(&mut *conn, op.item_id, op.company_id, op.location_id)
+            ProcurementRepository::forecast_components(&mut *conn, op.item_id, op.location_id)
                 .await?;
         let forecast = f.on_hand + f.incoming - f.outgoing;
         let to_order = (op.item_max_qty - forecast).max(Decimal::ZERO);
 
         let rule = ProcurementRepository::search_rule(
             &mut *conn,
-            op.company_id,
             op.location_id,
             op.route_id.map(|r| vec![r]),
         )
@@ -543,25 +479,22 @@ impl ProcurementService {
     /// replenishment view drives for `manual` trigger rules — humans order, the computes
     /// recommend).
     ///
-    /// The caller names its company: the scope is bound BEFORE the orderpoint read and the
-    /// fetch is scoped by `(id, company_id)`, so an armed row-level-security fence cannot
-    /// blind the read into a 404, the forecast/stamp writes ride the same bound transaction,
-    /// and a cross-company id reads as absent (fail-closed 404) on an unfenced connection.
+    /// The orderpoint read rides the caller's ambient org scope (ADR-0029): under the composed
+    /// shape the decorator's fence bounds it and the forecast/stamp writes ride the same
+    /// bound transaction; undecorated (module tests, jobs) it is plain.
     pub async fn recompute_orderpoint(
         &self,
-        company_id: Uuid,
         orderpoint_id: Uuid,
     ) -> Result<OrderpointComputes, ProcurementError> {
         let mut tx = self.db_pool.begin().await?;
-        backbone_orm::company_scope::bind_company_on(&mut tx, company_id).await?;
+        super::inventory_write_service::relay_ambient_scope(&mut tx).await?;
         let op = sqlx::query_as::<_, OrderpointRowDb>(
             r#"SELECT id, name, trigger::text AS trigger, item_id, location_id, warehouse_id,
-                      company_id, item_min_qty, item_max_qty, route_id, qty_to_order_manual
+                      item_min_qty, item_max_qty, route_id, qty_to_order_manual
                FROM inventory.reordering_rules
-               WHERE id = $1 AND company_id = $2 AND (metadata->>'deleted_at') IS NULL"#,
+               WHERE id = $1 AND (metadata->>'deleted_at') IS NULL"#,
         )
         .bind(orderpoint_id)
-        .bind(company_id)
         .fetch_optional(&mut *tx)
         .await?
         .ok_or(ProcurementError::NotFound(orderpoint_id))?;
@@ -591,7 +524,6 @@ impl ProcurementService {
         }
         let rule = ProcurementRepository::search_rule(
             &mut *conn,
-            op.company_id,
             op.location_id,
             op.route_id.map(|r| vec![r]),
         )
@@ -610,7 +542,6 @@ impl ProcurementService {
             quantity: qty,
             location_id: op.location_id,
             warehouse_id: Some(op.warehouse_id),
-            company_id: op.company_id,
             route_ids: op.route_id.map(|r| vec![r]),
             origin: format!("orderpoint:{}", op.name),
             orderpoint_id: Some(op.id),
@@ -619,7 +550,6 @@ impl ProcurementService {
         Ok(Some(ReorderOutcome {
             orderpoint_id: op.id,
             item_id: op.item_id,
-            company_id: op.company_id,
             qty_to_order: qty,
             forecast_qty: computes.qty_forecast,
             move_id,
@@ -631,7 +561,9 @@ impl ProcurementService {
     pub fn emit_orderpoint_triggered(&self, o: &ReorderOutcome) {
         self.sink.publish(InventoryEvent::OrderpointTriggered(OrderpointTriggered {
             orderpoint_id: o.orderpoint_id,
-            company_id: o.company_id,
+            // Legacy twin (ADR-0029): filled from the ambient org scope's company echo for
+            // consumers that still read a tenant off the wire. No module statement keys on it.
+            company_id: legacy_company_echo(),
             item_id: o.item_id,
             qty_to_order: o.qty_to_order,
             forecast_qty: o.forecast_qty,
@@ -648,10 +580,9 @@ impl ProcurementService {
         &self,
         conn: &mut sqlx::PgConnection,
         pipeline: &dyn MovePipeline,
-        company_id: Uuid,
         move_id: Uuid,
     ) -> Result<MoveState, MovePipelineError> {
-        pipeline.assign(conn, company_id, move_id).await
+        pipeline.assign(conn, move_id).await
     }
 
     /// The quant vacuum tail (§7 task 3) — see the repository for the R21-shaped predicate.
@@ -660,10 +591,9 @@ impl ProcurementService {
     pub async fn housekeep_quants(
         &self,
         conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
         limit: i64,
     ) -> Result<u64, sqlx::Error> {
-        ProcurementRepository::housekeep_quants(conn, company_id, limit).await
+        ProcurementRepository::housekeep_quants(conn, limit).await
     }
 
     pub fn sink(&self) -> Arc<dyn InventoryEventSink> {
@@ -680,7 +610,6 @@ struct OrderpointRowDb {
     item_id: Uuid,
     location_id: Uuid,
     warehouse_id: Uuid,
-    company_id: Uuid,
     item_min_qty: Decimal,
     item_max_qty: Decimal,
     route_id: Option<Uuid>,
@@ -696,7 +625,6 @@ impl OrderpointRowDb {
             item_id: self.item_id,
             location_id: self.location_id,
             warehouse_id: self.warehouse_id,
-            company_id: self.company_id,
             item_min_qty: self.item_min_qty,
             item_max_qty: self.item_max_qty,
             route_id: self.route_id,

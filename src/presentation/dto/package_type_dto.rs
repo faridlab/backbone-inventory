@@ -54,8 +54,6 @@ pub struct CreatePackageTypeDto {
     pub max_weight: Option<Decimal>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     pub active: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -91,8 +89,6 @@ pub struct UpdatePackageTypeDto {
     pub max_weight: Option<Decimal>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     pub active: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -131,14 +127,12 @@ pub struct PatchPackageTypeDto {
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 impl PatchPackageTypeDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.name.is_some() || self.barcode.is_some() || self.package_use.is_some() || self.sequence.is_some() || self.length.is_some() || self.width.is_some() || self.height.is_some() || self.max_weight.is_some() || self.active.is_some() || self.company_id.is_some()
+        self.name.is_some() || self.barcode.is_some() || self.package_use.is_some() || self.sequence.is_some() || self.length.is_some() || self.width.is_some() || self.height.is_some() || self.max_weight.is_some() || self.active.is_some()
     }
 }
 
@@ -168,7 +162,6 @@ pub struct PackageTypeResponseDto {
     pub max_weight: Option<Decimal>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     pub active: bool,
-    pub company_id: Option<Uuid>,
     pub metadata: AuditMetadata,
 }
 
@@ -249,7 +242,6 @@ impl From<PackageType> for PackageTypeResponseDto {
             height: entity.height,
             max_weight: entity.max_weight,
             active: entity.active,
-            company_id: entity.company_id,
             metadata: entity.metadata,
         }
     }
@@ -281,7 +273,6 @@ impl From<CreatePackageTypeDto> for PackageType {
             height: dto.height,
             max_weight: dto.max_weight,
             active: dto.active,
-            company_id: dto.company_id,
             metadata: AuditMetadata::default(),
         }
     }
@@ -300,7 +291,6 @@ impl From<&PackageType> for PackageTypeResponseDto {
             height: entity.height.clone(),
             max_weight: entity.max_weight.clone(),
             active: entity.active.clone(),
-            company_id: entity.company_id.clone(),
             metadata: entity.metadata.clone(),
         }
     }
@@ -323,7 +313,6 @@ impl backbone_core::ApplyUpdateDto<UpdatePackageTypeDto> for PackageType {
         self.height = dto.height;
         self.max_weight = dto.max_weight;
         self.active = dto.active;
-        self.company_id = dto.company_id;
         Ok(self)
     }
 }

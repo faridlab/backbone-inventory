@@ -77,7 +77,7 @@ pub mod inventory_move_engine;
 // selection, pull/push move minting, the orderpoint computes, and the MovePipeline port the
 // stock-move engine implements for the daily scheduler. Declared `user_owned`.
 pub mod procurement_service;
-// The per-company posting posture (cost-method vocabulary, the perpetual/periodic axis,
+// The org-scoped posting posture (cost-method vocabulary, the perpetual/periodic axis,
 // the anglo-saxon delivery-debit swap) the door posts and the move engine consult. The
 // `_custom` suffix keeps it outside generator territory by naming convention.
 pub mod inventory_posture;

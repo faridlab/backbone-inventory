@@ -51,13 +51,12 @@ pub struct QuantFilter {
     pub owner_id: Option<Uuid>,
     pub inventory_quantity_set: Option<bool>,
     pub sn_duplicated: Option<bool>,
-    pub company_id: Option<Uuid>,
 }
 
 impl QuantFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.item_id.is_some() || self.location_id.is_some() || self.lot_id.is_some() || self.package_id.is_some() || self.owner_id.is_some() || self.inventory_quantity_set.is_some() || self.sn_duplicated.is_some() || self.company_id.is_some()
+        self.item_id.is_some() || self.location_id.is_some() || self.lot_id.is_some() || self.package_id.is_some() || self.owner_id.is_some() || self.inventory_quantity_set.is_some() || self.sn_duplicated.is_some()
     }
 }
 

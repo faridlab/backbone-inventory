@@ -16,7 +16,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use backbone_orm::company_scope;
+use backbone_orm::org_scope;
 
 /// Which voucher table a GL post reconciles against. A closed enum, so the interpolated table name
 /// can only ever be one of a few compile-time literals.
@@ -69,11 +69,12 @@ impl GlVoucherRepository {
     ///
     /// Guarded on `posting_state <> 'posted'` so a repost of an already-posted voucher cannot
     /// overwrite the original journal's ids: accounting dedupes on
-    /// `(company, source_type, source_id, posting_type)` and hands back the ORIGINAL journal, and
-    /// this guard is what keeps the recorded ids stable through that.
+    /// `(source_type, source_id, posting_type)` and hands back the ORIGINAL journal, and this guard
+    /// is what keeps the recorded ids stable through that.
     ///
-    /// Runs `execute_scoped` on the pool; the caller wraps it in `with_company_scope(Some(company))`
-    /// (the company comes off the post envelope) so the UPDATE passes the RLS fence (ADR-0008).
+    /// Runs `org_scope::execute_scoped` on the pool — the write rides the ambient org scope's
+    /// request-dedicated connection so it passes the composing decorator's fence (ADR-0029).
+    /// Undecorated (module tests) the UPDATE runs plain.
     pub async fn mark_posted(
         &self,
         pool: &PgPool,
@@ -86,7 +87,7 @@ impl GlVoucherRepository {
             "UPDATE inventory.{} SET posting_state='posted'::gl_posting_state, journal_id=$2, accounting_post_id=$3, posted_at=now() WHERE id=$1 AND posting_state <> 'posted'::gl_posting_state",
             voucher.table(),
         );
-        company_scope::execute_scoped(
+        org_scope::execute_scoped(
             pool,
             sqlx::query(&sql).bind(voucher_id).bind(journal_id).bind(post_id),
         )
@@ -97,7 +98,7 @@ impl GlVoucherRepository {
     /// Record a GL rejection. The physical movement is NOT rolled back — it really happened; the
     /// voucher parks in `failed` and is re-drivable via the service's `repost_*` entrypoints.
     ///
-    /// Caller supplies the company scope, as [`Self::mark_posted`].
+    /// Same scoped-execute discipline as [`Self::mark_posted`].
     pub async fn mark_failed(
         &self,
         pool: &PgPool,
@@ -108,7 +109,7 @@ impl GlVoucherRepository {
             "UPDATE inventory.{} SET posting_state='failed'::gl_posting_state WHERE id=$1",
             voucher.table(),
         );
-        company_scope::execute_scoped(pool, sqlx::query(&sql).bind(voucher_id)).await?;
+        org_scope::execute_scoped(pool, sqlx::query(&sql).bind(voucher_id)).await?;
         Ok(())
     }
 
@@ -131,7 +132,7 @@ impl GlVoucherRepository {
             "UPDATE inventory.{} SET reversal_journal_id=$2, reversal_accounting_post_id=$3 WHERE id=$1",
             voucher.table(),
         );
-        company_scope::execute_scoped(
+        org_scope::execute_scoped(
             pool,
             sqlx::query(&sql).bind(voucher_id).bind(journal_id).bind(post_id),
         )
@@ -142,9 +143,9 @@ impl GlVoucherRepository {
     /// Retire a voucher's GL leg to `not_applicable` — the document genuinely posts no GL under
     /// the current configuration. Two users: a landed-cost validation whose entire allocation
     /// fell on already-consumed stock (Σ remaining-share δ = 0: nothing to revalue, nothing to
-    /// post), and a `valuation_policy='periodic'` company whose real-time stock posts are
+    /// post), and a `valuation_policy='periodic'` posture whose real-time stock posts are
     /// suppressed (the periodic closing flow — a later increment — owns those legs). Idempotent:
-    /// re-marking an already-retired voucher is a no-op. Caller supplies the company scope, as
+    /// re-marking an already-retired voucher is a no-op. Same scoped-execute discipline as
     /// [`Self::mark_posted`].
     pub async fn mark_not_applicable(
         &self,
@@ -156,7 +157,7 @@ impl GlVoucherRepository {
             "UPDATE inventory.{} SET posting_state='not_applicable'::gl_posting_state WHERE id=$1",
             voucher.table(),
         );
-        company_scope::execute_scoped(pool, sqlx::query(&sql).bind(voucher_id)).await?;
+        org_scope::execute_scoped(pool, sqlx::query(&sql).bind(voucher_id)).await?;
         Ok(())
     }
 }

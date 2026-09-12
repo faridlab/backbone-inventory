@@ -52,8 +52,6 @@ pub struct CreatePutawayRuleDto {
     pub sublocation: PutawaySublocation,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     pub active: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -88,8 +86,6 @@ pub struct UpdatePutawayRuleDto {
     pub sublocation: PutawaySublocation,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     pub active: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -127,14 +123,12 @@ pub struct PatchPutawayRuleDto {
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 impl PatchPutawayRuleDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.sequence.is_some() || self.location_in_id.is_some() || self.location_out_id.is_some() || self.item_id.is_some() || self.category_id.is_some() || self.package_type_id.is_some() || self.storage_category_id.is_some() || self.sublocation.is_some() || self.active.is_some() || self.company_id.is_some()
+        self.sequence.is_some() || self.location_in_id.is_some() || self.location_out_id.is_some() || self.item_id.is_some() || self.category_id.is_some() || self.package_type_id.is_some() || self.storage_category_id.is_some() || self.sublocation.is_some() || self.active.is_some()
     }
 }
 
@@ -165,7 +159,6 @@ pub struct PutawayRuleResponseDto {
     pub sublocation: PutawaySublocation,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     pub active: bool,
-    pub company_id: Option<Uuid>,
     pub metadata: AuditMetadata,
 }
 
@@ -246,7 +239,6 @@ impl From<PutawayRule> for PutawayRuleResponseDto {
             storage_category_id: entity.storage_category_id,
             sublocation: entity.sublocation,
             active: entity.active,
-            company_id: entity.company_id,
             metadata: entity.metadata,
         }
     }
@@ -278,7 +270,6 @@ impl From<CreatePutawayRuleDto> for PutawayRule {
             storage_category_id: dto.storage_category_id,
             sublocation: dto.sublocation,
             active: dto.active,
-            company_id: dto.company_id,
             metadata: AuditMetadata::default(),
         }
     }
@@ -297,7 +288,6 @@ impl From<&PutawayRule> for PutawayRuleResponseDto {
             storage_category_id: entity.storage_category_id.clone(),
             sublocation: entity.sublocation.clone(),
             active: entity.active.clone(),
-            company_id: entity.company_id.clone(),
             metadata: entity.metadata.clone(),
         }
     }
@@ -320,7 +310,6 @@ impl backbone_core::ApplyUpdateDto<UpdatePutawayRuleDto> for PutawayRule {
         self.storage_category_id = dto.storage_category_id;
         self.sublocation = dto.sublocation;
         self.active = dto.active;
-        self.company_id = dto.company_id;
         Ok(self)
     }
 }

@@ -57,7 +57,6 @@ pub struct Location {
     pub location_id: Option<Uuid>,
     pub parent_path: String,
     pub barcode: Option<String>,
-    pub company_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
     pub cyclic_inventory_frequency: i32,
     pub last_inventory_date: Option<NaiveDate>,
@@ -86,7 +85,6 @@ impl Location {
             location_id: None,
             parent_path,
             barcode: None,
-            company_id: None,
             warehouse_id: None,
             cyclic_inventory_frequency,
             last_inventory_date: None,
@@ -164,12 +162,6 @@ impl Location {
         self
     }
 
-    /// Set the company_id field (chainable)
-    pub fn with_company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Set the warehouse_id field (chainable)
     pub fn with_warehouse_id(mut self, value: Uuid) -> Self {
         self.warehouse_id = Some(value);
@@ -228,9 +220,6 @@ impl Location {
                 }
                 "barcode" => {
                     if let Ok(v) = serde_json::from_value(value) { self.barcode = v; }
-                }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
                 }
                 "warehouse_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.warehouse_id = v; }
@@ -305,7 +294,6 @@ impl backbone_orm::EntityRepoMeta for Location {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
         m.insert("location_id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("warehouse_id".to_string(), "uuid".to_string());
         m.insert("valuation_account_id".to_string(), "uuid".to_string());
         m.insert("storage_category_id".to_string(), "uuid".to_string());
@@ -314,9 +302,6 @@ impl backbone_orm::EntityRepoMeta for Location {
     }
     fn search_fields() -> &'static [&'static str] {
         &["name", "complete_name", "parent_path"]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -333,7 +318,6 @@ pub struct LocationBuilder {
     location_id: Option<Uuid>,
     parent_path: Option<String>,
     barcode: Option<String>,
-    company_id: Option<Uuid>,
     warehouse_id: Option<Uuid>,
     cyclic_inventory_frequency: Option<i32>,
     last_inventory_date: Option<NaiveDate>,
@@ -382,12 +366,6 @@ impl LocationBuilder {
     /// Set the barcode field (optional)
     pub fn barcode(mut self, value: String) -> Self {
         self.barcode = Some(value);
-        self
-    }
-
-    /// Set the company_id field (optional)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
         self
     }
 
@@ -444,7 +422,6 @@ impl LocationBuilder {
             location_id: self.location_id,
             parent_path,
             barcode: self.barcode,
-            company_id: self.company_id,
             warehouse_id: self.warehouse_id,
             cyclic_inventory_frequency: self.cyclic_inventory_frequency.unwrap_or(0),
             last_inventory_date: self.last_inventory_date,

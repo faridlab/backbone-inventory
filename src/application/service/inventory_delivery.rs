@@ -12,8 +12,12 @@
 //!
 //! Per the module's 4-layer rule this file holds no SQL — the statements live on
 //! `DeliveryNoteRepository` / `DeliveryNoteItemRepository` and the engine's repositories.
+//!
+//! Tenancy (ADR-0029): the module is tenant-agnostic. Every write transaction this file opens
+//! re-binds the caller's ambient org scope (`relay_ambient_scope`); the composing decorator owns
+//! isolation. Cross-module wire fields that still carry a company id are legacy twins filled
+//! from the ambient scope's company echo.
 
-use backbone_orm::company_scope;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
@@ -23,7 +27,8 @@ use super::inventory_events::{InventoryEvent, StockDelivered};
 use super::inventory_gl::{AccountingPostEnvelope, GlPostLine, GlPostSink};
 use super::inventory_move_engine::{BackorderPolicy, MoveGlDirective, NewStockMove};
 use super::inventory_write_service::{
-    is_dup, money, DoorOwnedGlSink, InventoryError, InventoryWriteService, NewDelivery, SubmitOutcome,
+    is_dup, legacy_company_echo, money, relay_ambient_scope, DoorOwnedGlSink, InventoryError,
+    InventoryWriteService, NewDelivery, SubmitOutcome,
 };
 
 impl InventoryWriteService {
@@ -34,11 +39,10 @@ impl InventoryWriteService {
         }
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, d.company_id).await?;
+        relay_ambient_scope(&mut tx).await?;
         let ins = self.deliveries.insert_draft(&mut tx, &NewDeliveryRow {
             id,
             delivery_number: &d.delivery_number,
-            company_id: d.company_id,
             branch_id: d.branch_id,
             customer_id: d.customer_id,
             source_so_id: d.source_so_id,
@@ -55,7 +59,6 @@ impl InventoryWriteService {
             self.delivery_items.insert_item(&mut tx, &NewDeliveryItemRow {
                 id: Uuid::new_v4(),
                 delivery_id: id,
-                company_id: d.company_id,
                 item_id: l.item_id,
                 quantity: l.quantity,
             }).await?;
@@ -90,7 +93,6 @@ impl InventoryWriteService {
         if hdr.status != "draft" {
             return Err(InventoryError::NotDraft(id.to_string()));
         }
-        let company = hdr.company_id;
         let branch = hdr.branch_id;
         let warehouse = hdr.warehouse_id;
         let posting_date = hdr.posting_date;
@@ -99,25 +101,22 @@ impl InventoryWriteService {
         let inv_acct = hdr.inventory_account_id;
         let source_so = hdr.source_so_id;
 
-        // The posting posture (per-company valuation settings; absent row = today's shapes).
+        // The posting posture (the valuation settings row; absent row = today's shapes).
         // Resolved BEFORE anything mints so the anglo-saxon posture's fail-closed account
         // check refuses the delivery with NOTHING moved and nothing posted: under the
         // posture the debit leg is the interim-delivered account, and an unconfigured one
         // must not fall back to COGS silently.
-        let posture = self.posting_posture(company).await?;
-        let debit_acct = self.delivery_debit_account(company, &posture, cogs_acct)?;
+        let posture = self.posting_posture().await?;
+        let debit_acct = self.delivery_debit_account(&posture, cogs_acct)?;
 
-        let items = company_scope::with_company_scope(
-            Some(company),
-            self.delivery_items.fetch_items(&self.db_pool, id),
-        ).await?;
+        let items = self.delivery_items.fetch_items(&self.db_pool, id).await?;
 
         // The door's move endpoints: the warehouse's stock location (internal source) and the
-        // company's customer location (virtual destination) — resolve-or-bootstrap each.
-        let (customer_loc, stock_loc) = self.door_move_endpoints(company, warehouse, "customer").await?;
+        // customer location (virtual destination) — resolve-or-bootstrap each.
+        let (customer_loc, stock_loc) = self.door_move_endpoints(warehouse, "customer").await?;
         // The inventory credit leg resolves the same location valuation-account override the
         // receipt path uses (the chain: location override → header account).
-        let inv_acct = self.inventory_leg_account(company, stock_loc, inv_acct).await?;
+        let inv_acct = self.inventory_leg_account(stock_loc, inv_acct).await?;
 
         // ---- all-or-nothing availability pre-check, under the Bin locks -----------------------
         // Same posture the voucher path always had: EVERY line's demand must be coverable
@@ -127,12 +126,13 @@ impl InventoryWriteService {
         let mut line_rates: std::collections::HashMap<Uuid, Decimal> = std::collections::HashMap::new();
         {
             let mut tx = self.db_pool.begin().await?;
-            // RLS scope (ADR-0008): MUST be bound before any bin read — an unbound connection
-            // is fenced to zero rows, so the FOR UPDATE below would read every bin as empty.
-            company_scope::bind_company_on(&mut tx, company).await?;
+            // Re-bind the caller's ambient org scope before any bin read (ADR-0029) — the
+            // scope is task-local and a fresh pool transaction carries none of it;
+            // undecorated (module tests, jobs) the transaction stays plain.
+            relay_ambient_scope(&mut tx).await?;
             for it in &items {
                 if it.quantity.is_zero() { continue; }
-                let bin = self.bins.lock_or_init(&mut tx, company, it.item_id, warehouse).await?;
+                let bin = self.bins.lock_or_init(&mut tx, it.item_id, warehouse).await?;
                 line_rates.insert(it.item_id, bin.valuation_rate);
                 if bin.actual_qty < it.quantity {
                     return Err(InventoryError::InsufficientStock {
@@ -143,7 +143,7 @@ impl InventoryWriteService {
                 // The quant-surface heal: stock seeded through the legacy direct-write paths
                 // wrote Bins without quants — seed the quant from the (locked) Bin once, so the
                 // line move's reservation has a surface to reserve against.
-                self.pickings.ensure_quant_surface(&mut tx, company, it.item_id, stock_loc, Some(warehouse)).await?;
+                self.pickings.ensure_quant_surface(&mut tx, it.item_id, stock_loc, Some(warehouse)).await?;
             }
             tx.commit().await?;
         }
@@ -155,7 +155,6 @@ impl InventoryWriteService {
             let name = format!("{}/{}", voucher_no, idx + 1);
             let mid = match self.mint_line_move(NewStockMove {
                 name: name.clone(),
-                company_id: company,
                 item_id: it.item_id,
                 demand_qty: it.quantity,
                 price_unit: Decimal::ZERO, // an outflow is valued at the source average, never priced
@@ -177,31 +176,31 @@ impl InventoryWriteService {
                 None => {
                     // The line already landed in a prior (crashed) attempt: its COGS is the
                     // value its move carried — recover it from the move's SLE leg.
-                    let prior_cogs = self.sles.sum_move_value(&self.db_pool, company, &name).await?;
+                    let prior_cogs = self.sles.sum_move_value(&self.db_pool, &name).await?;
                     total_cogs += prior_cogs;
                     continue;
                 }
             };
-            let state = self.advance_move_to_assigned(company, mid).await?;
+            let state = self.advance_move_to_assigned(mid).await?;
             if state != "assigned" {
                 // The all-or-nothing posture: a line the reservation cannot cover WHOLE
                 // refuses the delivery. Release whatever the partial assign took; no stock
                 // moved, no reservation held, the voucher stays draft (retryable).
-                self.unreserve_move(company, mid).await?;
-                let on_hand = self.quants.fetch_on_hand(&self.db_pool, company, it.item_id, stock_loc).await?;
+                self.unreserve_move(mid).await?;
+                let on_hand = self.quants.fetch_on_hand(&self.db_pool, it.item_id, stock_loc).await?;
                 return Err(InventoryError::InsufficientStock {
                     item_id: it.item_id, warehouse_id: warehouse,
                     available: on_hand.on_hand_qty, requested: it.quantity,
                 });
             }
-            let outcome = self.action_done(company, mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
+            let outcome = self.action_done(mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
             // The engine's OUT leg IS the line's COGS (average or residual-flush — the same
             // arithmetic the voucher path always used); snapshot it on the voucher row.
             let cogs = outcome.out_value;
             let rate = line_rates.get(&it.item_id).copied().unwrap_or(Decimal::ZERO);
             {
                 let mut tx = self.db_pool.begin().await?;
-                company_scope::bind_company_on(&mut tx, company).await?;
+                relay_ambient_scope(&mut tx).await?;
                 self.delivery_items.update_valuation(&mut tx, it.id, rate, cogs).await?;
                 tx.commit().await?;
             }
@@ -209,24 +208,21 @@ impl InventoryWriteService {
         }
         {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, company).await?;
+            relay_ambient_scope(&mut tx).await?;
             self.deliveries.mark_submitted_with_cogs(&mut tx, id, total_cogs).await?;
             tx.commit().await?;
         }
 
         // The explicit account-move gate: a voucher that carries neither value nor quantity
-        // posts nothing (stays `not_applicable`); a `periodic` company suppresses the
+        // posts nothing (stays `not_applicable`); a `periodic` valuation policy suppresses the
         // real-time post the same way (the closing flow — a later increment — owns those legs).
         let total_qty: Decimal = items.iter().map(|l| l.quantity).sum();
         if posture.periodic
             || !Self::should_create_account_move(total_cogs, total_qty, true)
         {
-            company_scope::with_company_scope(
-                Some(company),
-                self.gl.mark_not_applicable(&self.db_pool, GlVoucher::DeliveryNote, id),
-            ).await?;
+            self.gl.mark_not_applicable(&self.db_pool, GlVoucher::DeliveryNote, id).await?;
             self.sink.publish(InventoryEvent::StockDelivered(StockDelivered {
-                delivery_id: id, company_id: company, warehouse_id: warehouse, source_so_id: source_so,
+                delivery_id: id, company_id: legacy_company_echo(), warehouse_id: warehouse, source_so_id: source_so,
                 total_cogs,
             }));
             return Ok(SubmitOutcome {
@@ -235,7 +231,9 @@ impl InventoryWriteService {
             });
         }
         let env = AccountingPostEnvelope {
-            idempotency_key: id.to_string(), company_id: company, branch_id: branch,
+            // Legacy twin (ADR-0029): filled from the ambient org scope's company echo for
+            // consumers that still read a tenant off the wire. No module statement keys on it.
+            idempotency_key: id.to_string(), company_id: legacy_company_echo(), branch_id: branch,
             source_type: "inventory".into(), source_id: id, source_reference: Some(voucher_no.clone()),
             posting_date, currency: hdr.currency.clone(), posting_type: "original".into(), reverses_post_id: None,
             description: Some("Delivery COGS".into()),
@@ -248,7 +246,7 @@ impl InventoryWriteService {
         };
         let outcome = self.emit_and_reconcile(GlVoucher::DeliveryNote, id, &env, sink, total_cogs).await?;
         self.sink.publish(InventoryEvent::StockDelivered(StockDelivered {
-            delivery_id: id, company_id: company, warehouse_id: warehouse, source_so_id: source_so,
+            delivery_id: id, company_id: legacy_company_echo(), warehouse_id: warehouse, source_so_id: source_so,
             total_cogs,
         }));
         Ok(outcome)
@@ -264,25 +262,25 @@ impl InventoryWriteService {
         // The SAME posture the submit ran under (absent row = defaults): the anglo-saxon
         // debit swap applies to the rebuilt envelope identically (fail-closed on an
         // unconfigured interim account — a repost must not silently diverge from its
-        // original), a `periodic` company retires the unsettled leg to `not_applicable`,
-        // and the inventory leg resolves the same location override the submit used.
-        let posture = self.posting_posture(h.company_id).await?;
+        // original), a `periodic` valuation policy retires the unsettled leg to
+        // `not_applicable`, and the inventory leg resolves the same location override the
+        // submit used.
+        let posture = self.posting_posture().await?;
         if posture.periodic {
-            company_scope::with_company_scope(
-                Some(h.company_id),
-                self.gl.mark_not_applicable(&self.db_pool, GlVoucher::DeliveryNote, id),
-            ).await?;
+            self.gl.mark_not_applicable(&self.db_pool, GlVoucher::DeliveryNote, id).await?;
             return Ok(SubmitOutcome {
                 voucher_id: id, posted: false, journal_id: None, post_id: None,
                 gl_amount: Decimal::ZERO,
             });
         }
-        let debit_acct = self.delivery_debit_account(h.company_id, &posture, h.cogs_account_id)?;
-        let (_, stock_loc) = self.door_move_endpoints(h.company_id, h.warehouse_id, "customer").await?;
-        let inv_acct = self.inventory_leg_account(h.company_id, stock_loc, h.inventory_account_id).await?;
+        let debit_acct = self.delivery_debit_account(&posture, h.cogs_account_id)?;
+        let (_, stock_loc) = self.door_move_endpoints(h.warehouse_id, "customer").await?;
+        let inv_acct = self.inventory_leg_account(stock_loc, h.inventory_account_id).await?;
         let amt = h.total_cogs;
         let env = AccountingPostEnvelope {
-            idempotency_key: id.to_string(), company_id: h.company_id, branch_id: h.branch_id,
+            // Legacy twin (ADR-0029): filled from the ambient org scope's company echo for
+            // consumers that still read a tenant off the wire. No module statement keys on it.
+            idempotency_key: id.to_string(), company_id: legacy_company_echo(), branch_id: h.branch_id,
             source_type: "inventory".into(), source_id: id, source_reference: Some(h.delivery_number),
             posting_date: h.posting_date, currency: h.currency.clone(), posting_type: "original".into(), reverses_post_id: None,
             description: Some("Delivery COGS (repost)".into()),

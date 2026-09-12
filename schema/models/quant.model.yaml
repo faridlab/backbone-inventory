@@ -16,10 +16,10 @@
 # Serial uniqueness (T5): sn_duplicated flags a serial appearing in more
 # than one quant so the constraint can raise at write time.
 #
-# Company fence (ADR-0014): DERIVED-STRICT. company_id is a required
-# (NOT NULL) column but is derived from the location chain at write time
-# (guard R26 / trigger T3 — the quant's company follows its location;
-# shared locations cannot hold quants, so the column never needs NULL).
+# Tenancy: none, by design (ADR-0029). The module is tenant-agnostic; the
+# composing service's decorator owns org scoping. A quant's org anchor
+# follows its location's anchor (the location chain decides; root-shared
+# locations cannot hold quants — a quant always anchors at a real unit).
 # =============================================================================
 
 models:
@@ -101,10 +101,6 @@ models:
         attributes: ["@default(false)"]
         description: "True when the serial already exists on another quant (T5) — the write-time serial-uniqueness signal"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "DERIVED from the location chain at write time (guard R26 / T3) — strict NOT NULL, never a free write column # logical FK to organization.Company.id"
 
       metadata:
         type: Metadata
@@ -128,8 +124,6 @@ models:
         fields: [package_id]
       - type: index
         fields: [owner_id]
-      - type: index
-        fields: [company_id]
       - type: index
         fields: [inventory_quantity_set]
         where: "inventory_quantity_set = true"

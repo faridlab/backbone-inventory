@@ -13,7 +13,7 @@ use rust_decimal::Decimal;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use backbone_orm::company_scope;
+use backbone_orm::org_scope;
 
 use crate::domain::entity::StockItem;
 
@@ -47,7 +47,6 @@ impl StockItemRepository {
 pub struct NewStockItemRow<'a> {
     pub id: Uuid,
     pub item_id: Uuid,
-    pub company_id: Uuid,
     pub stock_uom: &'a str,
     pub valuation_method: &'a str,
     pub reorder_level: Decimal,
@@ -57,24 +56,27 @@ pub struct NewStockItemRow<'a> {
 impl StockItemRepository {
     /// Register an item as stock-tracked.
     ///
-    /// A write outside any transaction: `execute_scoped` on the pool, with the caller supplying
-    /// `with_company_scope(Some(company))` so the INSERT passes the WITH CHECK fence (ADR-0008).
+    /// A write outside any transaction: `org_scope::execute_scoped` on the pool — the write
+    /// rides the ambient org scope's request-dedicated connection (the composing service sets
+    /// it per request) so it passes the decorator's WITH CHECK fence (ADR-0029). Undecorated
+    /// (module tests) the insert runs plain.
     ///
-    /// Returns the raw `sqlx::Error` deliberately: the caller inspects it for a unique violation to
-    /// turn an already-registered item into a domain error.
+    /// Returns the raw `sqlx::Error` deliberately: the caller inspects it for a unique violation
+    /// (the composing decorator's org-scoped item arbiter) to turn an already-registered item
+    /// into a domain error.
     pub async fn insert_stock_item(
         &self,
         pool: &PgPool,
         s: &NewStockItemRow<'_>,
     ) -> Result<(), sqlx::Error> {
-        company_scope::execute_scoped(
+        org_scope::execute_scoped(
             pool,
             sqlx::query(
                 r#"INSERT INTO inventory.stock_items
-                    (id, item_id, company_id, stock_uom, is_stock_item, has_batch, valuation_method, reorder_level)
-                   VALUES ($1,$2,$3,$4,TRUE,FALSE,$5::valuation_method,$6)"#,
+                    (id, item_id, stock_uom, is_stock_item, has_batch, valuation_method, reorder_level)
+                   VALUES ($1,$2,$3,TRUE,FALSE,$4::valuation_method,$5)"#,
             )
-            .bind(s.id).bind(s.item_id).bind(s.company_id).bind(s.stock_uom)
+            .bind(s.id).bind(s.item_id).bind(s.stock_uom)
             .bind(s.valuation_method).bind(s.reorder_level),
         )
         .await?;

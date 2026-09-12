@@ -64,9 +64,6 @@ pub struct CreateQuantDto {
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(alias = "sn_duplicated")]
     pub sn_duplicated: bool,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
 }
 
 // =============================================================================
@@ -113,9 +110,6 @@ pub struct UpdateQuantDto {
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(alias = "sn_duplicated")]
     pub sn_duplicated: bool,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
 }
 
 // =============================================================================
@@ -163,15 +157,12 @@ pub struct PatchQuantDto {
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "sn_duplicated")]
     pub sn_duplicated: Option<bool>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 impl PatchQuantDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.item_id.is_some() || self.location_id.is_some() || self.lot_id.is_some() || self.package_id.is_some() || self.owner_id.is_some() || self.quantity.is_some() || self.reserved_quantity.is_some() || self.available_quantity.is_some() || self.in_date.is_some() || self.inventory_quantity.is_some() || self.inventory_diff_quantity.is_some() || self.inventory_quantity_set.is_some() || self.inventory_date.is_some() || self.sn_duplicated.is_some() || self.company_id.is_some()
+        self.item_id.is_some() || self.location_id.is_some() || self.lot_id.is_some() || self.package_id.is_some() || self.owner_id.is_some() || self.quantity.is_some() || self.reserved_quantity.is_some() || self.available_quantity.is_some() || self.in_date.is_some() || self.inventory_quantity.is_some() || self.inventory_diff_quantity.is_some() || self.inventory_quantity_set.is_some() || self.inventory_date.is_some() || self.sn_duplicated.is_some()
     }
 }
 
@@ -207,8 +198,6 @@ pub struct QuantResponseDto {
     pub inventory_date: Option<NaiveDate>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     pub sn_duplicated: bool,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     pub metadata: AuditMetadata,
 }
 
@@ -294,7 +283,6 @@ impl From<Quant> for QuantResponseDto {
             inventory_quantity_set: entity.inventory_quantity_set,
             inventory_date: entity.inventory_date,
             sn_duplicated: entity.sn_duplicated,
-            company_id: entity.company_id,
             metadata: entity.metadata,
         }
     }
@@ -331,7 +319,6 @@ impl From<CreateQuantDto> for Quant {
             inventory_quantity_set: dto.inventory_quantity_set,
             inventory_date: dto.inventory_date,
             sn_duplicated: dto.sn_duplicated,
-            company_id: dto.company_id,
             metadata: AuditMetadata::default(),
         }
     }
@@ -355,7 +342,6 @@ impl From<&Quant> for QuantResponseDto {
             inventory_quantity_set: entity.inventory_quantity_set.clone(),
             inventory_date: entity.inventory_date.clone(),
             sn_duplicated: entity.sn_duplicated.clone(),
-            company_id: entity.company_id.clone(),
             metadata: entity.metadata.clone(),
         }
     }
@@ -383,7 +369,6 @@ impl backbone_core::ApplyUpdateDto<UpdateQuantDto> for Quant {
         self.inventory_quantity_set = dto.inventory_quantity_set;
         self.inventory_date = dto.inventory_date;
         self.sn_duplicated = dto.sn_duplicated;
-        self.company_id = dto.company_id;
         Ok(self)
     }
 }

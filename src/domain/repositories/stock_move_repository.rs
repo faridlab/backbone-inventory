@@ -55,7 +55,6 @@ pub struct StockMoveFilter {
     pub location_id: Option<Uuid>,
     pub location_dest_id: Option<Uuid>,
     pub partner_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
     pub rule_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
     pub orderpoint_id: Option<Uuid>,
@@ -67,7 +66,7 @@ pub struct StockMoveFilter {
 impl StockMoveFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.name.is_some() || self.state.is_some() || self.posting_state.is_some() || self.priority.is_some() || self.item_id.is_some() || self.procure_method.is_some() || self.picking_id.is_some() || self.origin.is_some() || self.location_id.is_some() || self.location_dest_id.is_some() || self.partner_id.is_some() || self.company_id.is_some() || self.rule_id.is_some() || self.warehouse_id.is_some() || self.orderpoint_id.is_some() || self.is_inventory.is_some() || self.scrapped.is_some() || self.propagate_cancel.is_some()
+        self.name.is_some() || self.state.is_some() || self.posting_state.is_some() || self.priority.is_some() || self.item_id.is_some() || self.procure_method.is_some() || self.picking_id.is_some() || self.origin.is_some() || self.location_id.is_some() || self.location_dest_id.is_some() || self.partner_id.is_some() || self.rule_id.is_some() || self.warehouse_id.is_some() || self.orderpoint_id.is_some() || self.is_inventory.is_some() || self.scrapped.is_some() || self.propagate_cancel.is_some()
     }
 }
 

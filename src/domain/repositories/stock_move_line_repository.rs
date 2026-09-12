@@ -56,13 +56,12 @@ pub struct StockMoveLineFilter {
     pub location_id: Option<Uuid>,
     pub location_dest_id: Option<Uuid>,
     pub item_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
 }
 
 impl StockMoveLineFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.quantity_product_uom_id.is_some() || self.picked.is_some() || self.lot_id.is_some() || self.package_id.is_some() || self.result_package_id.is_some() || self.owner_id.is_some() || self.state.is_some() || self.move_id.is_some() || self.picking_id.is_some() || self.location_id.is_some() || self.location_dest_id.is_some() || self.item_id.is_some() || self.company_id.is_some()
+        self.quantity_product_uom_id.is_some() || self.picked.is_some() || self.lot_id.is_some() || self.package_id.is_some() || self.result_package_id.is_some() || self.owner_id.is_some() || self.state.is_some() || self.move_id.is_some() || self.picking_id.is_some() || self.location_id.is_some() || self.location_dest_id.is_some() || self.item_id.is_some()
     }
 }
 

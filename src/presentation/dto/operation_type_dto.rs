@@ -48,8 +48,6 @@ pub struct CreateOperationTypeDto {
     pub active: bool,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
     pub sequence: i32,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
     pub warehouse_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -99,8 +97,6 @@ pub struct UpdateOperationTypeDto {
     pub active: bool,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
     pub sequence: i32,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
     pub warehouse_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -154,8 +150,6 @@ pub struct PatchOperationTypeDto {
     #[cfg_attr(feature = "openapi", schema(example = 42))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sequence: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
     pub warehouse_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -183,7 +177,7 @@ pub struct PatchOperationTypeDto {
 impl PatchOperationTypeDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.name.is_some() || self.sequence_code.is_some() || self.code.is_some() || self.active.is_some() || self.sequence.is_some() || self.company_id.is_some() || self.warehouse_id.is_some() || self.default_location_src_id.is_some() || self.default_location_dest_id.is_some() || self.reservation_method.is_some() || self.reservation_days_before.is_some() || self.move_type.is_some() || self.create_backorder.is_some() || self.use_create_lots.is_some() || self.use_existing_lots.is_some()
+        self.name.is_some() || self.sequence_code.is_some() || self.code.is_some() || self.active.is_some() || self.sequence.is_some() || self.warehouse_id.is_some() || self.default_location_src_id.is_some() || self.default_location_dest_id.is_some() || self.reservation_method.is_some() || self.reservation_days_before.is_some() || self.move_type.is_some() || self.create_backorder.is_some() || self.use_create_lots.is_some() || self.use_existing_lots.is_some()
     }
 }
 
@@ -210,7 +204,6 @@ pub struct OperationTypeResponseDto {
     pub active: bool,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
     pub sequence: i32,
-    pub company_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub default_location_src_id: Uuid,
@@ -300,7 +293,6 @@ impl From<OperationType> for OperationTypeResponseDto {
             code: entity.code,
             active: entity.active,
             sequence: entity.sequence,
-            company_id: entity.company_id,
             warehouse_id: entity.warehouse_id,
             default_location_src_id: entity.default_location_src_id,
             default_location_dest_id: entity.default_location_dest_id,
@@ -337,7 +329,6 @@ impl From<CreateOperationTypeDto> for OperationType {
             code: dto.code,
             active: dto.active,
             sequence: dto.sequence,
-            company_id: dto.company_id,
             warehouse_id: dto.warehouse_id,
             default_location_src_id: dto.default_location_src_id,
             default_location_dest_id: dto.default_location_dest_id,
@@ -361,7 +352,6 @@ impl From<&OperationType> for OperationTypeResponseDto {
             code: entity.code.clone(),
             active: entity.active.clone(),
             sequence: entity.sequence.clone(),
-            company_id: entity.company_id.clone(),
             warehouse_id: entity.warehouse_id.clone(),
             default_location_src_id: entity.default_location_src_id.clone(),
             default_location_dest_id: entity.default_location_dest_id.clone(),
@@ -389,7 +379,6 @@ impl backbone_core::ApplyUpdateDto<UpdateOperationTypeDto> for OperationType {
         self.code = dto.code;
         self.active = dto.active;
         self.sequence = dto.sequence;
-        self.company_id = dto.company_id;
         self.warehouse_id = dto.warehouse_id;
         self.default_location_src_id = dto.default_location_src_id;
         self.default_location_dest_id = dto.default_location_dest_id;

@@ -44,7 +44,6 @@ impl PurchaseReceiptItemRepository {
 pub struct NewReceiptItemRow {
     pub id: Uuid,
     pub receipt_id: Uuid,
-    pub company_id: Uuid,
     pub item_id: Uuid,
     pub quantity: Decimal,
     pub rate: Decimal,
@@ -66,7 +65,7 @@ pub struct ReceiptItemRow {
 /// Hand-written PurchaseReceiptItem SQL. Lives here per the module's 4-layer rule.
 impl PurchaseReceiptItemRepository {
     /// Insert one receipt line. Takes the CALLER'S connection so it commits with its header; the
-    /// caller has already bound the company on it — don't re-bind here.
+    /// caller has already relayed the ambient org scope onto it — don't re-bind here.
     pub async fn insert_item(
         &self,
         conn: &mut sqlx::PgConnection,
@@ -74,10 +73,10 @@ impl PurchaseReceiptItemRepository {
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"INSERT INTO inventory.purchase_receipt_items
-                   (id, receipt_id, company_id, item_id, quantity, rate, amount, is_landed_costs_line)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)"#,
+                   (id, receipt_id, item_id, quantity, rate, amount, is_landed_costs_line)
+               VALUES ($1,$2,$3,$4,$5,$6,$7)"#,
         )
-        .bind(l.id).bind(l.receipt_id).bind(l.company_id).bind(l.item_id).bind(l.quantity).bind(l.rate).bind(l.amount)
+        .bind(l.id).bind(l.receipt_id).bind(l.item_id).bind(l.quantity).bind(l.rate).bind(l.amount)
         .bind(l.is_landed_costs_line)
         .execute(conn)
         .await?;
@@ -85,9 +84,9 @@ impl PurchaseReceiptItemRepository {
     }
 
     /// Read the live lines in `id` order — the order the movement applies them (and therefore the
-    /// order `sle_no` is assigned in), so it must not change. The caller wraps this in
-    /// `with_company_scope(Some(company))` (the company comes off the header) so the read passes the
-    /// RLS fence (ADR-0008).
+    /// order `sle_no` is assigned in), so it must not change. The scoped read helper makes it ride
+    /// the ambient org scope's request-dedicated connection, so the composing decorator's fence
+    /// (ADR-0029) bounds what the read can see.
     pub async fn fetch_items(
         &self,
         pool: &PgPool,

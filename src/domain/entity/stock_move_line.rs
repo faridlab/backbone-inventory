@@ -65,7 +65,6 @@ pub struct StockMoveLine {
     pub location_id: Uuid,
     pub location_dest_id: Uuid,
     pub item_id: Uuid,
-    pub company_id: Uuid,
     #[serde(default)]
     #[sqlx(json)]
     pub metadata: AuditMetadata,
@@ -78,7 +77,7 @@ impl StockMoveLine {
     }
 
     /// Create a new StockMoveLine with required fields
-    pub fn new(quantity: Decimal, picked: bool, state: MoveState, date: DateTime<Utc>, move_id: Uuid, location_id: Uuid, location_dest_id: Uuid, item_id: Uuid, company_id: Uuid) -> Self {
+    pub fn new(quantity: Decimal, picked: bool, state: MoveState, date: DateTime<Utc>, move_id: Uuid, location_id: Uuid, location_dest_id: Uuid, item_id: Uuid) -> Self {
         Self {
             id: Uuid::new_v4(),
             quantity,
@@ -95,7 +94,6 @@ impl StockMoveLine {
             location_id,
             location_dest_id,
             item_id,
-            company_id,
             metadata: AuditMetadata::default(),
         }
     }
@@ -241,9 +239,6 @@ impl StockMoveLine {
                 "item_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.item_id = v; }
                 }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 _ => {} // ignore unknown fields
             }
         }
@@ -308,15 +303,11 @@ impl backbone_orm::EntityRepoMeta for StockMoveLine {
         m.insert("location_id".to_string(), "uuid".to_string());
         m.insert("location_dest_id".to_string(), "uuid".to_string());
         m.insert("item_id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("state".to_string(), "move_state".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
         &[]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
     fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
         &[("move", "stock_moves", "moveId"), ("picking", "transfers", "pickingId")]
@@ -343,7 +334,6 @@ pub struct StockMoveLineBuilder {
     location_id: Option<Uuid>,
     location_dest_id: Option<Uuid>,
     item_id: Option<Uuid>,
-    company_id: Option<Uuid>,
 }
 
 impl StockMoveLineBuilder {
@@ -431,12 +421,6 @@ impl StockMoveLineBuilder {
         self
     }
 
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Build the StockMoveLine entity
     ///
     /// Returns Err if any required field without a default is missing.
@@ -445,7 +429,6 @@ impl StockMoveLineBuilder {
         let location_id = self.location_id.ok_or_else(|| "location_id is required".to_string())?;
         let location_dest_id = self.location_dest_id.ok_or_else(|| "location_dest_id is required".to_string())?;
         let item_id = self.item_id.ok_or_else(|| "item_id is required".to_string())?;
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
 
         Ok(StockMoveLine {
             id: Uuid::new_v4(),
@@ -463,7 +446,6 @@ impl StockMoveLineBuilder {
             location_id,
             location_dest_id,
             item_id,
-            company_id,
             metadata: AuditMetadata::default(),
         })
     }

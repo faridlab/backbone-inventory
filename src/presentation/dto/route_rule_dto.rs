@@ -61,8 +61,6 @@ pub struct CreateRouteRuleDto {
     pub route_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
     pub warehouse_id: Option<Uuid>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(alias = "propagate_cancel")]
     pub propagate_cancel: bool,
@@ -107,8 +105,6 @@ pub struct UpdateRouteRuleDto {
     pub route_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
     pub warehouse_id: Option<Uuid>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(alias = "propagate_cancel")]
     pub propagate_cancel: bool,
@@ -159,8 +155,6 @@ pub struct PatchRouteRuleDto {
     pub route_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
     pub warehouse_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "propagate_cancel")]
     pub propagate_cancel: Option<bool>,
@@ -169,7 +163,7 @@ pub struct PatchRouteRuleDto {
 impl PatchRouteRuleDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.name.is_some() || self.active.is_some() || self.sequence.is_some() || self.action.is_some() || self.auto.is_some() || self.procure_method.is_some() || self.delay.is_some() || self.location_src_id.is_some() || self.location_dest_id.is_some() || self.picking_type_id.is_some() || self.route_id.is_some() || self.warehouse_id.is_some() || self.company_id.is_some() || self.propagate_cancel.is_some()
+        self.name.is_some() || self.active.is_some() || self.sequence.is_some() || self.action.is_some() || self.auto.is_some() || self.procure_method.is_some() || self.delay.is_some() || self.location_src_id.is_some() || self.location_dest_id.is_some() || self.picking_type_id.is_some() || self.route_id.is_some() || self.warehouse_id.is_some() || self.propagate_cancel.is_some()
     }
 }
 
@@ -206,7 +200,6 @@ pub struct RouteRuleResponseDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub route_id: Uuid,
     pub warehouse_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     pub propagate_cancel: bool,
     pub metadata: AuditMetadata,
@@ -292,7 +285,6 @@ impl From<RouteRule> for RouteRuleResponseDto {
             picking_type_id: entity.picking_type_id,
             route_id: entity.route_id,
             warehouse_id: entity.warehouse_id,
-            company_id: entity.company_id,
             propagate_cancel: entity.propagate_cancel,
             metadata: entity.metadata,
         }
@@ -328,7 +320,6 @@ impl From<CreateRouteRuleDto> for RouteRule {
             picking_type_id: dto.picking_type_id,
             route_id: dto.route_id,
             warehouse_id: dto.warehouse_id,
-            company_id: dto.company_id,
             propagate_cancel: dto.propagate_cancel,
             metadata: AuditMetadata::default(),
         }
@@ -351,7 +342,6 @@ impl From<&RouteRule> for RouteRuleResponseDto {
             picking_type_id: entity.picking_type_id.clone(),
             route_id: entity.route_id.clone(),
             warehouse_id: entity.warehouse_id.clone(),
-            company_id: entity.company_id.clone(),
             propagate_cancel: entity.propagate_cancel.clone(),
             metadata: entity.metadata.clone(),
         }
@@ -378,7 +368,6 @@ impl backbone_core::ApplyUpdateDto<UpdateRouteRuleDto> for RouteRule {
         self.picking_type_id = dto.picking_type_id;
         self.route_id = dto.route_id;
         self.warehouse_id = dto.warehouse_id;
-        self.company_id = dto.company_id;
         self.propagate_cancel = dto.propagate_cancel;
         Ok(self)
     }

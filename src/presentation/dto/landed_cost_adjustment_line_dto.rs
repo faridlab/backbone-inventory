@@ -37,9 +37,6 @@ pub struct CreateLandedCostAdjustmentLineDto {
     #[serde(alias = "lc_id")]
     pub lc_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "move_line_id")]
     pub move_line_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -68,9 +65,6 @@ pub struct UpdateLandedCostAdjustmentLineDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "lc_id")]
     pub lc_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "move_line_id")]
     pub move_line_id: Uuid,
@@ -101,9 +95,6 @@ pub struct PatchLandedCostAdjustmentLineDto {
     #[serde(skip_serializing_if = "Option::is_none", alias = "lc_id")]
     pub lc_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "move_line_id")]
     pub move_line_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -120,7 +111,7 @@ pub struct PatchLandedCostAdjustmentLineDto {
 impl PatchLandedCostAdjustmentLineDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.lc_id.is_some() || self.company_id.is_some() || self.move_line_id.is_some() || self.cost_line_id.is_some() || self.share.is_some() || self.additional_landed_cost.is_some() || self.remaining_qty.is_some()
+        self.lc_id.is_some() || self.move_line_id.is_some() || self.cost_line_id.is_some() || self.share.is_some() || self.additional_landed_cost.is_some() || self.remaining_qty.is_some()
     }
 }
 
@@ -140,8 +131,6 @@ pub struct LandedCostAdjustmentLineResponseDto {
     pub id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub lc_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub move_line_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -207,8 +196,8 @@ impl LandedCostAdjustmentLineListResponseDto {
 pub struct LandedCostAdjustmentLineSummaryDto {
     pub id: Uuid,
     pub lc_id: Uuid,
-    pub company_id: Uuid,
     pub move_line_id: Uuid,
+    pub cost_line_id: Uuid,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -221,7 +210,6 @@ impl From<LandedCostAdjustmentLine> for LandedCostAdjustmentLineResponseDto {
         Self {
             id: entity.id,
             lc_id: entity.lc_id,
-            company_id: entity.company_id,
             move_line_id: entity.move_line_id,
             cost_line_id: entity.cost_line_id,
             share: entity.share,
@@ -238,8 +226,8 @@ impl From<LandedCostAdjustmentLine> for LandedCostAdjustmentLineSummaryDto {
         Self {
             id: entity.id,
             lc_id: entity.lc_id,
-            company_id: entity.company_id,
             move_line_id: entity.move_line_id,
+            cost_line_id: entity.cost_line_id,
             created_at,
         }
     }
@@ -250,7 +238,6 @@ impl From<CreateLandedCostAdjustmentLineDto> for LandedCostAdjustmentLine {
         Self {
             id: Uuid::new_v4(),
             lc_id: dto.lc_id,
-            company_id: dto.company_id,
             move_line_id: dto.move_line_id,
             cost_line_id: dto.cost_line_id,
             share: dto.share,
@@ -266,7 +253,6 @@ impl From<&LandedCostAdjustmentLine> for LandedCostAdjustmentLineResponseDto {
         Self {
             id: entity.id.clone(),
             lc_id: entity.lc_id.clone(),
-            company_id: entity.company_id.clone(),
             move_line_id: entity.move_line_id.clone(),
             cost_line_id: entity.cost_line_id.clone(),
             share: entity.share.clone(),
@@ -286,7 +272,6 @@ impl backbone_core::FromCreateDto<CreateLandedCostAdjustmentLineDto> for LandedC
 impl backbone_core::ApplyUpdateDto<UpdateLandedCostAdjustmentLineDto> for LandedCostAdjustmentLine {
     fn apply_update(mut self, dto: UpdateLandedCostAdjustmentLineDto) -> backbone_core::ServiceResult<Self> {
         self.lc_id = dto.lc_id;
-        self.company_id = dto.company_id;
         self.move_line_id = dto.move_line_id;
         self.cost_line_id = dto.cost_line_id;
         self.share = dto.share;

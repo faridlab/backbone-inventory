@@ -43,8 +43,6 @@ pub struct CreateStorageCategoryDto {
     pub allow_new_product: StorageAllowNewProduct,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     pub active: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -69,8 +67,6 @@ pub struct UpdateStorageCategoryDto {
     pub allow_new_product: StorageAllowNewProduct,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     pub active: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -97,14 +93,12 @@ pub struct PatchStorageCategoryDto {
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 impl PatchStorageCategoryDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.name.is_some() || self.max_weight.is_some() || self.allow_new_product.is_some() || self.active.is_some() || self.company_id.is_some()
+        self.name.is_some() || self.max_weight.is_some() || self.allow_new_product.is_some() || self.active.is_some()
     }
 }
 
@@ -128,7 +122,6 @@ pub struct StorageCategoryResponseDto {
     pub allow_new_product: StorageAllowNewProduct,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     pub active: bool,
-    pub company_id: Option<Uuid>,
     pub metadata: AuditMetadata,
 }
 
@@ -204,7 +197,6 @@ impl From<StorageCategory> for StorageCategoryResponseDto {
             max_weight: entity.max_weight,
             allow_new_product: entity.allow_new_product,
             active: entity.active,
-            company_id: entity.company_id,
             metadata: entity.metadata,
         }
     }
@@ -231,7 +223,6 @@ impl From<CreateStorageCategoryDto> for StorageCategory {
             max_weight: dto.max_weight,
             allow_new_product: dto.allow_new_product,
             active: dto.active,
-            company_id: dto.company_id,
             metadata: AuditMetadata::default(),
         }
     }
@@ -245,7 +236,6 @@ impl From<&StorageCategory> for StorageCategoryResponseDto {
             max_weight: entity.max_weight.clone(),
             allow_new_product: entity.allow_new_product.clone(),
             active: entity.active.clone(),
-            company_id: entity.company_id.clone(),
             metadata: entity.metadata.clone(),
         }
     }
@@ -263,7 +253,6 @@ impl backbone_core::ApplyUpdateDto<UpdateStorageCategoryDto> for StorageCategory
         self.max_weight = dto.max_weight;
         self.allow_new_product = dto.allow_new_product;
         self.active = dto.active;
-        self.company_id = dto.company_id;
         Ok(self)
     }
 }

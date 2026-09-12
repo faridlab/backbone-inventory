@@ -56,7 +56,6 @@ pub struct PickingBatchDto {
     pub user_id: Option<Uuid>,
     pub scheduled_date: DateTime<Utc>,
     pub had_members: bool,
-    pub company_id: Uuid,
     pub metadata: serde_json::Value,
 }
 
@@ -112,7 +111,6 @@ impl From<DeliveryNoteId> for Uuid {
 pub struct DeliveryNoteDto {
     pub id: DeliveryNoteId,
     pub delivery_number: String,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub customer_id: Uuid,
     pub source_so_id: Option<Uuid>,
@@ -183,7 +181,6 @@ impl From<DeliveryNoteItemId> for Uuid {
 pub struct DeliveryNoteItemDto {
     pub id: DeliveryNoteItemId,
     pub delivery_id: Uuid,
-    pub company_id: Uuid,
     pub item_id: Uuid,
     pub quantity: Decimal,
     pub valuation_rate: Decimal,
@@ -241,7 +238,6 @@ impl From<InventoryCompanySettingId> for Uuid {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InventoryCompanySettingDto {
     pub id: InventoryCompanySettingId,
-    pub company_id: Uuid,
     pub cost_method: InventoryCostMethod,
     pub valuation_policy: ValuationPolicy,
     pub anglo_saxon_accounting: bool,
@@ -300,7 +296,6 @@ impl From<LandedCostId> for Uuid {
 pub struct LandedCostDto {
     pub id: LandedCostId,
     pub lc_number: String,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub target_receipt_id: Uuid,
     pub transfer_id: Option<Uuid>,
@@ -367,7 +362,6 @@ impl From<LandedCostLineId> for Uuid {
 pub struct LandedCostLineDto {
     pub id: LandedCostLineId,
     pub lc_id: Uuid,
-    pub company_id: Uuid,
     pub name: String,
     pub account_id: Uuid,
     pub split_method: LandedCostSplitMethod,
@@ -427,7 +421,6 @@ impl From<LandedCostAdjustmentLineId> for Uuid {
 pub struct LandedCostAdjustmentLineDto {
     pub id: LandedCostAdjustmentLineId,
     pub lc_id: Uuid,
-    pub company_id: Uuid,
     pub move_line_id: Uuid,
     pub cost_line_id: Uuid,
     pub share: Decimal,
@@ -493,7 +486,6 @@ pub struct LocationDto {
     pub location_id: Option<Uuid>,
     pub parent_path: String,
     pub barcode: Option<String>,
-    pub company_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
     pub cyclic_inventory_frequency: i32,
     pub last_inventory_date: Option<NaiveDate>,
@@ -572,7 +564,6 @@ pub struct StockMoveDto {
     pub location_id: Uuid,
     pub location_dest_id: Uuid,
     pub partner_id: Option<Uuid>,
-    pub company_id: Uuid,
     pub rule_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
     pub orderpoint_id: Option<Uuid>,
@@ -649,7 +640,6 @@ pub struct StockMoveLineDto {
     pub location_id: Uuid,
     pub location_dest_id: Uuid,
     pub item_id: Uuid,
-    pub company_id: Uuid,
     pub metadata: serde_json::Value,
 }
 
@@ -708,7 +698,6 @@ pub struct OperationTypeDto {
     pub code: PickingCode,
     pub active: bool,
     pub sequence: i32,
-    pub company_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
     pub default_location_src_id: Uuid,
     pub default_location_dest_id: Uuid,
@@ -780,7 +769,6 @@ pub struct TransferDto {
     pub location_id: Uuid,
     pub location_dest_id: Uuid,
     pub partner_id: Option<Uuid>,
-    pub company_id: Uuid,
     pub move_type: MoveType,
     pub scheduled_date: DateTime<Utc>,
     pub date_done: Option<DateTime<Utc>>,
@@ -849,7 +837,6 @@ pub struct RouteDto {
     pub product_selectable: bool,
     pub product_categ_selectable: bool,
     pub warehouse_selectable: bool,
-    pub company_id: Option<Uuid>,
     pub metadata: serde_json::Value,
 }
 
@@ -916,7 +903,6 @@ pub struct RouteRuleDto {
     pub picking_type_id: Uuid,
     pub route_id: Uuid,
     pub warehouse_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
     pub propagate_cancel: bool,
     pub metadata: serde_json::Value,
 }
@@ -979,7 +965,6 @@ pub struct ReorderingRuleDto {
     pub item_id: Uuid,
     pub location_id: Uuid,
     pub warehouse_id: Uuid,
-    pub company_id: Uuid,
     pub item_min_qty: Decimal,
     pub item_max_qty: Decimal,
     pub route_id: Option<Uuid>,
@@ -1044,7 +1029,6 @@ impl From<PurchaseReceiptId> for Uuid {
 pub struct PurchaseReceiptDto {
     pub id: PurchaseReceiptId,
     pub receipt_number: String,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub supplier_id: Uuid,
     pub source_po_id: Option<Uuid>,
@@ -1116,7 +1100,6 @@ impl From<PurchaseReceiptItemId> for Uuid {
 pub struct PurchaseReceiptItemDto {
     pub id: PurchaseReceiptItemId,
     pub receipt_id: Uuid,
-    pub company_id: Uuid,
     pub item_id: Uuid,
     pub quantity: Decimal,
     pub rate: Decimal,
@@ -1189,7 +1172,6 @@ pub struct QuantDto {
     pub inventory_quantity_set: bool,
     pub inventory_date: Option<NaiveDate>,
     pub sn_duplicated: bool,
-    pub company_id: Uuid,
     pub metadata: serde_json::Value,
 }
 
@@ -1257,7 +1239,6 @@ pub struct ScrapDto {
     pub picking_id: Option<Uuid>,
     pub move_id: Option<Uuid>,
     pub scrap_reason_tag_ids: Vec<Uuid>,
-    pub company_id: Uuid,
     pub metadata: serde_json::Value,
 }
 
@@ -1314,7 +1295,6 @@ pub struct ScrapReasonTagDto {
     pub id: ScrapReasonTagId,
     pub name: String,
     pub active: bool,
-    pub company_id: Option<Uuid>,
     pub metadata: serde_json::Value,
 }
 
@@ -1370,7 +1350,6 @@ impl From<StockEntryId> for Uuid {
 pub struct StockEntryDto {
     pub id: StockEntryId,
     pub entry_number: String,
-    pub company_id: Uuid,
     pub stock_entry_type: StockEntryType,
     pub from_warehouse_id: Option<Uuid>,
     pub to_warehouse_id: Option<Uuid>,
@@ -1434,7 +1413,6 @@ impl From<StockEntryItemId> for Uuid {
 pub struct StockEntryItemDto {
     pub id: StockEntryItemId,
     pub entry_id: Uuid,
-    pub company_id: Uuid,
     pub item_id: Uuid,
     pub quantity: Decimal,
     pub metadata: serde_json::Value,
@@ -1490,7 +1468,6 @@ impl From<StockLedgerEntryId> for Uuid {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StockLedgerEntryDto {
     pub id: StockLedgerEntryId,
-    pub company_id: Uuid,
     pub item_id: Uuid,
     pub warehouse_id: Uuid,
     pub posting_date: NaiveDate,
@@ -1559,7 +1536,6 @@ impl From<BinId> for Uuid {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BinDto {
     pub id: BinId,
-    pub company_id: Uuid,
     pub item_id: Uuid,
     pub warehouse_id: Uuid,
     pub actual_qty: Decimal,
@@ -1620,7 +1596,6 @@ impl From<StockReconciliationId> for Uuid {
 pub struct StockReconciliationDto {
     pub id: StockReconciliationId,
     pub recon_number: String,
-    pub company_id: Uuid,
     pub warehouse_id: Uuid,
     pub posting_date: NaiveDate,
     pub net_difference: Decimal,
@@ -1687,7 +1662,6 @@ impl From<StockReconciliationItemId> for Uuid {
 pub struct StockReconciliationItemDto {
     pub id: StockReconciliationItemId,
     pub reconciliation_id: Uuid,
-    pub company_id: Uuid,
     pub item_id: Uuid,
     pub counted_qty: Decimal,
     pub counted_rate: Decimal,
@@ -1755,7 +1729,6 @@ pub struct PackageTypeDto {
     pub height: Option<Decimal>,
     pub max_weight: Option<Decimal>,
     pub active: bool,
-    pub company_id: Option<Uuid>,
     pub metadata: serde_json::Value,
 }
 
@@ -1814,7 +1787,6 @@ pub struct StorageCategoryDto {
     pub max_weight: Option<Decimal>,
     pub allow_new_product: StorageAllowNewProduct,
     pub active: bool,
-    pub company_id: Option<Uuid>,
     pub metadata: serde_json::Value,
 }
 
@@ -1873,7 +1845,6 @@ pub struct StorageCategoryCapacityDto {
     pub item_id: Option<Uuid>,
     pub package_type_id: Option<Uuid>,
     pub quantity: Decimal,
-    pub company_id: Option<Uuid>,
     pub metadata: serde_json::Value,
 }
 
@@ -1936,7 +1907,6 @@ pub struct PutawayRuleDto {
     pub storage_category_id: Option<Uuid>,
     pub sublocation: PutawaySublocation,
     pub active: bool,
-    pub company_id: Option<Uuid>,
     pub metadata: serde_json::Value,
 }
 
@@ -1993,7 +1963,6 @@ pub struct LotDto {
     pub name: String,
     pub reference: Option<String>,
     pub item_id: Uuid,
-    pub company_id: Option<Uuid>,
     pub product_qty: Decimal,
     pub location_id: Option<Uuid>,
     pub note: Option<String>,
@@ -2054,7 +2023,6 @@ pub struct PackageDto {
     pub name: String,
     pub complete_name: String,
     pub location_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
     pub parent_package_id: Option<Uuid>,
     pub parent_path: String,
     pub pack_date: Option<NaiveDate>,
@@ -2114,7 +2082,6 @@ impl From<WarehouseId> for Uuid {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WarehouseDto {
     pub id: WarehouseId,
-    pub company_id: Uuid,
     pub code: String,
     pub name: String,
     pub warehouse_type: WarehouseType,
@@ -2175,7 +2142,6 @@ impl From<StockItemId> for Uuid {
 pub struct StockItemDto {
     pub id: StockItemId,
     pub item_id: Uuid,
-    pub company_id: Uuid,
     pub stock_uom: String,
     pub is_stock_item: bool,
     pub has_batch: bool,

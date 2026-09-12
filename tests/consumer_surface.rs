@@ -38,6 +38,8 @@ async fn pool() -> PgPool {
 // CS-1: the public `InventoryEvent` (application::service) is the SEMANTIC enum — constructing
 // `::StockDelivered` FAILS TO COMPILE if it were the generated CRUD enum (no such variant). So
 // compiling is the proof the consumer binds to the right type (collision moot: exports is unwired).
+// The event payload keeps its `company_id` field as the documented legacy twin for wire
+// compatibility (ADR-0029) — filled by the emitter from the module's legacy company echo.
 #[test]
 fn public_inventory_event_is_the_semantic_enum() {
     let e: InventoryEvent = InventoryEvent::StockDelivered(StockDelivered {
@@ -53,15 +55,15 @@ async fn availability_reflects_received_stock() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
     let read = InventoryReadService::new(pool.clone());
-    let (company, item) = (Uuid::new_v4(), Uuid::new_v4());
-    let wh = w.create_warehouse(NewWarehouse { company_id: company, code: uq("WH"), name: uq("Main"), warehouse_type: None, parent_warehouse_id: None, is_group: false }).await.unwrap();
+    let item = Uuid::new_v4();
+    let wh = w.create_warehouse(NewWarehouse { code: uq("WH"), name: uq("Main"), warehouse_type: None, parent_warehouse_id: None, is_group: false }).await.unwrap();
 
     // Before any receipt: an un-stocked item is available 0 (not an error).
-    let a0: AvailabilityView = read.availability(company, item, wh).await.unwrap();
+    let a0: AvailabilityView = read.availability(item, wh).await.unwrap();
     assert_eq!(a0.available_qty, d("0"));
 
     let rid = w.create_purchase_receipt(NewReceipt {
-        receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
+        receipt_number: uq("PR"), branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: Uuid::new_v4(), grir_account_id: Uuid::new_v4(),
@@ -69,11 +71,11 @@ async fn availability_reflects_received_stock() {
     }).await.unwrap();
     w.submit_purchase_receipt(rid, &StubGl).await.unwrap();
 
-    let a: AvailabilityView = read.availability(company, item, wh).await.unwrap();
+    let a: AvailabilityView = read.availability(item, wh).await.unwrap();
     assert_eq!(a.actual_qty, d("10.0000"));
     assert_eq!(a.reserved_qty, d("0.0000"));
     assert_eq!(a.available_qty, d("10.0000"));
-    let sb: StockBalance = read.stock_balance(company, item, wh).await.unwrap().expect("bin exists");
+    let sb: StockBalance = read.stock_balance(item, wh).await.unwrap().expect("bin exists");
     assert_eq!(sb.valuation_rate, d("100.000000"));
     assert_eq!(sb.stock_value, d("1000.00"));
 }
@@ -85,11 +87,11 @@ async fn delivery_requested_creates_draft_linked_to_order() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
     let intake = DeliveryIntake::new(pool.clone());
-    let (company, item, so) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
-    let wh = w.create_warehouse(NewWarehouse { company_id: company, code: uq("WH"), name: uq("Main"), warehouse_type: None, parent_warehouse_id: None, is_group: false }).await.unwrap();
+    let (item, so) = (Uuid::new_v4(), Uuid::new_v4());
+    let wh = w.create_warehouse(NewWarehouse { code: uq("WH"), name: uq("Main"), warehouse_type: None, parent_warehouse_id: None, is_group: false }).await.unwrap();
 
     let did = intake.on_delivery_requested(DeliveryRequested {
-        delivery_number: uq("DN"), company_id: company, branch_id: None, customer_id: Uuid::new_v4(),
+        delivery_number: uq("DN"), branch_id: None, customer_id: Uuid::new_v4(),
         source_so_id: Some(so), warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         cogs_account_id: Uuid::new_v4(), inventory_account_id: Uuid::new_v4(),

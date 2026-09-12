@@ -36,9 +36,6 @@ use crate::domain::entity::VoucherType;
 #[serde(rename_all = "camelCase")]
 pub struct CreateStockLedgerEntryDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -88,9 +85,6 @@ pub struct CreateStockLedgerEntryDto {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateStockLedgerEntryDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -131,9 +125,6 @@ pub struct UpdateStockLedgerEntryDto {
 #[serde(rename_all = "camelCase")]
 pub struct PatchStockLedgerEntryDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "item_id")]
     pub item_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -163,7 +154,7 @@ pub struct PatchStockLedgerEntryDto {
 impl PatchStockLedgerEntryDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.company_id.is_some() || self.item_id.is_some() || self.warehouse_id.is_some() || self.posting_date.is_some() || self.actual_qty.is_some() || self.incoming_rate.is_some() || self.voucher_type.is_some() || self.voucher_id.is_some() || self.voucher_no.is_some() || self.sle_no.is_some()
+        self.item_id.is_some() || self.warehouse_id.is_some() || self.posting_date.is_some() || self.actual_qty.is_some() || self.incoming_rate.is_some() || self.voucher_type.is_some() || self.voucher_id.is_some() || self.voucher_no.is_some() || self.sle_no.is_some()
     }
 }
 
@@ -181,8 +172,6 @@ impl PatchStockLedgerEntryDto {
 pub struct StockLedgerEntryResponseDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub item_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -260,9 +249,9 @@ impl StockLedgerEntryListResponseDto {
 #[serde(rename_all = "camelCase")]
 pub struct StockLedgerEntrySummaryDto {
     pub id: Uuid,
-    pub company_id: Uuid,
     pub item_id: Uuid,
     pub warehouse_id: Uuid,
+    pub posting_date: NaiveDate,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -274,7 +263,6 @@ impl From<StockLedgerEntry> for StockLedgerEntryResponseDto {
     fn from(entity: StockLedgerEntry) -> Self {
         Self {
             id: entity.id,
-            company_id: entity.company_id,
             item_id: entity.item_id,
             warehouse_id: entity.warehouse_id,
             posting_date: entity.posting_date,
@@ -299,9 +287,9 @@ impl From<StockLedgerEntry> for StockLedgerEntrySummaryDto {
         let created_at = backbone_core::PersistentEntity::created_at(&entity);
         Self {
             id: entity.id,
-            company_id: entity.company_id,
             item_id: entity.item_id,
             warehouse_id: entity.warehouse_id,
+            posting_date: entity.posting_date,
             created_at,
         }
     }
@@ -311,7 +299,6 @@ impl From<CreateStockLedgerEntryDto> for StockLedgerEntry {
     fn from(dto: CreateStockLedgerEntryDto) -> Self {
         Self {
             id: Uuid::new_v4(),
-            company_id: dto.company_id,
             item_id: dto.item_id,
             warehouse_id: dto.warehouse_id,
             posting_date: dto.posting_date,
@@ -335,7 +322,6 @@ impl From<&StockLedgerEntry> for StockLedgerEntryResponseDto {
     fn from(entity: &StockLedgerEntry) -> Self {
         Self {
             id: entity.id.clone(),
-            company_id: entity.company_id.clone(),
             item_id: entity.item_id.clone(),
             warehouse_id: entity.warehouse_id.clone(),
             posting_date: entity.posting_date.clone(),
@@ -363,7 +349,6 @@ impl backbone_core::FromCreateDto<CreateStockLedgerEntryDto> for StockLedgerEntr
 
 impl backbone_core::ApplyUpdateDto<UpdateStockLedgerEntryDto> for StockLedgerEntry {
     fn apply_update(mut self, dto: UpdateStockLedgerEntryDto) -> backbone_core::ServiceResult<Self> {
-        self.company_id = dto.company_id;
         self.item_id = dto.item_id;
         self.warehouse_id = dto.warehouse_id;
         self.posting_date = dto.posting_date;

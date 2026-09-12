@@ -121,6 +121,11 @@ user_owned:
   # warehouse migration, so the index DDL is hand-owned here.
   - "migrations/20260826100000_warehouse_name_unique.up.sql"
   - "migrations/20260826100000_warehouse_name_unique.down.sql"
+  # The tenancy strip (ADR-0029): drops every module-native company-fence artifact
+  # (policies, company-leading indexes, the column) so org scoping installs purely
+  # via the composing decorator. Hand-authored; the generator cannot re-derive it.
+  - "migrations/20260913060000_strip_tenancy.up.sql"
+  - "migrations/20260913060000_strip_tenancy.down.sql"
   # Targeted behavior tests for routes/rules/orderpoints + the scheduler sweep.
   - "tests/procurement_scheduler_cases.rs"
   # Hand-written migrations the generator cannot re-derive from the schema: child items

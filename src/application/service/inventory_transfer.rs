@@ -9,8 +9,9 @@
 //! this file (or anywhere in the lane): no hand-set transfer state machine, no transfer-state
 //! column writes. `create_picking` mints the header + DRAFT moves through the engine and
 //! confirms them; `validate_picking` is Odoo's `button_validate` — `_action_done` over the
-//! transfer's moves; the probes READ the projected state. Guards: R3 name/company unique,
-//! R24 done needs lines (engine-enforced at move grain).
+//! transfer's moves; the probes READ the projected state. Guards: R3 name unique (the
+//! composing decorator's org-scoped arbiter), R24 done needs lines (engine-enforced at move
+//! grain).
 //!
 //! **The stock-entry voucher (warehouse-to-warehouse move), re-wired onto move minting.**
 //! The voucher surface keeps its identity verbatim — header + item rows, the `StockMoved`
@@ -25,7 +26,6 @@
 //! engine verb runs its own guarded transaction, so a move's quant flips, SLE rows, and GL leg
 //! commit as one unit.
 
-use backbone_orm::company_scope;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
@@ -37,7 +37,8 @@ use super::inventory_events::{InventoryEvent, StockMoved};
 use super::inventory_gl::{AccountingPostEnvelope, GlPostAck, GlPostRejected, GlPostSink};
 use super::inventory_move_engine::{BackorderPolicy, MoveGlDirective, NewStockMove};
 use super::inventory_write_service::{
-    is_dup, InventoryError, InventoryWriteService, NewTransfer,
+    is_dup, legacy_company_echo, relay_ambient_scope, InventoryError, InventoryWriteService,
+    NewTransfer,
 };
 
 /// The GL sink of the value-neutral transfer door. A warehouse-to-warehouse move posts NO GL
@@ -65,11 +66,11 @@ pub struct PickingLine {
     pub price_unit: Decimal,
 }
 
-/// The picking-mint input. `name` is the transfer reference (unique per company — R3).
+/// The picking-mint input. `name` is the transfer reference (unique within the composing
+/// tenant's scope — R3).
 #[derive(Debug, Clone)]
 pub struct NewPicking {
     pub name: String,
-    pub company_id: Uuid,
     pub picking_type_id: Uuid,
     pub location_id: Uuid,
     pub location_dest_id: Uuid,
@@ -113,8 +114,8 @@ impl InventoryWriteService {
     /// the engine and confirm each (the operation type's reservation posture fires with
     /// confirm — `at_confirm` reserves immediately). Every mint/confirm REPROJECTS the
     /// transfer (the engine does it on every move change — this method never touches
-    /// `transfers.state`). Guards: R3 (name/company unique — the typed duplicate error),
-    /// R9 (source != destination), non-empty, non-negative demand.
+    /// `transfers.state`). Guards: R3 (name unique — the typed duplicate error), R9 (source
+    /// != destination), non-empty, non-negative demand.
     ///
     /// Not cross-move atomic: each engine verb commits its own transaction. A failure
     /// mid-way leaves the transfer projected at whatever its minted moves say (typically
@@ -132,14 +133,15 @@ impl InventoryWriteService {
         }
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
-        // RLS scope (ADR-0008): bound before any read — an unbound connection is fenced to
-        // zero rows and the operation-type lookup below would read every type as absent.
-        company_scope::bind_company_on(&mut tx, p.company_id).await?;
-        let op = self.pickings.fetch_operation_type(&mut tx, p.picking_type_id, p.company_id).await?
+        // Re-bind the caller's ambient org scope before any read (ADR-0029) — the scope is
+        // task-local and a fresh pool transaction carries none of it; undecorated (module
+        // tests, jobs) the transaction stays plain.
+        relay_ambient_scope(&mut tx).await?;
+        let op = self.pickings.fetch_operation_type(&mut tx, p.picking_type_id).await?
             .ok_or(InventoryError::NotFound(p.picking_type_id))?;
-        // Same structural pre-checks the engine's move mint applies (R13 view locations hold
-        // no stock; R26 internal locations must belong to this company) — run them BEFORE the
-        // header insert so a bad location pair cannot leave an orphaned transfer.
+        // The same structural pre-check the engine's move mint applies (R13: view locations
+        // hold no stock) — run it BEFORE the header insert so a bad location pair cannot
+        // leave an orphaned transfer.
         let locs = self.moves.fetch_move_locations(&mut tx, p.location_id, p.location_dest_id).await?;
         let (src, dst) = match locs {
             (Some(s), Some(d)) => (s, d),
@@ -150,11 +152,6 @@ impl InventoryWriteService {
             if loc.usage == "view" {
                 return Err(InventoryError::ViewLocationHoldsNoStock { location_id: loc.id });
             }
-            if loc.usage == "internal" && loc.company_id != Some(p.company_id) {
-                return Err(InventoryError::QuantCompanyMismatch {
-                    location_id: loc.id, location_company: loc.company_id, move_company: p.company_id,
-                });
-            }
         }
         let ins = self.pickings.insert_transfer(&mut tx, &NewPickingRow {
             id,
@@ -164,7 +161,6 @@ impl InventoryWriteService {
             location_id: p.location_id,
             location_dest_id: p.location_dest_id,
             partner_id: p.partner_id,
-            company_id: p.company_id,
             move_type: &p.move_type,
         }).await;
         if let Err(e) = ins {
@@ -176,7 +172,6 @@ impl InventoryWriteService {
         for (idx, l) in p.lines.iter().enumerate() {
             let mid = self.create_move(NewStockMove {
                 name: format!("{}/{}", p.name, idx + 1),
-                company_id: p.company_id,
                 item_id: l.item_id,
                 demand_qty: l.demand_qty,
                 price_unit: l.price_unit,
@@ -194,33 +189,32 @@ impl InventoryWriteService {
                 scrapped: false,
                 forced_value: None, // ordinary demand: the valuation core derives the carry
             }).await?;
-            self.action_confirm(p.company_id, mid).await?;
+            self.action_confirm(mid).await?;
             // The operation type's reservation posture: `at_confirm` (the generated default)
             // reserves what is available right away — the picking projects to
             // assigned / partially_available / confirmed accordingly. `manual` / `by_date`
             // leave reservation to the scheduler or the operator.
             if op.reservation_method == "at_confirm" {
-                let _ = self.action_assign(p.company_id, mid).await?;
+                let _ = self.action_assign(mid).await?;
             }
             move_ids.push(mid);
         }
-        let projected = self.fetch_picking(p.company_id, id).await?;
+        let projected = self.fetch_picking(id).await?;
         Ok(PickingCreated { transfer_id: id, move_ids, projected_state: projected.0.state })
     }
 
     /// The projection PROBE: read the transfer header (with its projected state) and the
     /// member move states. The state is a stored compute the engine re-derived — callers read
-    /// it, they never assert it. The read is fenced: the caller names the company and the RLS
-    /// scope is bound on the reading transaction before any row is touched (an unbound
-    /// connection is fenced to zero rows — the probe would see every transfer as absent).
+    /// it, they never assert it. The read rides the caller's ambient org scope (ADR-0029):
+    /// under the composed shape the decorator's fence bounds it; undecorated (module tests,
+    /// jobs) it is plain.
     pub async fn fetch_picking(
         &self,
-        company_id: Uuid,
         transfer_id: Uuid,
     ) -> Result<(crate::infrastructure::persistence::TransferHeaderRow,
                  Vec<crate::infrastructure::persistence::MoveStateRow>), InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, company_id).await?;
+        relay_ambient_scope(&mut tx).await?;
         let header = self.pickings.fetch_transfer(&mut tx, transfer_id).await?
             .ok_or(InventoryError::NotFound(transfer_id))?;
         let moves = self.pickings.fetch_moves_of_transfer(&mut tx, transfer_id).await?;
@@ -235,9 +229,10 @@ impl InventoryWriteService {
     /// partner, origin) with `origin` standing in for the procurement group — every move
     /// launched for one source document joins ONE transfer, and a transfer stays open for
     /// later lines of the same document. An open transfer that matches is joined; otherwise a
-    /// header is minted (name from the operation type's reference prefix, unique per company;
-    /// shipping policy inherited from the operation type). The projection then re-derives
-    /// from the member move states, exactly as it does on every move change.
+    /// header is minted (name from the operation type's reference prefix, unique within the
+    /// composing tenant's scope; shipping policy inherited from the operation type). The
+    /// projection then re-derives from the member move states, exactly as it does on every
+    /// move change.
     ///
     /// Idempotent: a move that already belongs to a transfer returns it (`minted: false`).
     /// Fail-closed on a move with no procurement rule (voucher-door moves keep their voucher
@@ -245,19 +240,14 @@ impl InventoryWriteService {
     /// them here) and on terminal states (`done` / `cancel` never re-group).
     pub async fn assign_picking(
         &self,
-        company_id: Uuid,
         move_id: Uuid,
     ) -> Result<PickingAssignment, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        // RLS scope (ADR-0008), and the fence's fail-closed posture: the company is a
-        // caller-supplied fact, bound before the move read — an unfenced read would see every
-        // move as absent, and a wrong-company move reads as NotFound below.
-        company_scope::bind_company_on(&mut tx, company_id).await?;
+        // The read rides the caller's ambient org scope (ADR-0029): under the composed shape
+        // the decorator's fence bounds it; undecorated (module tests, jobs) it is plain.
+        relay_ambient_scope(&mut tx).await?;
         let mv = self.moves.fetch_move(&mut tx, move_id).await?
             .ok_or(InventoryError::NotFound(move_id))?;
-        if mv.company_id != company_id {
-            return Err(InventoryError::NotFound(move_id));
-        }
         match mv.state.as_str() {
             "draft" | "waiting" | "confirmed" | "partially_available" | "assigned" => {}
             other => return Err(InventoryError::WrongMoveState {
@@ -273,19 +263,19 @@ impl InventoryWriteService {
         let rule_id = mv.rule_id.ok_or(InventoryError::MoveHasNoRule { move_id })?;
         let picking_type_id = ProcurementRepository::rule_picking_type(&mut *tx, rule_id).await?
             .ok_or(InventoryError::NotFound(rule_id))?;
-        let op = self.pickings.fetch_operation_type(&mut tx, picking_type_id, company_id).await?
+        let op = self.pickings.fetch_operation_type(&mut tx, picking_type_id).await?
             .ok_or(InventoryError::NotFound(picking_type_id))?;
 
         let (transfer_id, minted) = match self.pickings.find_open_group_picking(
-            &mut tx, company_id, picking_type_id,
+            &mut tx, picking_type_id,
             mv.location_id, mv.location_dest_id, mv.partner_id, mv.origin.as_deref(),
         ).await? {
             Some(open) => (open, false),
             None => {
                 let id = Uuid::new_v4();
                 // The operation type's reference prefix (e.g. `IN/`, `WH/OUT/`) plus a short
-                // unique suffix — (name, company) is unique; a collision is the typed
-                // duplicate error the caller can retry.
+                // unique suffix — the name is unique (the composed decorator's org-scoped
+                // arbiter); a collision is the typed duplicate error the caller can retry.
                 let prefix = op.sequence_code.trim_end_matches('/');
                 let prefix = if prefix.is_empty() { "PICK" } else { prefix };
                 let name = format!("{}/{}", prefix, &Uuid::new_v4().simple().to_string()[..8].to_uppercase());
@@ -297,7 +287,6 @@ impl InventoryWriteService {
                     location_id: mv.location_id,
                     location_dest_id: mv.location_dest_id,
                     partner_id: mv.partner_id,
-                    company_id,
                     move_type: &op.move_type,
                 }).await;
                 if let Err(e) = ins {
@@ -329,34 +318,26 @@ impl InventoryWriteService {
     /// directive lacks is simply not posted (the physical movement is unaffected).
     pub async fn validate_picking(
         &self,
-        company_id: Uuid,
         transfer_id: Uuid,
         gl: &MoveGlDirective,
         sink: &dyn GlPostSink,
     ) -> Result<PickingValidated, InventoryError> {
-        // The company is a caller-supplied fact (the fence's fail-closed posture means this
-        // method cannot DISCOVER it from an unfenced read): bind it on the transaction before
-        // the header/move reads, which both fences them and proves the transfer belongs to
-        // the caller.
         let move_ids = {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, company_id).await?;
-            let header = self.pickings.fetch_transfer(&mut tx, transfer_id).await?
+            relay_ambient_scope(&mut tx).await?;
+            self.pickings.fetch_transfer(&mut tx, transfer_id).await?
                 .ok_or(InventoryError::NotFound(transfer_id))?;
-            if header.company_id != company_id {
-                return Err(InventoryError::NotFound(transfer_id));
-            }
             let ids = self.pickings.move_ids_of_transfer(&mut tx, transfer_id).await?;
             tx.commit().await?;
             ids
         };
 
-        let op_backorder = self.operation_backorder_policy(company_id, transfer_id).await?;
+        let op_backorder = self.operation_backorder_policy(transfer_id).await?;
         let mut outcomes = Vec::new();
         for mid in move_ids {
             let mv = {
                 let mut tx = self.db_pool.begin().await?;
-                company_scope::bind_company_on(&mut tx, company_id).await?;
+                relay_ambient_scope(&mut tx).await?;
                 let mv = self.moves.fetch_move(&mut tx, mid).await?.ok_or(InventoryError::NotFound(mid))?;
                 tx.commit().await?;
                 mv
@@ -366,9 +347,9 @@ impl InventoryWriteService {
                 return Err(InventoryError::WrongMoveState { move_id: mid, action: "validate", current: mv.state.clone() });
             }
             self.prepare_move_for_validate(&mv).await?;
-            outcomes.push(self.action_done(company_id, mid, op_backorder, gl, sink).await?);
+            outcomes.push(self.action_done(mid, op_backorder, gl, sink).await?);
         }
-        let header = self.fetch_picking(company_id, transfer_id).await?;
+        let header = self.fetch_picking(transfer_id).await?;
         Ok(PickingValidated {
             transfer_id,
             projected_state: header.0.state,
@@ -382,12 +363,11 @@ impl InventoryWriteService {
     /// sweep).
     async fn operation_backorder_policy(
         &self,
-        company_id: Uuid,
         transfer_id: Uuid,
     ) -> Result<BackorderPolicy, InventoryError> {
         let picking_type_id = {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, company_id).await?;
+            relay_ambient_scope(&mut tx).await?;
             let header = self.pickings.fetch_transfer(&mut tx, transfer_id).await?
                 .ok_or(InventoryError::NotFound(transfer_id))?;
             tx.commit().await?;
@@ -395,8 +375,8 @@ impl InventoryWriteService {
         };
         let facts = {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, company_id).await?;
-            let f = self.pickings.fetch_operation_type(&mut tx, picking_type_id, company_id).await
+            relay_ambient_scope(&mut tx).await?;
+            let f = self.pickings.fetch_operation_type(&mut tx, picking_type_id).await
                 .map_err(InventoryError::from)?
                 .ok_or(InventoryError::NotFound(picking_type_id))?;
             tx.commit().await?;
@@ -419,19 +399,19 @@ impl InventoryWriteService {
         mv: &crate::infrastructure::persistence::MoveRow,
     ) -> Result<(), InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, mv.company_id).await?;
+        relay_ambient_scope(&mut tx).await?;
         let locs = self.moves.fetch_move_locations(&mut tx, mv.location_id, mv.location_dest_id).await?;
         let src = locs.0.ok_or(InventoryError::LocationNotFound(mv.location_id))?;
         // The quant-surface heal: legacy voucher paths wrote Bins without quants; the first
         // converged touch of the grain seeds the quant from the Bin (one time, idempotent).
         if src.usage == "internal" {
-            self.pickings.ensure_quant_surface(&mut tx, mv.company_id, mv.item_id, src.id, src.warehouse_id).await?;
+            self.pickings.ensure_quant_surface(&mut tx, mv.item_id, src.id, src.warehouse_id).await?;
         }
         tx.commit().await?;
 
         let lines = {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, mv.company_id).await?;
+            relay_ambient_scope(&mut tx).await?;
             let l = self.move_lines.fetch_lines_for_move(&mut tx, mv.id).await?;
             tx.commit().await?;
             l
@@ -445,7 +425,7 @@ impl InventoryWriteService {
             // split mints the unreserved remainder as its own draft move on the same
             // picking. A move with nothing reservable stays lineless and the done verb
             // refuses it loudly (R24) — the transfer stays open below `done`.
-            self.action_assign(mv.company_id, mv.id).await?;
+            self.action_assign(mv.id).await?;
         } else {
             self.mint_demand_line(mv, mv.demand_qty).await?;
         }
@@ -463,7 +443,7 @@ impl InventoryWriteService {
     ) -> Result<(), InventoryError> {
         if qty <= Decimal::ZERO { return Ok(()); }
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, mv.company_id).await?;
+        relay_ambient_scope(&mut tx).await?;
         self.move_lines.insert_line(&mut tx, &NewMoveLineRow {
             id: Uuid::new_v4(),
             quantity: qty,
@@ -476,7 +456,6 @@ impl InventoryWriteService {
             location_id: mv.location_id,
             location_dest_id: mv.location_dest_id,
             item_id: mv.item_id,
-            company_id: mv.company_id,
             state: mv.state.as_str(),
         }).await?;
         tx.commit().await?;
@@ -499,18 +478,17 @@ impl InventoryWriteService {
 
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
-        // RLS scope (ADR-0008): MUST be bound before any bin read — an unbound connection is
-        // fenced to zero rows, so the availability pre-check below would read every bin as
-        // empty and refuse every transfer.
-        company_scope::bind_company_on(&mut tx, t.company_id).await?;
+        // Re-bind the caller's ambient org scope before any read (ADR-0029) — under the
+        // composed shape the decorator's fence bounds the bin read below; undecorated
+        // (module tests, jobs) the transaction stays plain.
+        relay_ambient_scope(&mut tx).await?;
         // The warehouses' stock locations (bootstrapped per warehouse on first use — the
         // picking/move grain is the location, the voucher grain was the warehouse).
-        let from_loc = self.pickings.ensure_internal_location(&mut tx, t.from_warehouse_id, t.company_id).await?;
-        let to_loc = self.pickings.ensure_internal_location(&mut tx, t.to_warehouse_id, t.company_id).await?;
+        let from_loc = self.pickings.ensure_internal_location(&mut tx, t.from_warehouse_id).await?;
+        let to_loc = self.pickings.ensure_internal_location(&mut tx, t.to_warehouse_id).await?;
         let ins = self.entries.insert_transfer(&mut tx, &NewTransferRow {
             id,
             entry_number: &t.entry_number,
-            company_id: t.company_id,
             from_warehouse_id: t.from_warehouse_id,
             to_warehouse_id: t.to_warehouse_id,
             posting_date: t.posting_date,
@@ -522,14 +500,13 @@ impl InventoryWriteService {
             self.entry_items.insert_item(&mut tx, &NewStockEntryItemRow {
                 id: Uuid::new_v4(),
                 entry_id: id,
-                company_id: t.company_id,
                 item_id: l.item_id,
                 quantity: l.quantity,
             }).await?;
             // The all-or-nothing pre-check of the voucher path, kept verbatim: the source Bin
             // must cover the line before anything mints (the engine's draw guard re-checks at
             // the quant grain).
-            let from = self.bins.lock_or_init(&mut tx, t.company_id, l.item_id, t.from_warehouse_id).await?;
+            let from = self.bins.lock_or_init(&mut tx, l.item_id, t.from_warehouse_id).await?;
             if from.actual_qty < l.quantity {
                 return Err(InventoryError::InsufficientStock {
                     item_id: l.item_id, warehouse_id: t.from_warehouse_id,
@@ -542,7 +519,6 @@ impl InventoryWriteService {
         for l in &t.lines {
             let mid = self.create_move(NewStockMove {
                 name: format!("{}/{}", t.entry_number, l.item_id.simple()),
-                company_id: t.company_id,
                 item_id: l.item_id,
                 demand_qty: l.quantity,
                 price_unit: Decimal::ZERO, // internal move: value carried, not priced
@@ -560,29 +536,31 @@ impl InventoryWriteService {
                 scrapped: false,
                 forced_value: None, // ordinary demand: the valuation core derives the carry
             }).await?;
-            self.action_confirm(t.company_id, mid).await?;
+            self.action_confirm(mid).await?;
             // Reserve from the (healed) source quant — mints the execution line — then
             // validate. The voucher door stays all-or-nothing per line: no backorder.
-            self.prepare_move_for_validate(&(self.fetch_move_row(t.company_id, mid).await?)).await?;
-            self.action_done(t.company_id, mid, BackorderPolicy::Never, &MoveGlDirective::default(), &ValueNeutralDoorSink).await?;
+            self.prepare_move_for_validate(&(self.fetch_move_row(mid).await?)).await?;
+            self.action_done(mid, BackorderPolicy::Never, &MoveGlDirective::default(), &ValueNeutralDoorSink).await?;
         }
         self.sink.publish(InventoryEvent::StockMoved(StockMoved {
-            entry_id: id, company_id: t.company_id,
+            entry_id: id,
+            // Legacy twin (ADR-0029): filled from the ambient org scope's company echo for
+            // consumers that still read a tenant off the wire. No module statement keys on it.
+            company_id: legacy_company_echo(),
             from_warehouse_id: Some(t.from_warehouse_id), to_warehouse_id: Some(t.to_warehouse_id),
         }));
         Ok(id)
     }
 
-    /// Fetch one move row (company-fenced) — a thin read for the voucher rewire's
-    /// prepare step. Binds the RLS scope on its own transaction before the read: an
-    /// unbound read is fenced to zero rows and would report the just-minted move absent.
+    /// Fetch one move row — a thin read for the voucher rewire's prepare step. The read
+    /// rides the caller's ambient org scope (ADR-0029): under the composed shape the
+    /// decorator's fence bounds it; undecorated (module tests, jobs) it is plain.
     async fn fetch_move_row(
         &self,
-        company_id: Uuid,
         move_id: Uuid,
     ) -> Result<crate::infrastructure::persistence::MoveRow, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, company_id).await?;
+        relay_ambient_scope(&mut tx).await?;
         let mv = self.moves.fetch_move(&mut tx, move_id).await?
             .ok_or(InventoryError::NotFound(move_id))?;
         tx.commit().await?;

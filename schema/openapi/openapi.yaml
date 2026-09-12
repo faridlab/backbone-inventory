@@ -12536,7 +12536,6 @@ components:
         - is_wave
         - scheduled_date
         - had_members
-        - company_id
         - metadata
       properties:
         id:
@@ -12562,9 +12561,6 @@ components:
           format: date-time
         had_members:
           type: boolean
-        company_id:
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -12589,7 +12585,6 @@ components:
         - is_wave
         - scheduled_date
         - had_members
-        - company_id
         - metadata
       properties:
         name:
@@ -12612,9 +12607,6 @@ components:
           format: date-time
         had_members:
           type: boolean
-        company_id:
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -12626,7 +12618,6 @@ components:
         - is_wave
         - scheduled_date
         - had_members
-        - company_id
         - metadata
       properties:
         name:
@@ -12649,9 +12640,6 @@ components:
           format: date-time
         had_members:
           type: boolean
-        company_id:
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -12678,9 +12666,6 @@ components:
           format: date-time
         had_members:
           type: boolean
-        company_id:
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -12699,7 +12684,6 @@ components:
       required:
         - id
         - delivery_number
-        - company_id
         - customer_id
         - warehouse_id
         - posting_date
@@ -12716,9 +12700,6 @@ components:
         delivery_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         branch_id:
           nullable: true
           type: string
@@ -12788,7 +12769,6 @@ components:
       type: object
       required:
         - delivery_number
-        - company_id
         - customer_id
         - warehouse_id
         - posting_date
@@ -12802,9 +12782,6 @@ components:
         delivery_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         branch_id:
           nullable: true
           type: string
@@ -12861,7 +12838,6 @@ components:
       type: object
       required:
         - delivery_number
-        - company_id
         - customer_id
         - warehouse_id
         - posting_date
@@ -12875,9 +12851,6 @@ components:
         delivery_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         branch_id:
           nullable: true
           type: string
@@ -12936,9 +12909,6 @@ components:
         delivery_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         branch_id:
           nullable: true
           type: string
@@ -13006,7 +12976,6 @@ components:
       required:
         - id
         - delivery_id
-        - company_id
         - item_id
         - quantity
         - valuation_rate
@@ -13017,9 +12986,6 @@ components:
           type: string
           format: uuid
         delivery_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_id:
@@ -13051,7 +13017,6 @@ components:
       type: object
       required:
         - delivery_id
-        - company_id
         - item_id
         - quantity
         - valuation_rate
@@ -13059,9 +13024,6 @@ components:
         - metadata
       properties:
         delivery_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_id:
@@ -13080,7 +13042,6 @@ components:
       type: object
       required:
         - delivery_id
-        - company_id
         - item_id
         - quantity
         - valuation_rate
@@ -13088,9 +13049,6 @@ components:
         - metadata
       properties:
         delivery_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_id:
@@ -13109,9 +13067,6 @@ components:
       type: object
       properties:
         delivery_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_id:
@@ -13140,16 +13095,12 @@ components:
       type: object
       required:
         - id
-        - company_id
         - cost_method
         - valuation_policy
         - anglo_saxon_accounting
         - metadata
       properties:
         id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         cost_method:
@@ -13181,15 +13132,11 @@ components:
     CreateInventoryCompanySettingRequest:
       type: object
       required:
-        - company_id
         - cost_method
         - valuation_policy
         - anglo_saxon_accounting
         - metadata
       properties:
-        company_id:
-          type: string
-          format: uuid
         cost_method:
           type: string
         valuation_policy:
@@ -13206,15 +13153,11 @@ components:
     UpdateInventoryCompanySettingRequest:
       type: object
       required:
-        - company_id
         - cost_method
         - valuation_policy
         - anglo_saxon_accounting
         - metadata
       properties:
-        company_id:
-          type: string
-          format: uuid
         cost_method:
           type: string
         valuation_policy:
@@ -13231,9 +13174,6 @@ components:
     PatchInventoryCompanySettingRequest:
       type: object
       properties:
-        company_id:
-          type: string
-          format: uuid
         cost_method:
           type: string
         valuation_policy:
@@ -13262,7 +13202,6 @@ components:
       required:
         - id
         - lc_number
-        - company_id
         - target_receipt_id
         - currency
         - posting_date
@@ -13277,9 +13216,6 @@ components:
         lc_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         branch_id:
           nullable: true
           type: string
@@ -13339,7 +13275,6 @@ components:
       type: object
       required:
         - lc_number
-        - company_id
         - target_receipt_id
         - currency
         - posting_date
@@ -13351,9 +13286,6 @@ components:
         lc_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         branch_id:
           nullable: true
           type: string
@@ -13400,7 +13332,6 @@ components:
       type: object
       required:
         - lc_number
-        - company_id
         - target_receipt_id
         - currency
         - posting_date
@@ -13412,9 +13343,6 @@ components:
         lc_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         branch_id:
           nullable: true
           type: string
@@ -13463,9 +13391,6 @@ components:
         lc_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         branch_id:
           nullable: true
           type: string
@@ -13523,7 +13448,6 @@ components:
       required:
         - id
         - lc_id
-        - company_id
         - name
         - account_id
         - split_method
@@ -13534,9 +13458,6 @@ components:
           type: string
           format: uuid
         lc_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         name:
@@ -13569,7 +13490,6 @@ components:
       type: object
       required:
         - lc_id
-        - company_id
         - name
         - account_id
         - split_method
@@ -13577,9 +13497,6 @@ components:
         - metadata
       properties:
         lc_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         name:
@@ -13599,7 +13516,6 @@ components:
       type: object
       required:
         - lc_id
-        - company_id
         - name
         - account_id
         - split_method
@@ -13607,9 +13523,6 @@ components:
         - metadata
       properties:
         lc_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         name:
@@ -13629,9 +13542,6 @@ components:
       type: object
       properties:
         lc_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         name:
@@ -13662,7 +13572,6 @@ components:
       required:
         - id
         - lc_id
-        - company_id
         - move_line_id
         - cost_line_id
         - share
@@ -13674,9 +13583,6 @@ components:
           type: string
           format: uuid
         lc_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         move_line_id:
@@ -13711,7 +13617,6 @@ components:
       type: object
       required:
         - lc_id
-        - company_id
         - move_line_id
         - cost_line_id
         - share
@@ -13720,9 +13625,6 @@ components:
         - metadata
       properties:
         lc_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         move_line_id:
@@ -13744,7 +13646,6 @@ components:
       type: object
       required:
         - lc_id
-        - company_id
         - move_line_id
         - cost_line_id
         - share
@@ -13753,9 +13654,6 @@ components:
         - metadata
       properties:
         lc_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         move_line_id:
@@ -13777,9 +13675,6 @@ components:
       type: object
       properties:
         lc_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         move_line_id:
@@ -13843,10 +13738,6 @@ components:
           nullable: true
           type: string
           maxLength: 64
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         warehouse_id:
           nullable: true
           type: string
@@ -13918,10 +13809,6 @@ components:
           nullable: true
           type: string
           maxLength: 64
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         warehouse_id:
           nullable: true
           type: string
@@ -13980,10 +13867,6 @@ components:
           nullable: true
           type: string
           maxLength: 64
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         warehouse_id:
           nullable: true
           type: string
@@ -14034,10 +13917,6 @@ components:
           nullable: true
           type: string
           maxLength: 64
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         warehouse_id:
           nullable: true
           type: string
@@ -14091,7 +13970,6 @@ components:
         - procure_method
         - location_id
         - location_dest_id
-        - company_id
         - move_orig_ids
         - move_dest_ids
         - is_inventory
@@ -14149,9 +14027,6 @@ components:
           nullable: true
           type: string
           format: uuid
-        company_id:
-          type: string
-          format: uuid
         rule_id:
           nullable: true
           type: string
@@ -14206,7 +14081,6 @@ components:
         - procure_method
         - location_id
         - location_dest_id
-        - company_id
         - move_orig_ids
         - move_dest_ids
         - is_inventory
@@ -14259,9 +14133,6 @@ components:
           format: uuid
         partner_id:
           nullable: true
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         rule_id:
@@ -14305,7 +14176,6 @@ components:
         - procure_method
         - location_id
         - location_dest_id
-        - company_id
         - move_orig_ids
         - move_dest_ids
         - is_inventory
@@ -14358,9 +14228,6 @@ components:
           format: uuid
         partner_id:
           nullable: true
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         rule_id:
@@ -14438,9 +14305,6 @@ components:
           nullable: true
           type: string
           format: uuid
-        company_id:
-          type: string
-          format: uuid
         rule_id:
           nullable: true
           type: string
@@ -14488,7 +14352,6 @@ components:
         - location_id
         - location_dest_id
         - item_id
-        - company_id
         - metadata
       properties:
         id:
@@ -14539,9 +14402,6 @@ components:
         item_id:
           type: string
           format: uuid
-        company_id:
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -14569,7 +14429,6 @@ components:
         - location_id
         - location_dest_id
         - item_id
-        - company_id
         - metadata
       properties:
         quantity:
@@ -14615,9 +14474,6 @@ components:
           type: string
           format: uuid
         item_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         metadata:
@@ -14634,7 +14490,6 @@ components:
         - location_id
         - location_dest_id
         - item_id
-        - company_id
         - metadata
       properties:
         quantity:
@@ -14680,9 +14535,6 @@ components:
           type: string
           format: uuid
         item_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         metadata:
@@ -14736,9 +14588,6 @@ components:
         item_id:
           type: string
           format: uuid
-        company_id:
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -14786,10 +14635,6 @@ components:
         sequence:
           type: integer
           format: int32
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         warehouse_id:
           nullable: true
           type: string
@@ -14860,10 +14705,6 @@ components:
         sequence:
           type: integer
           format: int32
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         warehouse_id:
           nullable: true
           type: string
@@ -14921,10 +14762,6 @@ components:
         sequence:
           type: integer
           format: int32
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         warehouse_id:
           nullable: true
           type: string
@@ -14968,10 +14805,6 @@ components:
         sequence:
           type: integer
           format: int32
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         warehouse_id:
           nullable: true
           type: string
@@ -15018,7 +14851,6 @@ components:
         - picking_type_id
         - location_id
         - location_dest_id
-        - company_id
         - move_type
         - scheduled_date
         - state
@@ -15052,9 +14884,6 @@ components:
           format: uuid
         partner_id:
           nullable: true
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         move_type:
@@ -15106,7 +14935,6 @@ components:
         - picking_type_id
         - location_id
         - location_dest_id
-        - company_id
         - move_type
         - scheduled_date
         - state
@@ -15137,9 +14965,6 @@ components:
           format: uuid
         partner_id:
           nullable: true
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         move_type:
@@ -15178,7 +15003,6 @@ components:
         - picking_type_id
         - location_id
         - location_dest_id
-        - company_id
         - move_type
         - scheduled_date
         - state
@@ -15209,9 +15033,6 @@ components:
           format: uuid
         partner_id:
           nullable: true
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         move_type:
@@ -15269,9 +15090,6 @@ components:
           format: uuid
         partner_id:
           nullable: true
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         move_type:
@@ -15341,10 +15159,6 @@ components:
           type: boolean
         warehouse_selectable:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -15386,10 +15200,6 @@ components:
           type: boolean
         warehouse_selectable:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -15418,10 +15228,6 @@ components:
           type: boolean
         warehouse_selectable:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -15442,10 +15248,6 @@ components:
           type: boolean
         warehouse_selectable:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -15510,10 +15312,6 @@ components:
           type: string
           format: uuid
         warehouse_id:
-          nullable: true
-          type: string
-          format: uuid
-        company_id:
           nullable: true
           type: string
           format: uuid
@@ -15585,10 +15383,6 @@ components:
           nullable: true
           type: string
           format: uuid
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         propagate_cancel:
           type: boolean
         metadata:
@@ -15644,10 +15438,6 @@ components:
           nullable: true
           type: string
           format: uuid
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         propagate_cancel:
           type: boolean
         metadata:
@@ -15690,10 +15480,6 @@ components:
           nullable: true
           type: string
           format: uuid
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         propagate_cancel:
           type: boolean
         metadata:
@@ -15719,7 +15505,6 @@ components:
         - item_id
         - location_id
         - warehouse_id
-        - company_id
         - item_min_qty
         - item_max_qty
         - qty_on_hand
@@ -15750,9 +15535,6 @@ components:
           type: string
           format: uuid
         warehouse_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_min_qty:
@@ -15802,7 +15584,6 @@ components:
         - item_id
         - location_id
         - warehouse_id
-        - company_id
         - item_min_qty
         - item_max_qty
         - qty_on_hand
@@ -15830,9 +15611,6 @@ components:
           type: string
           format: uuid
         warehouse_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_min_qty:
@@ -15869,7 +15647,6 @@ components:
         - item_id
         - location_id
         - warehouse_id
-        - company_id
         - item_min_qty
         - item_max_qty
         - qty_on_hand
@@ -15897,9 +15674,6 @@ components:
           type: string
           format: uuid
         warehouse_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_min_qty:
@@ -15950,9 +15724,6 @@ components:
         warehouse_id:
           type: string
           format: uuid
-        company_id:
-          type: string
-          format: uuid
         item_min_qty:
           type: string
         item_max_qty:
@@ -15993,7 +15764,6 @@ components:
       required:
         - id
         - receipt_number
-        - company_id
         - supplier_id
         - warehouse_id
         - posting_date
@@ -16011,9 +15781,6 @@ components:
         receipt_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         branch_id:
           nullable: true
           type: string
@@ -16086,7 +15853,6 @@ components:
       type: object
       required:
         - receipt_number
-        - company_id
         - supplier_id
         - warehouse_id
         - posting_date
@@ -16101,9 +15867,6 @@ components:
         receipt_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         branch_id:
           nullable: true
           type: string
@@ -16163,7 +15926,6 @@ components:
       type: object
       required:
         - receipt_number
-        - company_id
         - supplier_id
         - warehouse_id
         - posting_date
@@ -16178,9 +15940,6 @@ components:
         receipt_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         branch_id:
           nullable: true
           type: string
@@ -16242,9 +16001,6 @@ components:
         receipt_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         branch_id:
           nullable: true
           type: string
@@ -16315,7 +16071,6 @@ components:
       required:
         - id
         - receipt_id
-        - company_id
         - item_id
         - quantity
         - rate
@@ -16327,9 +16082,6 @@ components:
           type: string
           format: uuid
         receipt_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_id:
@@ -16363,7 +16115,6 @@ components:
       type: object
       required:
         - receipt_id
-        - company_id
         - item_id
         - quantity
         - rate
@@ -16372,9 +16123,6 @@ components:
         - metadata
       properties:
         receipt_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_id:
@@ -16395,7 +16143,6 @@ components:
       type: object
       required:
         - receipt_id
-        - company_id
         - item_id
         - quantity
         - rate
@@ -16404,9 +16151,6 @@ components:
         - metadata
       properties:
         receipt_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_id:
@@ -16427,9 +16171,6 @@ components:
       type: object
       properties:
         receipt_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_id:
@@ -16467,7 +16208,6 @@ components:
         - available_quantity
         - inventory_quantity_set
         - sn_duplicated
-        - company_id
         - metadata
       properties:
         id:
@@ -16515,9 +16255,6 @@ components:
           format: date
         sn_duplicated:
           type: boolean
-        company_id:
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -16544,7 +16281,6 @@ components:
         - available_quantity
         - inventory_quantity_set
         - sn_duplicated
-        - company_id
         - metadata
       properties:
         item_id:
@@ -16589,9 +16325,6 @@ components:
           format: date
         sn_duplicated:
           type: boolean
-        company_id:
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -16605,7 +16338,6 @@ components:
         - available_quantity
         - inventory_quantity_set
         - sn_duplicated
-        - company_id
         - metadata
       properties:
         item_id:
@@ -16650,9 +16382,6 @@ components:
           format: date
         sn_duplicated:
           type: boolean
-        company_id:
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -16701,9 +16430,6 @@ components:
           format: date
         sn_duplicated:
           type: boolean
-        company_id:
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -16729,7 +16455,6 @@ components:
         - location_id
         - scrap_location_id
         - scrap_reason_tag_ids
-        - company_id
         - metadata
       properties:
         id:
@@ -16780,9 +16505,6 @@ components:
           format: uuid
         scrap_reason_tag_ids:
           type: array
-        company_id:
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -16810,7 +16532,6 @@ components:
         - location_id
         - scrap_location_id
         - scrap_reason_tag_ids
-        - company_id
         - metadata
       properties:
         name:
@@ -16858,9 +16579,6 @@ components:
           format: uuid
         scrap_reason_tag_ids:
           type: array
-        company_id:
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -16875,7 +16593,6 @@ components:
         - location_id
         - scrap_location_id
         - scrap_reason_tag_ids
-        - company_id
         - metadata
       properties:
         name:
@@ -16923,9 +16640,6 @@ components:
           format: uuid
         scrap_reason_tag_ids:
           type: array
-        company_id:
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -16977,9 +16691,6 @@ components:
           format: uuid
         scrap_reason_tag_ids:
           type: array
-        company_id:
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -17009,10 +16720,6 @@ components:
           maxLength: 150
         active:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -17041,10 +16748,6 @@ components:
           maxLength: 150
         active:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -17060,10 +16763,6 @@ components:
           maxLength: 150
         active:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -17075,10 +16774,6 @@ components:
           maxLength: 150
         active:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -17097,7 +16792,6 @@ components:
       required:
         - id
         - entry_number
-        - company_id
         - stock_entry_type
         - posting_date
         - status
@@ -17110,9 +16804,6 @@ components:
         entry_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         stock_entry_type:
           type: string
         from_warehouse_id:
@@ -17158,7 +16849,6 @@ components:
       type: object
       required:
         - entry_number
-        - company_id
         - stock_entry_type
         - posting_date
         - status
@@ -17168,9 +16858,6 @@ components:
         entry_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         stock_entry_type:
           type: string
         from_warehouse_id:
@@ -17203,7 +16890,6 @@ components:
       type: object
       required:
         - entry_number
-        - company_id
         - stock_entry_type
         - posting_date
         - status
@@ -17213,9 +16899,6 @@ components:
         entry_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         stock_entry_type:
           type: string
         from_warehouse_id:
@@ -17250,9 +16933,6 @@ components:
         entry_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         stock_entry_type:
           type: string
         from_warehouse_id:
@@ -17296,7 +16976,6 @@ components:
       required:
         - id
         - entry_id
-        - company_id
         - item_id
         - quantity
         - metadata
@@ -17305,9 +16984,6 @@ components:
           type: string
           format: uuid
         entry_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_id:
@@ -17335,15 +17011,11 @@ components:
       type: object
       required:
         - entry_id
-        - company_id
         - item_id
         - quantity
         - metadata
       properties:
         entry_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_id:
@@ -17358,15 +17030,11 @@ components:
       type: object
       required:
         - entry_id
-        - company_id
         - item_id
         - quantity
         - metadata
       properties:
         entry_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_id:
@@ -17381,9 +17049,6 @@ components:
       type: object
       properties:
         entry_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_id:
@@ -17408,7 +17073,6 @@ components:
       type: object
       required:
         - id
-        - company_id
         - item_id
         - warehouse_id
         - posting_date
@@ -17426,9 +17090,6 @@ components:
         - metadata
       properties:
         id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_id:
@@ -17484,7 +17145,6 @@ components:
     CreateStockLedgerEntryRequest:
       type: object
       required:
-        - company_id
         - item_id
         - warehouse_id
         - posting_date
@@ -17501,9 +17161,6 @@ components:
         - status
         - metadata
       properties:
-        company_id:
-          type: string
-          format: uuid
         item_id:
           type: string
           format: uuid
@@ -17544,7 +17201,6 @@ components:
     UpdateStockLedgerEntryRequest:
       type: object
       required:
-        - company_id
         - item_id
         - warehouse_id
         - posting_date
@@ -17561,9 +17217,6 @@ components:
         - status
         - metadata
       properties:
-        company_id:
-          type: string
-          format: uuid
         item_id:
           type: string
           format: uuid
@@ -17604,9 +17257,6 @@ components:
     PatchStockLedgerEntryRequest:
       type: object
       properties:
-        company_id:
-          type: string
-          format: uuid
         item_id:
           type: string
           format: uuid
@@ -17658,7 +17308,6 @@ components:
       type: object
       required:
         - id
-        - company_id
         - item_id
         - warehouse_id
         - actual_qty
@@ -17668,9 +17317,6 @@ components:
         - metadata
       properties:
         id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_id:
@@ -17706,7 +17352,6 @@ components:
     CreateBinRequest:
       type: object
       required:
-        - company_id
         - item_id
         - warehouse_id
         - actual_qty
@@ -17715,9 +17360,6 @@ components:
         - stock_value
         - metadata
       properties:
-        company_id:
-          type: string
-          format: uuid
         item_id:
           type: string
           format: uuid
@@ -17738,7 +17380,6 @@ components:
     UpdateBinRequest:
       type: object
       required:
-        - company_id
         - item_id
         - warehouse_id
         - actual_qty
@@ -17747,9 +17388,6 @@ components:
         - stock_value
         - metadata
       properties:
-        company_id:
-          type: string
-          format: uuid
         item_id:
           type: string
           format: uuid
@@ -17770,9 +17408,6 @@ components:
     PatchBinRequest:
       type: object
       properties:
-        company_id:
-          type: string
-          format: uuid
         item_id:
           type: string
           format: uuid
@@ -17805,7 +17440,6 @@ components:
       required:
         - id
         - recon_number
-        - company_id
         - warehouse_id
         - posting_date
         - net_difference
@@ -17821,9 +17455,6 @@ components:
         recon_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         warehouse_id:
           type: string
           format: uuid
@@ -17878,7 +17509,6 @@ components:
       type: object
       required:
         - recon_number
-        - company_id
         - warehouse_id
         - posting_date
         - net_difference
@@ -17891,9 +17521,6 @@ components:
         recon_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         warehouse_id:
           type: string
           format: uuid
@@ -17935,7 +17562,6 @@ components:
       type: object
       required:
         - recon_number
-        - company_id
         - warehouse_id
         - posting_date
         - net_difference
@@ -17948,9 +17574,6 @@ components:
         recon_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         warehouse_id:
           type: string
           format: uuid
@@ -17994,9 +17617,6 @@ components:
         recon_number:
           type: string
           maxLength: 40
-        company_id:
-          type: string
-          format: uuid
         warehouse_id:
           type: string
           format: uuid
@@ -18049,7 +17669,6 @@ components:
       required:
         - id
         - reconciliation_id
-        - company_id
         - item_id
         - counted_qty
         - counted_rate
@@ -18061,9 +17680,6 @@ components:
           type: string
           format: uuid
         reconciliation_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_id:
@@ -18097,7 +17713,6 @@ components:
       type: object
       required:
         - reconciliation_id
-        - company_id
         - item_id
         - counted_qty
         - counted_rate
@@ -18106,9 +17721,6 @@ components:
         - metadata
       properties:
         reconciliation_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_id:
@@ -18129,7 +17741,6 @@ components:
       type: object
       required:
         - reconciliation_id
-        - company_id
         - item_id
         - counted_qty
         - counted_rate
@@ -18138,9 +17749,6 @@ components:
         - metadata
       properties:
         reconciliation_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_id:
@@ -18161,9 +17769,6 @@ components:
       type: object
       properties:
         reconciliation_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_id:
@@ -18229,10 +17834,6 @@ components:
           type: string
         active:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -18284,10 +17885,6 @@ components:
           type: string
         active:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -18326,10 +17923,6 @@ components:
           type: string
         active:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -18362,10 +17955,6 @@ components:
           type: string
         active:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -18401,10 +17990,6 @@ components:
           type: string
         active:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -18439,10 +18024,6 @@ components:
           type: string
         active:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -18464,10 +18045,6 @@ components:
           type: string
         active:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -18484,10 +18061,6 @@ components:
           type: string
         active:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -18525,10 +18098,6 @@ components:
           format: uuid
         quantity:
           type: string
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -18565,10 +18134,6 @@ components:
           format: uuid
         quantity:
           type: string
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -18592,10 +18157,6 @@ components:
           format: uuid
         quantity:
           type: string
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -18615,10 +18176,6 @@ components:
           format: uuid
         quantity:
           type: string
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -18675,10 +18232,6 @@ components:
           type: string
         active:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -18734,10 +18287,6 @@ components:
           type: string
         active:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -18780,10 +18329,6 @@ components:
           type: string
         active:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -18819,10 +18364,6 @@ components:
           type: string
         active:
           type: boolean
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         metadata:
           type: object
 
@@ -18856,10 +18397,6 @@ components:
           type: string
           maxLength: 150
         item_id:
-          type: string
-          format: uuid
-        company_id:
-          nullable: true
           type: string
           format: uuid
         product_qty:
@@ -18906,10 +18443,6 @@ components:
         item_id:
           type: string
           format: uuid
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         product_qty:
           type: string
         location_id:
@@ -18941,10 +18474,6 @@ components:
         item_id:
           type: string
           format: uuid
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         product_qty:
           type: string
         location_id:
@@ -18969,10 +18498,6 @@ components:
           type: string
           maxLength: 150
         item_id:
-          type: string
-          format: uuid
-        company_id:
-          nullable: true
           type: string
           format: uuid
         product_qty:
@@ -19017,10 +18542,6 @@ components:
           type: string
           maxLength: 1000
         location_id:
-          nullable: true
-          type: string
-          format: uuid
-        company_id:
           nullable: true
           type: string
           format: uuid
@@ -19073,10 +18594,6 @@ components:
           nullable: true
           type: string
           format: uuid
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         parent_package_id:
           nullable: true
           type: string
@@ -19113,10 +18630,6 @@ components:
           nullable: true
           type: string
           format: uuid
-        company_id:
-          nullable: true
-          type: string
-          format: uuid
         parent_package_id:
           nullable: true
           type: string
@@ -19145,10 +18658,6 @@ components:
           type: string
           maxLength: 1000
         location_id:
-          nullable: true
-          type: string
-          format: uuid
-        company_id:
           nullable: true
           type: string
           format: uuid
@@ -19184,7 +18693,6 @@ components:
       type: object
       required:
         - id
-        - company_id
         - code
         - name
         - warehouse_type
@@ -19192,9 +18700,6 @@ components:
         - metadata
       properties:
         id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         code:
@@ -19230,16 +18735,12 @@ components:
     CreateWarehouseRequest:
       type: object
       required:
-        - company_id
         - code
         - name
         - warehouse_type
         - is_group
         - metadata
       properties:
-        company_id:
-          type: string
-          format: uuid
         code:
           type: string
           maxLength: 40
@@ -19260,16 +18761,12 @@ components:
     UpdateWarehouseRequest:
       type: object
       required:
-        - company_id
         - code
         - name
         - warehouse_type
         - is_group
         - metadata
       properties:
-        company_id:
-          type: string
-          format: uuid
         code:
           type: string
           maxLength: 40
@@ -19290,9 +18787,6 @@ components:
     PatchWarehouseRequest:
       type: object
       properties:
-        company_id:
-          type: string
-          format: uuid
         code:
           type: string
           maxLength: 40
@@ -19325,7 +18819,6 @@ components:
       required:
         - id
         - item_id
-        - company_id
         - stock_uom
         - is_stock_item
         - has_batch
@@ -19339,9 +18832,6 @@ components:
           type: string
           format: uuid
         item_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         stock_uom:
@@ -19387,7 +18877,6 @@ components:
       type: object
       required:
         - item_id
-        - company_id
         - stock_uom
         - is_stock_item
         - has_batch
@@ -19398,9 +18887,6 @@ components:
         - metadata
       properties:
         item_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         stock_uom:
@@ -19433,7 +18919,6 @@ components:
       type: object
       required:
         - item_id
-        - company_id
         - stock_uom
         - is_stock_item
         - has_batch
@@ -19444,9 +18929,6 @@ components:
         - metadata
       properties:
         item_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         stock_uom:
@@ -19479,9 +18961,6 @@ components:
       type: object
       properties:
         item_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         stock_uom:

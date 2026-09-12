@@ -67,9 +67,6 @@ pub struct CreateScrapDto {
     pub move_id: Option<Uuid>,
     #[serde(alias = "scrap_reason_tag_ids")]
     pub scrap_reason_tag_ids: Vec<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
 }
 
 // =============================================================================
@@ -118,9 +115,6 @@ pub struct UpdateScrapDto {
     pub move_id: Option<Uuid>,
     #[serde(alias = "scrap_reason_tag_ids")]
     pub scrap_reason_tag_ids: Vec<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
 }
 
 // =============================================================================
@@ -171,15 +165,12 @@ pub struct PatchScrapDto {
     pub move_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "scrap_reason_tag_ids")]
     pub scrap_reason_tag_ids: Option<Vec<Uuid>>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 impl PatchScrapDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.name.is_some() || self.state.is_some() || self.origin.is_some() || self.date_expected.is_some() || self.item_id.is_some() || self.scrap_qty.is_some() || self.location_id.is_some() || self.scrap_location_id.is_some() || self.lot_id.is_some() || self.package_id.is_some() || self.owner_id.is_some() || self.picking_id.is_some() || self.move_id.is_some() || self.scrap_reason_tag_ids.is_some() || self.company_id.is_some()
+        self.name.is_some() || self.state.is_some() || self.origin.is_some() || self.date_expected.is_some() || self.item_id.is_some() || self.scrap_qty.is_some() || self.location_id.is_some() || self.scrap_location_id.is_some() || self.lot_id.is_some() || self.package_id.is_some() || self.owner_id.is_some() || self.picking_id.is_some() || self.move_id.is_some() || self.scrap_reason_tag_ids.is_some()
     }
 }
 
@@ -216,8 +207,6 @@ pub struct ScrapResponseDto {
     pub picking_id: Option<Uuid>,
     pub move_id: Option<Uuid>,
     pub scrap_reason_tag_ids: Vec<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     pub metadata: AuditMetadata,
 }
 
@@ -303,7 +292,6 @@ impl From<Scrap> for ScrapResponseDto {
             picking_id: entity.picking_id,
             move_id: entity.move_id,
             scrap_reason_tag_ids: entity.scrap_reason_tag_ids,
-            company_id: entity.company_id,
             metadata: entity.metadata,
         }
     }
@@ -340,7 +328,6 @@ impl From<CreateScrapDto> for Scrap {
             picking_id: dto.picking_id,
             move_id: dto.move_id,
             scrap_reason_tag_ids: dto.scrap_reason_tag_ids,
-            company_id: dto.company_id,
             metadata: AuditMetadata::default(),
         }
     }
@@ -364,7 +351,6 @@ impl From<&Scrap> for ScrapResponseDto {
             picking_id: entity.picking_id.clone(),
             move_id: entity.move_id.clone(),
             scrap_reason_tag_ids: entity.scrap_reason_tag_ids.clone(),
-            company_id: entity.company_id.clone(),
             metadata: entity.metadata.clone(),
         }
     }
@@ -392,7 +378,6 @@ impl backbone_core::ApplyUpdateDto<UpdateScrapDto> for Scrap {
         self.picking_id = dto.picking_id;
         self.move_id = dto.move_id;
         self.scrap_reason_tag_ids = dto.scrap_reason_tag_ids;
-        self.company_id = dto.company_id;
         Ok(self)
     }
 }

@@ -21,6 +21,10 @@
 //! State values are snake_case; enum parameters are bound as text with explicit casts and read
 //! back with `::text` (the module-wide enum lesson). Per the module's 4-layer rule the
 //! statements live here and take the caller's connection; services orchestrate.
+//!
+//! Tenancy is composition-installed (ADR-0029): the module is tenant-agnostic. Every statement
+//! here is ID- or grain-keyed only; the composing service's decorator owns org scoping (the
+//! fence bounds reads, the fill trigger stamps writes), so no statement keys on tenancy.
 
 use rust_decimal::Decimal;
 use sqlx::{PgConnection, Row};
@@ -39,8 +43,6 @@ pub struct MoveStateRow {
 /// Header fields of one transfer (the projection probe surface).
 pub struct TransferHeaderRow {
     pub id: Uuid,
-    /// The transfer's owning company (strict fence) — the caller binds the RLS scope from it.
-    pub company_id: Uuid,
     pub name: String,
     pub origin: Option<String>,
     pub picking_type_id: Uuid,
@@ -90,7 +92,6 @@ pub struct NewPickingRow<'a> {
     pub location_id: Uuid,
     pub location_dest_id: Uuid,
     pub partner_id: Option<Uuid>,
-    pub company_id: Uuid,
     pub move_type: &'a str,
 }
 
@@ -106,8 +107,8 @@ impl StockPickingRepository {
     }
 
     /// Insert the transfer header. Leaks the raw `sqlx::Error` deliberately so the service can
-    /// turn a unique violation on (name, company_id) — guard R3 — into a typed
-    /// duplicate-name error.
+    /// turn a unique violation on the name — the composing decorator's org-scoped arbiter —
+    /// into a typed duplicate-name error.
     pub async fn insert_transfer(
         &self,
         conn: &mut PgConnection,
@@ -116,8 +117,8 @@ impl StockPickingRepository {
         sqlx::query(
             r#"INSERT INTO inventory.transfers
                  (id, name, origin, priority, picking_type_id, location_id, location_dest_id,
-                  partner_id, company_id, move_type, scheduled_date, state)
-               VALUES ($1, $2, $3, 'normal', $4, $5, $6, $7, $8, $9::move_type, NOW(),
+                  partner_id, move_type, scheduled_date, state)
+               VALUES ($1, $2, $3, 'normal', $4, $5, $6, $7, $8::move_type, NOW(),
                        'draft'::transfer_state)"#,
         )
         .bind(t.id)
@@ -127,7 +128,6 @@ impl StockPickingRepository {
         .bind(t.location_id)
         .bind(t.location_dest_id)
         .bind(t.partner_id)
-        .bind(t.company_id)
         .bind(t.move_type)
         .execute(conn)
         .await?;
@@ -142,7 +142,7 @@ impl StockPickingRepository {
         transfer_id: Uuid,
     ) -> Result<Option<TransferHeaderRow>, sqlx::Error> {
         let row = sqlx::query(
-            r#"SELECT id, company_id, name, origin, picking_type_id, location_id, location_dest_id,
+            r#"SELECT id, name, origin, picking_type_id, location_id, location_dest_id,
                       state::text AS state, date_done
                FROM inventory.transfers
                WHERE id = $1 AND (metadata->>'deleted_at') IS NULL"#,
@@ -152,7 +152,6 @@ impl StockPickingRepository {
         .await?;
         Ok(row.map(|r| TransferHeaderRow {
             id: r.get("id"),
-            company_id: r.get("company_id"),
             name: r.get("name"),
             origin: r.get("origin"),
             picking_type_id: r.get("picking_type_id"),
@@ -207,24 +206,20 @@ impl StockPickingRepository {
         Ok(rows.iter().map(|r| r.get("id")).collect())
     }
 
-    /// The operation type's facts (the picking mint refuses a type from another company).
-    /// `None` when the type does not exist or is not usable by this company.
+    /// The operation type's facts. `None` when the type does not exist or is archived.
     pub async fn fetch_operation_type(
         &self,
         conn: &mut PgConnection,
         operation_type_id: Uuid,
-        company_id: Uuid,
     ) -> Result<Option<OperationTypeFacts>, sqlx::Error> {
         let row = sqlx::query(
             r#"SELECT id, code::text AS code, reservation_method::text AS reservation_method,
                       create_backorder::text AS create_backorder, sequence_code,
                       move_type::text AS move_type
                FROM inventory.operation_types
-               WHERE id = $1 AND active AND (metadata->>'deleted_at') IS NULL
-                 AND (company_id = $2 OR company_id IS NULL)"#,
+               WHERE id = $1 AND active AND (metadata->>'deleted_at') IS NULL"#,
         )
         .bind(operation_type_id)
-        .bind(company_id)
         .fetch_optional(conn)
         .await?;
         Ok(row.map(|r| OperationTypeFacts {
@@ -238,15 +233,14 @@ impl StockPickingRepository {
     }
 
     /// The OPEN transfer a move would join when it is grouped for fulfillment: the most
-    /// recently scheduled transfer of the same company whose operation type, source,
-    /// destination, partner, and origin (the procurement-group stand-in — moves launched for
-    /// one source document share it) all match, and whose projection has not reached a
-    /// terminal state (`done` picks nothing more up; a `cancel` never reopens). `None` when no
-    /// open transfer matches — the caller mints one.
+    /// recently scheduled transfer whose operation type, source, destination, partner, and
+    /// origin (the procurement-group stand-in — moves launched for one source document share
+    /// it) all match, and whose projection has not reached a terminal state (`done` picks
+    /// nothing more up; a `cancel` never reopens). `None` when no open transfer matches — the
+    /// caller mints one.
     pub async fn find_open_group_picking(
         &self,
         conn: &mut PgConnection,
-        company_id: Uuid,
         picking_type_id: Uuid,
         location_id: Uuid,
         location_dest_id: Uuid,
@@ -255,18 +249,16 @@ impl StockPickingRepository {
     ) -> Result<Option<Uuid>, sqlx::Error> {
         let row = sqlx::query_scalar::<_, Uuid>(
             r#"SELECT id FROM inventory.transfers
-               WHERE company_id = $1
-                 AND picking_type_id = $2
-                 AND location_id = $3
-                 AND location_dest_id = $4
-                 AND partner_id IS NOT DISTINCT FROM $5
-                 AND origin IS NOT DISTINCT FROM $6
+               WHERE picking_type_id = $1
+                 AND location_id = $2
+                 AND location_dest_id = $3
+                 AND partner_id IS NOT DISTINCT FROM $4
+                 AND origin IS NOT DISTINCT FROM $5
                  AND state NOT IN ('done'::transfer_state, 'cancel'::transfer_state)
                  AND (metadata->>'deleted_at') IS NULL
                ORDER BY scheduled_date DESC, id
                LIMIT 1"#,
         )
-        .bind(company_id)
         .bind(picking_type_id)
         .bind(location_id)
         .bind(location_dest_id)
@@ -297,28 +289,24 @@ impl StockPickingRepository {
         Ok(row.map(|r| r.get("id")))
     }
 
-    /// The inventory-loss location for a company (the far end of every adjustment move):
-    /// company-owned first, shared (company NULL) as fallback. `None` when neither exists —
-    /// the caller decides whether to bootstrap one.
+    /// The inventory-loss location (the far end of every adjustment move). `None` when none
+    /// exists — the caller decides whether to bootstrap one.
     pub async fn resolve_inventory_loss_location(
         &self,
         conn: &mut PgConnection,
-        company_id: Uuid,
     ) -> Result<Option<Uuid>, sqlx::Error> {
         let row = sqlx::query(
             r#"SELECT id FROM inventory.locations
                WHERE usage = 'inventory'::location_usage AND active
                  AND (metadata->>'deleted_at') IS NULL
-                 AND (company_id = $1 OR company_id IS NULL)
-               ORDER BY (company_id IS NOT NULL) DESC, name ASC LIMIT 1"#,
+               ORDER BY name ASC LIMIT 1"#,
         )
-        .bind(company_id)
         .fetch_optional(conn)
         .await?;
         Ok(row.map(|r| r.get("id")))
     }
 
-    /// Bootstrap a warehouse's stock location (internal usage, company-fenced). The
+    /// Bootstrap a warehouse's stock location (internal usage). The
     /// adjustment door and the picking mint use this the first time a warehouse without a
     /// location tree stages a count or mints a picking — a physical grain needs a location,
     /// and minting the warehouse's own stock location is the least-surprise resolution.
@@ -326,7 +314,6 @@ impl StockPickingRepository {
         &self,
         conn: &mut PgConnection,
         warehouse_id: Uuid,
-        company_id: Uuid,
     ) -> Result<Uuid, sqlx::Error> {
         if let Some(id) = self.resolve_internal_location(conn, warehouse_id).await? {
             return Ok(id);
@@ -334,89 +321,80 @@ impl StockPickingRepository {
         let id = Uuid::new_v4();
         sqlx::query(
             r#"INSERT INTO inventory.locations
-                 (id, name, complete_name, usage, active, company_id, warehouse_id, parent_path)
-               VALUES ($1, 'Stock', 'Stock', 'internal'::location_usage, TRUE, $2, $3, $1::text)"#,
+                 (id, name, complete_name, usage, active, warehouse_id, parent_path)
+               VALUES ($1, 'Stock', 'Stock', 'internal'::location_usage, TRUE, $2, $1::text)"#,
         )
         .bind(id)
-        .bind(company_id)
         .bind(warehouse_id)
         .execute(conn)
         .await?;
         Ok(id)
     }
 
-    /// Bootstrap the company's inventory-loss location (usage `inventory` — the scrap /
+    /// Bootstrap the inventory-loss location (usage `inventory` — the scrap /
     /// adjustment sink). Shared root trees would normally seed this; the module ships no
     /// location seed yet, so the door mints it on first use.
     pub async fn ensure_inventory_loss_location(
         &self,
         conn: &mut PgConnection,
-        company_id: Uuid,
     ) -> Result<Uuid, sqlx::Error> {
-        if let Some(id) = self.resolve_inventory_loss_location(conn, company_id).await? {
+        if let Some(id) = self.resolve_inventory_loss_location(conn).await? {
             return Ok(id);
         }
         let id = Uuid::new_v4();
         sqlx::query(
             r#"INSERT INTO inventory.locations
-                 (id, name, complete_name, usage, active, company_id, parent_path)
+                 (id, name, complete_name, usage, active, parent_path)
                VALUES ($1, 'Inventory adjustment', 'Inventory adjustment',
-                       'inventory'::location_usage, TRUE, $2, $1::text)"#,
+                       'inventory'::location_usage, TRUE, $1::text)"#,
         )
         .bind(id)
-        .bind(company_id)
         .execute(conn)
         .await?;
         Ok(id)
     }
 
-    /// Resolve the company's location of a partner usage (`supplier` / `customer`): the
-    /// company-owned one first, the shared root (company NULL) as fallback. `None` when
-    /// neither exists — the caller decides whether to bootstrap one.
+    /// Resolve the location of a partner usage (`supplier` / `customer`). `None` when none
+    /// exists — the caller decides whether to bootstrap one.
     pub async fn resolve_partner_location(
         &self,
         conn: &mut PgConnection,
-        company_id: Uuid,
         usage: &str,
     ) -> Result<Option<Uuid>, sqlx::Error> {
         let row = sqlx::query(
             r#"SELECT id FROM inventory.locations
-               WHERE usage = $2::location_usage AND active
+               WHERE usage = $1::location_usage AND active
                  AND (metadata->>'deleted_at') IS NULL
-                 AND (company_id = $1 OR company_id IS NULL)
-               ORDER BY (company_id IS NOT NULL) DESC, name ASC LIMIT 1"#,
+               ORDER BY name ASC LIMIT 1"#,
         )
-        .bind(company_id)
         .bind(usage)
         .fetch_optional(conn)
         .await?;
         Ok(row.map(|r| r.get("id")))
     }
 
-    /// Bootstrap the company's counterpart location for a partner usage (`supplier` — the
+    /// Bootstrap the counterpart location for a partner usage (`supplier` — the
     /// far end of every goods receipt; `customer` — the far end of every delivery). Voucher
     /// doors are warehouse-grain, moves are location-grain: this is the resolve-or-mint that
     /// gives the door's moves their virtual counterpart endpoint.
     pub async fn ensure_partner_location(
         &self,
         conn: &mut PgConnection,
-        company_id: Uuid,
         usage: &str,
     ) -> Result<Uuid, sqlx::Error> {
-        if let Some(id) = self.resolve_partner_location(conn, company_id, usage).await? {
+        if let Some(id) = self.resolve_partner_location(conn, usage).await? {
             return Ok(id);
         }
         let id = Uuid::new_v4();
         let name = if usage == "supplier" { "Suppliers" } else { "Customers" };
         sqlx::query(
             r#"INSERT INTO inventory.locations
-                 (id, name, complete_name, usage, active, company_id, parent_path)
-               VALUES ($1, $2, $2, $3::location_usage, TRUE, $4, $1::text)"#,
+                 (id, name, complete_name, usage, active, parent_path)
+               VALUES ($1, $2, $2, $3::location_usage, TRUE, $1::text)"#,
         )
         .bind(id)
         .bind(name)
         .bind(usage)
-        .bind(company_id)
         .execute(conn)
         .await?;
         Ok(id)
@@ -434,13 +412,12 @@ impl StockPickingRepository {
     pub async fn ensure_quant_surface(
         &self,
         conn: &mut PgConnection,
-        company_id: Uuid,
         item_id: Uuid,
         location_id: Uuid,
         warehouse_id: Option<Uuid>,
     ) -> Result<(), sqlx::Error> {
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
-            .bind(format!("quant:{company_id}:{item_id}:{location_id}:NULL:NULL:NULL"))
+            .bind(format!("quant:{item_id}:{location_id}:NULL:NULL:NULL"))
             .execute(&mut *conn)
             .await?;
         // Location with a warehouse: seed from that warehouse's Bin balance (the legacy
@@ -449,22 +426,22 @@ impl StockPickingRepository {
         sqlx::query(
             r#"INSERT INTO inventory.stock_quants
                  (id, item_id, location_id, quantity, reserved_quantity, available_quantity,
-                  in_date, company_id)
+                  in_date)
                SELECT $1, $2, $3,
                       COALESCE((SELECT b.actual_qty FROM inventory.bins b
-                                WHERE b.company_id = $4 AND b.item_id = $2
-                                  AND b.warehouse_id = $5::uuid
+                                WHERE b.item_id = $2
+                                  AND b.warehouse_id = $4::uuid
                                   AND (b.metadata->>'deleted_at') IS NULL), 0),
                       0,
                       COALESCE((SELECT b.actual_qty FROM inventory.bins b
-                                WHERE b.company_id = $4 AND b.item_id = $2
-                                  AND b.warehouse_id = $5::uuid
+                                WHERE b.item_id = $2
+                                  AND b.warehouse_id = $4::uuid
                                   AND (b.metadata->>'deleted_at') IS NULL), 0),
-                      NOW(), $4
-               WHERE $5::uuid IS NOT NULL
+                      NOW()
+               WHERE $4::uuid IS NOT NULL
                  AND NOT EXISTS (
                    SELECT 1 FROM inventory.stock_quants q
-                   WHERE q.company_id = $4 AND q.item_id = $2 AND q.location_id = $3
+                   WHERE q.item_id = $2 AND q.location_id = $3
                      AND q.lot_id IS NULL AND q.package_id IS NULL AND q.owner_id IS NULL
                      AND (q.metadata->>'deleted_at') IS NULL
                  )"#,
@@ -472,7 +449,6 @@ impl StockPickingRepository {
         .bind(Uuid::new_v4())
         .bind(item_id)
         .bind(location_id)
-        .bind(company_id)
         .bind(warehouse_id)
         .execute(&mut *conn)
         .await?;
@@ -481,12 +457,12 @@ impl StockPickingRepository {
         sqlx::query(
             r#"INSERT INTO inventory.stock_quants
                  (id, item_id, location_id, quantity, reserved_quantity, available_quantity,
-                  in_date, company_id)
-               SELECT $1, $2, $3, 0, 0, 0, NOW(), $4
-               WHERE $5::uuid IS NULL
+                  in_date)
+               SELECT $1, $2, $3, 0, 0, 0, NOW()
+               WHERE $4::uuid IS NULL
                  AND NOT EXISTS (
                    SELECT 1 FROM inventory.stock_quants q
-                   WHERE q.company_id = $4 AND q.item_id = $2 AND q.location_id = $3
+                   WHERE q.item_id = $2 AND q.location_id = $3
                      AND q.lot_id IS NULL AND q.package_id IS NULL AND q.owner_id IS NULL
                      AND (q.metadata->>'deleted_at') IS NULL
                  )"#,
@@ -494,7 +470,6 @@ impl StockPickingRepository {
         .bind(Uuid::new_v4())
         .bind(item_id)
         .bind(location_id)
-        .bind(company_id)
         .bind(warehouse_id)
         .execute(&mut *conn)
         .await?;
@@ -508,7 +483,6 @@ impl StockPickingRepository {
     pub async fn find_adjustment_moves(
         &self,
         conn: &mut PgConnection,
-        company_id: Uuid,
         item_id: Uuid,
         location_a: Uuid,
         location_b: Uuid,
@@ -516,14 +490,13 @@ impl StockPickingRepository {
         let rows = sqlx::query(
             r#"SELECT id, state::text AS state, date
                FROM inventory.stock_moves
-               WHERE company_id = $1 AND item_id = $2 AND is_inventory
+               WHERE item_id = $1 AND is_inventory
                  AND (metadata->>'deleted_at') IS NULL
-                 AND ((location_id = $3 AND location_dest_id = $4)
-                   OR (location_id = $4 AND location_dest_id = $3))
+                 AND ((location_id = $2 AND location_dest_id = $3)
+                   OR (location_id = $3 AND location_dest_id = $2))
                ORDER BY (state NOT IN ('done'::move_state, 'cancel'::move_state)) DESC,
                         date DESC NULLS LAST, create_date DESC"#,
         )
-        .bind(company_id)
         .bind(item_id)
         .bind(location_a)
         .bind(location_b)

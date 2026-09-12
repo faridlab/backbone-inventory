@@ -42,8 +42,6 @@ pub struct CreateLotDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(alias = "product_qty")]
     pub product_qty: Decimal,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "location_id")]
@@ -75,8 +73,6 @@ pub struct UpdateLotDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(alias = "product_qty")]
     pub product_qty: Decimal,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "location_id")]
@@ -109,8 +105,6 @@ pub struct PatchLotDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "item_id")]
     pub item_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "product_qty")]
     pub product_qty: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "location_id")]
@@ -123,7 +117,7 @@ pub struct PatchLotDto {
 impl PatchLotDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.name.is_some() || self.reference.is_some() || self.item_id.is_some() || self.company_id.is_some() || self.product_qty.is_some() || self.location_id.is_some() || self.note.is_some()
+        self.name.is_some() || self.reference.is_some() || self.item_id.is_some() || self.product_qty.is_some() || self.location_id.is_some() || self.note.is_some()
     }
 }
 
@@ -146,7 +140,6 @@ pub struct LotResponseDto {
     pub reference: Option<String>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub item_id: Uuid,
-    pub company_id: Option<Uuid>,
     pub product_qty: Decimal,
     pub location_id: Option<Uuid>,
     pub note: Option<String>,
@@ -224,7 +217,6 @@ impl From<Lot> for LotResponseDto {
             name: entity.name,
             reference: entity.reference,
             item_id: entity.item_id,
-            company_id: entity.company_id,
             product_qty: entity.product_qty,
             location_id: entity.location_id,
             note: entity.note,
@@ -253,7 +245,6 @@ impl From<CreateLotDto> for Lot {
             name: dto.name,
             reference: dto.reference,
             item_id: dto.item_id,
-            company_id: dto.company_id,
             product_qty: dto.product_qty,
             location_id: dto.location_id,
             note: dto.note,
@@ -269,7 +260,6 @@ impl From<&Lot> for LotResponseDto {
             name: entity.name.clone(),
             reference: entity.reference.clone(),
             item_id: entity.item_id.clone(),
-            company_id: entity.company_id.clone(),
             product_qty: entity.product_qty.clone(),
             location_id: entity.location_id.clone(),
             note: entity.note.clone(),
@@ -289,7 +279,6 @@ impl backbone_core::ApplyUpdateDto<UpdateLotDto> for Lot {
         self.name = dto.name;
         self.reference = dto.reference;
         self.item_id = dto.item_id;
-        self.company_id = dto.company_id;
         self.product_qty = dto.product_qty;
         self.location_id = dto.location_id;
         self.note = dto.note;

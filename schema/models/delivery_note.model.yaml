@@ -23,10 +23,6 @@ models:
         attributes: ["@required", "@max(40)"]
         description: "Human reference (the post's voucher_no)"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "Books/stock owner # logical FK to organization.Company.id"
 
       branch_id:
         type: uuid?
@@ -122,8 +118,6 @@ models:
         fields: [delivery_number]
         where: "deleted_at IS NULL"
       - type: index
-        fields: [company_id, customer_id, status]
-      - type: index
         fields: [posting_state]
       - type: index
         fields: [transfer_id]
@@ -144,10 +138,6 @@ models:
         attributes: ["@required", "@foreign_key(DeliveryNote.id)"]
         description: "Owning delivery note"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "Books/stock owner # logical FK to organization.Company.id; denormalized from DeliveryNote to FORCE RLS on the child (ADR-0010 Decision A)"
 
       item_id:
         type: uuid

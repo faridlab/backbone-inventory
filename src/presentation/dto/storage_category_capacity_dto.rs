@@ -41,8 +41,6 @@ pub struct CreateStorageCategoryCapacityDto {
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "package_type_id")]
     pub package_type_id: Option<Uuid>,
     pub quantity: Decimal,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -66,8 +64,6 @@ pub struct UpdateStorageCategoryCapacityDto {
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "package_type_id")]
     pub package_type_id: Option<Uuid>,
     pub quantity: Decimal,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -92,14 +88,12 @@ pub struct PatchStorageCategoryCapacityDto {
     pub package_type_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quantity: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 impl PatchStorageCategoryCapacityDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.storage_category_id.is_some() || self.item_id.is_some() || self.package_type_id.is_some() || self.quantity.is_some() || self.company_id.is_some()
+        self.storage_category_id.is_some() || self.item_id.is_some() || self.package_type_id.is_some() || self.quantity.is_some()
     }
 }
 
@@ -122,7 +116,6 @@ pub struct StorageCategoryCapacityResponseDto {
     pub item_id: Option<Uuid>,
     pub package_type_id: Option<Uuid>,
     pub quantity: Decimal,
-    pub company_id: Option<Uuid>,
     pub metadata: AuditMetadata,
 }
 
@@ -198,7 +191,6 @@ impl From<StorageCategoryCapacity> for StorageCategoryCapacityResponseDto {
             item_id: entity.item_id,
             package_type_id: entity.package_type_id,
             quantity: entity.quantity,
-            company_id: entity.company_id,
             metadata: entity.metadata,
         }
     }
@@ -225,7 +217,6 @@ impl From<CreateStorageCategoryCapacityDto> for StorageCategoryCapacity {
             item_id: dto.item_id,
             package_type_id: dto.package_type_id,
             quantity: dto.quantity,
-            company_id: dto.company_id,
             metadata: AuditMetadata::default(),
         }
     }
@@ -239,7 +230,6 @@ impl From<&StorageCategoryCapacity> for StorageCategoryCapacityResponseDto {
             item_id: entity.item_id.clone(),
             package_type_id: entity.package_type_id.clone(),
             quantity: entity.quantity.clone(),
-            company_id: entity.company_id.clone(),
             metadata: entity.metadata.clone(),
         }
     }
@@ -257,7 +247,6 @@ impl backbone_core::ApplyUpdateDto<UpdateStorageCategoryCapacityDto> for Storage
         self.item_id = dto.item_id;
         self.package_type_id = dto.package_type_id;
         self.quantity = dto.quantity;
-        self.company_id = dto.company_id;
         Ok(self)
     }
 }

@@ -40,8 +40,12 @@
 //! Per the module's 4-layer rule this file holds no SQL — the statements live on
 //! [`crate::infrastructure::persistence::ValuationOverlayRepository`] and the engine's
 //! repositories.
+//!
+//! Tenancy (ADR-0029): the module is tenant-agnostic. Every write transaction this file opens
+//! re-binds the caller's ambient org scope (`relay_ambient_scope`); the composing decorator owns
+//! isolation. Cross-module wire fields that still carry a company id are legacy twins filled
+//! from the ambient scope's company echo.
 
-use backbone_orm::company_scope;
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -54,7 +58,8 @@ use super::inventory_events::{InventoryEvent, LandedCostValidated};
 use super::inventory_gl::{AccountingPostEnvelope, GlPostLine, GlPostSink};
 use super::inventory_posture::Posture;
 use super::inventory_write_service::{
-    is_dup, money, InventoryError, InventoryWriteService, NewLandedCost, SubmitOutcome,
+    is_dup, legacy_company_echo, money, relay_ambient_scope, InventoryError,
+    InventoryWriteService, NewLandedCost, SubmitOutcome,
 };
 
 /// One target line of the split: the DONE move behind it, its single execution line, and the
@@ -104,7 +109,6 @@ struct PlanDelta {
 struct LcPlan {
     lc_id: Uuid,
     lc_number: String,
-    company_id: Uuid,
     branch_id: Option<Uuid>,
     currency: String,
     posting_date: chrono::NaiveDate,
@@ -154,11 +158,10 @@ impl InventoryWriteService {
         }
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, lc.company_id).await?;
+        relay_ambient_scope(&mut tx).await?;
         let ins = self.valuation_overlay.insert_landed_cost_draft(&mut tx, &NewLandedCostRow {
             id,
             lc_number: &lc.lc_number,
-            company_id: lc.company_id,
             branch_id: lc.branch_id,
             target_receipt_id: lc.target_receipt_id,
             currency: &lc.currency,
@@ -174,7 +177,6 @@ impl InventoryWriteService {
             self.valuation_overlay.insert_lc_line(&mut tx, &NewLcLineRow {
                 id: Uuid::new_v4(),
                 lc_id: id,
-                company_id: lc.company_id,
                 name: &l.name,
                 account_id: l.account_id,
                 split_method: &l.split_method,
@@ -205,7 +207,8 @@ impl InventoryWriteService {
     /// The HTTP-shaped validate: the SAME physical revalidation, but the GL leg stays ARMED
     /// `pending` for a service-driven [`Self::repost_landed_cost`] to drive (the composing
     /// service's sink is not available on a bare route — the module's standing posture for
-    /// GL-posting verbs). Documents that structurally post nothing (a `periodic` company, an
+    /// GL-posting verbs). Documents that structurally post nothing (a `periodic` valuation
+    /// policy, an
     /// all-consumed allocation) retire to `not_applicable` immediately.
     pub async fn validate_landed_cost_deferred(&self, lc_id: Uuid) -> Result<SubmitOutcome, InventoryError> {
         let plan = self.lc_compute(lc_id).await?;
@@ -219,13 +222,13 @@ impl InventoryWriteService {
     /// already revalued; the correction pattern is a NEGATIVE landed cost (swapped legs).
     pub async fn cancel_landed_cost(&self, lc_id: Uuid) -> Result<(), InventoryError> {
         let mut tx = self.db_pool.begin().await?;
+        relay_ambient_scope(&mut tx).await?;
         let hdr = self.valuation_overlay
             .fetch_lc_header(&mut tx, lc_id).await?
             .ok_or(InventoryError::NotFound(lc_id))?;
         if hdr.state != "draft" {
             return Err(InventoryError::LandedCostNotDraft { lc_id, state: hdr.state });
         }
-        company_scope::bind_company_on(&mut tx, hdr.company_id).await?;
         self.valuation_overlay.delete_worksheet(&mut tx, lc_id).await?;
         self.valuation_overlay.mark_lc_cancelled(&mut tx, lc_id).await?;
         tx.commit().await?;
@@ -251,16 +254,19 @@ impl InventoryWriteService {
     ) -> Result<SubmitOutcome, InventoryError> {
         let (hdr, receipt_inventory_account_id, lines, worksheet, sles) = {
             let mut conn = self.db_pool.acquire().await?;
+            // Re-bind the caller's ambient org scope before any read (ADR-0029) — the scope is
+            // task-local and a fresh pool connection carries none of it; undecorated (module
+            // tests, jobs) the reads stay plain.
+            relay_ambient_scope(&mut conn).await?;
             let hdr = self.valuation_overlay
                 .fetch_lc_header(&mut conn, lc_id).await?
                 .ok_or(InventoryError::NotFound(lc_id))?;
-            company_scope::bind_company_on(&mut conn, hdr.company_id).await?;
             let target = self.valuation_overlay
                 .fetch_lc_target_receipt(&mut conn, hdr.target_receipt_id).await?
                 .ok_or(InventoryError::NotFound(hdr.target_receipt_id))?;
             let lines = self.valuation_overlay.fetch_lc_lines(&mut conn, lc_id).await?;
             let worksheet = self.valuation_overlay.fetch_worksheet(&mut conn, lc_id).await?;
-            let sles = self.sles.fetch_lc_revaluations(&mut conn, hdr.company_id, lc_id).await?;
+            let sles = self.sles.fetch_lc_revaluations(&mut conn, lc_id).await?;
             (hdr, target.inventory_account_id, lines, worksheet, sles)
         };
         match hdr.posting_state.as_str() {
@@ -295,7 +301,7 @@ impl InventoryWriteService {
                     .ok_or(InventoryError::LandedCostNoValuationAccount { move_id: lc_id })?;
                 let line = self.move_lines.fetch_line(&mut conn, line_id).await?
                     .ok_or(InventoryError::LandedCostNoValuationAccount { move_id: lc_id })?;
-                let acct = self.inventory_leg_account(hdr.company_id, line.location_dest_id, receipt_inventory_account_id).await?;
+                let acct = self.inventory_leg_account(line.location_dest_id, receipt_inventory_account_id).await?;
                 push_amount(&mut debits, acct, *delta);
             }
             // Credit legs: per cost line, its worksheet shares scaled by the snapshotted
@@ -311,7 +317,7 @@ impl InventoryWriteService {
         }
         let revalued_total: Decimal = sles.iter().map(|(_, d)| *d).sum();
         let env = Self::lc_envelope(
-            lc_id, &hdr.lc_number, hdr.company_id, hdr.branch_id, hdr.posting_date, &hdr.currency,
+            lc_id, &hdr.lc_number, hdr.branch_id, hdr.posting_date, &hdr.currency,
             &debits, &credits, revalued_total,
         )?;
         self.emit_and_reconcile(GlVoucher::LandedCost, lc_id, &env, sink, revalued_total).await
@@ -325,30 +331,33 @@ impl InventoryWriteService {
     async fn lc_compute(&self, lc_id: Uuid) -> Result<LcPlan, InventoryError> {
         let (hdr, lines, mut targets, posture, receipt_inventory_account_id) = {
             let mut conn = self.db_pool.acquire().await?;
+            // Re-bind the caller's ambient org scope before any read (ADR-0029) — the scope is
+            // task-local and a fresh pool connection carries none of it; undecorated (module
+            // tests, jobs) the reads stay plain.
+            relay_ambient_scope(&mut conn).await?;
             let hdr = self.valuation_overlay
                 .fetch_lc_header(&mut conn, lc_id).await?
                 .ok_or(InventoryError::NotFound(lc_id))?;
             if hdr.state != "draft" {
                 return Err(InventoryError::LandedCostNotDraft { lc_id, state: hdr.state });
             }
-            company_scope::bind_company_on(&mut conn, hdr.company_id).await?;
             let target = self.valuation_overlay
                 .fetch_lc_target_receipt(&mut conn, hdr.target_receipt_id).await?
                 .ok_or(InventoryError::NotFound(hdr.target_receipt_id))?;
             let lines = self.valuation_overlay.fetch_lc_lines(&mut conn, lc_id).await?;
-            let posture = self.posting_posture_on(&mut conn, hdr.company_id).await?;
+            let posture = self.posting_posture_on(&mut conn).await?;
 
             // The target lines: the receipt's DONE moves (the door stamps the receipt number
             // as every line move's `origin`), each with its single execution line.
             let mut targets: Vec<TargetLine> = Vec::new();
-            let moves = self.moves.fetch_moves_by_origin(&mut conn, hdr.company_id, &target.receipt_number).await?;
+            let moves = self.moves.fetch_moves_by_origin(&mut conn, &target.receipt_number).await?;
             for mv in moves {
                 if mv.state != "done" || mv.quantity <= Decimal::ZERO { continue }
                 let Some(line) = self.move_lines.fetch_lines_for_move(&mut conn, mv.id).await?
                     .into_iter().find(|l| l.quantity > Decimal::ZERO) else { continue };
-                let carried = self.sles.sum_move_in_value(&mut conn, hdr.company_id, mv.id).await?;
+                let carried = self.sles.sum_move_in_value(&mut conn, mv.id).await?;
                 let weight = self.valuation_overlay
-                    .fetch_item_weight(&mut conn, hdr.company_id, mv.item_id).await?;
+                    .fetch_item_weight(&mut conn, mv.item_id).await?;
                 targets.push(TargetLine {
                     move_line_id: line.id,
                     dest_location_id: mv.location_dest_id,
@@ -374,21 +383,18 @@ impl InventoryWriteService {
                 return Err(InventoryError::LandedCostLineNeedsAccount { line_id: l.id });
             }
         }
-        // A `standard` company refuses loudly: under standard costing a landed cost would
+        // A `standard` cost method refuses loudly: under standard costing a landed cost would
         // introduce a variance the standard-recompute engine (a later increment) must absorb —
         // refusing beats silently diverging. `average` (and the `fifo` vocabulary) pass.
         if posture.cost_method == "standard" {
             return Err(InventoryError::LandedCostRequiresCostMethod {
-                company_id: hdr.company_id, cost_method: posture.cost_method.clone(),
+                cost_method: posture.cost_method.clone(),
             });
         }
 
         // Read-only FIFO attribution (the remaining share per move) — attribution, NOT costing.
         let move_ids: Vec<Uuid> = targets.iter().map(|t| t.mv.id).collect();
-        let remaining = company_scope::with_company_scope(
-            Some(hdr.company_id),
-            self.sles.remaining_qty_for_moves(&self.db_pool, hdr.company_id, &move_ids),
-        ).await?;
+        let remaining = self.sles.remaining_qty_for_moves(&self.db_pool, &move_ids).await?;
         for t in targets.iter_mut() {
             t.remaining_qty = remaining.get(&t.mv.id).copied().unwrap_or(Decimal::ZERO);
         }
@@ -481,14 +487,13 @@ impl InventoryWriteService {
         for t in &targets {
             let Some(d) = deltas.iter().find(|d| d.move_line_id == t.move_line_id) else { continue };
             if d.delta.is_zero() { continue }
-            let acct = self.inventory_leg_account(hdr.company_id, t.dest_location_id, receipt_inventory_account_id).await?;
+            let acct = self.inventory_leg_account(t.dest_location_id, receipt_inventory_account_id).await?;
             push_amount(&mut debits, acct, d.delta);
         }
 
         Ok(LcPlan {
             lc_id,
             lc_number: hdr.lc_number,
-            company_id: hdr.company_id,
             branch_id: hdr.branch_id,
             currency: hdr.currency,
             posting_date: hdr.posting_date,
@@ -513,12 +518,11 @@ impl InventoryWriteService {
     /// [`Self::repost_landed_cost`].
     async fn lc_apply(&self, plan: &LcPlan) -> Result<(), InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, plan.company_id).await?;
+        relay_ambient_scope(&mut tx).await?;
         self.valuation_overlay.delete_worksheet(&mut tx, plan.lc_id).await?;
         for r in &plan.rows {
             self.valuation_overlay.insert_worksheet_row(&mut tx, &NewWorksheetRow {
                 lc_id: plan.lc_id,
-                company_id: plan.company_id,
                 move_line_id: r.move_line_id,
                 cost_line_id: r.cost_line_id,
                 share: r.share,
@@ -541,8 +545,8 @@ impl InventoryWriteService {
 
     /// `Some(sink)` emits the envelope and reconciles; `None` (the deferred/HTTP validate)
     /// leaves the armed `pending` leg for a repost drive. Documents that structurally post
-    /// nothing — a `periodic` company, an all-consumed allocation (Σ remaining-share = 0) —
-    /// retire to `not_applicable` either way.
+    /// nothing — a `periodic` valuation policy, an all-consumed allocation (Σ remaining-share
+    /// = 0) — retire to `not_applicable` either way.
     async fn lc_post(
         &self,
         plan: &LcPlan,
@@ -550,16 +554,15 @@ impl InventoryWriteService {
     ) -> Result<SubmitOutcome, InventoryError> {
         let event = || InventoryEvent::LandedCostValidated(LandedCostValidated {
             lc_id: plan.lc_id,
-            company_id: plan.company_id,
+            // Legacy twin (ADR-0029): filled from the ambient org scope's company echo for
+            // consumers that still read a tenant off the wire. No module statement keys on it.
+            company_id: legacy_company_echo(),
             target_receipt_id: plan.target_receipt_id,
             amount_total: plan.amount_total,
             revalued_value: plan.revalued_total,
         });
         if plan.posture.periodic || plan.revalued_total.is_zero() {
-            company_scope::with_company_scope(
-                Some(plan.company_id),
-                self.gl.mark_not_applicable(&self.db_pool, GlVoucher::LandedCost, plan.lc_id),
-            ).await?;
+            self.gl.mark_not_applicable(&self.db_pool, GlVoucher::LandedCost, plan.lc_id).await?;
             self.sink.publish(event());
             return Ok(SubmitOutcome {
                 voucher_id: plan.lc_id, posted: false, journal_id: None, post_id: None,
@@ -567,7 +570,7 @@ impl InventoryWriteService {
             });
         }
         let env = Self::lc_envelope(
-            plan.lc_id, &plan.lc_number, plan.company_id, plan.branch_id, plan.posting_date,
+            plan.lc_id, &plan.lc_number, plan.branch_id, plan.posting_date,
             &plan.currency, &plan.debits, &plan.credits, plan.revalued_total,
         )?;
         match sink {
@@ -601,7 +604,6 @@ impl InventoryWriteService {
     fn lc_envelope(
         lc_id: Uuid,
         lc_number: &str,
-        company_id: Uuid,
         branch_id: Option<Uuid>,
         posting_date: chrono::NaiveDate,
         currency: &str,
@@ -623,7 +625,9 @@ impl InventoryWriteService {
             .collect();
         let env = AccountingPostEnvelope {
             idempotency_key: lc_id.to_string(),
-            company_id,
+            // Legacy twin (ADR-0029): filled from the ambient org scope's company echo for
+            // consumers that still read a tenant off the wire. No module statement keys on it.
+            company_id: legacy_company_echo(),
             branch_id,
             source_type: "inventory".into(),
             source_id: lc_id,

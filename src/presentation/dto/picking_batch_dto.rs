@@ -51,9 +51,6 @@ pub struct CreatePickingBatchDto {
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(alias = "had_members")]
     pub had_members: bool,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
 }
 
 // =============================================================================
@@ -87,9 +84,6 @@ pub struct UpdatePickingBatchDto {
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(alias = "had_members")]
     pub had_members: bool,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
 }
 
 // =============================================================================
@@ -125,15 +119,12 @@ pub struct PatchPickingBatchDto {
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "had_members")]
     pub had_members: Option<bool>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 impl PatchPickingBatchDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.name.is_some() || self.note.is_some() || self.state.is_some() || self.is_wave.is_some() || self.user_id.is_some() || self.scheduled_date.is_some() || self.had_members.is_some() || self.company_id.is_some()
+        self.name.is_some() || self.note.is_some() || self.state.is_some() || self.is_wave.is_some() || self.user_id.is_some() || self.scheduled_date.is_some() || self.had_members.is_some()
     }
 }
 
@@ -162,8 +153,6 @@ pub struct PickingBatchResponseDto {
     pub scheduled_date: DateTime<Utc>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     pub had_members: bool,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     pub metadata: AuditMetadata,
 }
 
@@ -242,7 +231,6 @@ impl From<PickingBatch> for PickingBatchResponseDto {
             user_id: entity.user_id,
             scheduled_date: entity.scheduled_date,
             had_members: entity.had_members,
-            company_id: entity.company_id,
             metadata: entity.metadata,
         }
     }
@@ -272,7 +260,6 @@ impl From<CreatePickingBatchDto> for PickingBatch {
             user_id: dto.user_id,
             scheduled_date: dto.scheduled_date,
             had_members: dto.had_members,
-            company_id: dto.company_id,
             metadata: AuditMetadata::default(),
         }
     }
@@ -289,7 +276,6 @@ impl From<&PickingBatch> for PickingBatchResponseDto {
             user_id: entity.user_id.clone(),
             scheduled_date: entity.scheduled_date.clone(),
             had_members: entity.had_members.clone(),
-            company_id: entity.company_id.clone(),
             metadata: entity.metadata.clone(),
         }
     }
@@ -310,7 +296,6 @@ impl backbone_core::ApplyUpdateDto<UpdatePickingBatchDto> for PickingBatch {
         self.user_id = dto.user_id;
         self.scheduled_date = dto.scheduled_date;
         self.had_members = dto.had_members;
-        self.company_id = dto.company_id;
         Ok(self)
     }
 }

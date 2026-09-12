@@ -52,7 +52,6 @@ impl std::ops::Deref for StockLedgerEntryId {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct StockLedgerEntry {
     pub id: Uuid,
-    pub company_id: Uuid,
     pub item_id: Uuid,
     pub warehouse_id: Uuid,
     pub posting_date: NaiveDate,
@@ -79,10 +78,9 @@ impl StockLedgerEntry {
     }
 
     /// Create a new StockLedgerEntry with required fields
-    pub fn new(company_id: Uuid, item_id: Uuid, warehouse_id: Uuid, posting_date: NaiveDate, actual_qty: Decimal, qty_after_txn: Decimal, incoming_rate: Decimal, valuation_rate: Decimal, stock_value: Decimal, stock_value_difference: Decimal, voucher_type: VoucherType, voucher_id: Uuid, voucher_no: String, sle_no: i32, status: StockLedgerStatus) -> Self {
+    pub fn new(item_id: Uuid, warehouse_id: Uuid, posting_date: NaiveDate, actual_qty: Decimal, qty_after_txn: Decimal, incoming_rate: Decimal, valuation_rate: Decimal, stock_value: Decimal, stock_value_difference: Decimal, voucher_type: VoucherType, voucher_id: Uuid, voucher_no: String, sle_no: i32, status: StockLedgerStatus) -> Self {
         Self {
             id: Uuid::new_v4(),
-            company_id,
             item_id,
             warehouse_id,
             posting_date,
@@ -165,9 +163,6 @@ impl StockLedgerEntry {
     pub fn apply_patch(&mut self, fields: std::collections::HashMap<String, serde_json::Value>) {
         for (key, value) in fields {
             match key.as_str() {
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 "item_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.item_id = v; }
                 }
@@ -264,7 +259,6 @@ impl backbone_orm::EntityRepoMeta for StockLedgerEntry {
     fn column_types() -> std::collections::HashMap<String, String> {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("item_id".to_string(), "uuid".to_string());
         m.insert("warehouse_id".to_string(), "uuid".to_string());
         m.insert("voucher_id".to_string(), "uuid".to_string());
@@ -275,9 +269,6 @@ impl backbone_orm::EntityRepoMeta for StockLedgerEntry {
     fn search_fields() -> &'static [&'static str] {
         &["voucher_no"]
     }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
-    }
 }
 
 /// Builder for StockLedgerEntry entity
@@ -286,7 +277,6 @@ impl backbone_orm::EntityRepoMeta for StockLedgerEntry {
 /// System fields (id, metadata, timestamps) are auto-initialized.
 #[derive(Debug, Clone, Default)]
 pub struct StockLedgerEntryBuilder {
-    company_id: Option<Uuid>,
     item_id: Option<Uuid>,
     warehouse_id: Option<Uuid>,
     posting_date: Option<NaiveDate>,
@@ -304,12 +294,6 @@ pub struct StockLedgerEntryBuilder {
 }
 
 impl StockLedgerEntryBuilder {
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Set the item_id field (required)
     pub fn item_id(mut self, value: Uuid) -> Self {
         self.item_id = Some(value);
@@ -398,7 +382,6 @@ impl StockLedgerEntryBuilder {
     ///
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<StockLedgerEntry, String> {
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
         let item_id = self.item_id.ok_or_else(|| "item_id is required".to_string())?;
         let warehouse_id = self.warehouse_id.ok_or_else(|| "warehouse_id is required".to_string())?;
         let posting_date = self.posting_date.ok_or_else(|| "posting_date is required".to_string())?;
@@ -412,7 +395,6 @@ impl StockLedgerEntryBuilder {
 
         Ok(StockLedgerEntry {
             id: Uuid::new_v4(),
-            company_id,
             item_id,
             warehouse_id,
             posting_date,

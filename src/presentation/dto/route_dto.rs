@@ -48,8 +48,6 @@ pub struct CreateRouteDto {
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(alias = "warehouse_selectable")]
     pub warehouse_selectable: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -81,8 +79,6 @@ pub struct UpdateRouteDto {
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(alias = "warehouse_selectable")]
     pub warehouse_selectable: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 // =============================================================================
@@ -117,14 +113,12 @@ pub struct PatchRouteDto {
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "warehouse_selectable")]
     pub warehouse_selectable: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 impl PatchRouteDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.name.is_some() || self.active.is_some() || self.sequence.is_some() || self.product_selectable.is_some() || self.product_categ_selectable.is_some() || self.warehouse_selectable.is_some() || self.company_id.is_some()
+        self.name.is_some() || self.active.is_some() || self.sequence.is_some() || self.product_selectable.is_some() || self.product_categ_selectable.is_some() || self.warehouse_selectable.is_some()
     }
 }
 
@@ -154,7 +148,6 @@ pub struct RouteResponseDto {
     pub product_categ_selectable: bool,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     pub warehouse_selectable: bool,
-    pub company_id: Option<Uuid>,
     pub metadata: AuditMetadata,
 }
 
@@ -232,7 +225,6 @@ impl From<Route> for RouteResponseDto {
             product_selectable: entity.product_selectable,
             product_categ_selectable: entity.product_categ_selectable,
             warehouse_selectable: entity.warehouse_selectable,
-            company_id: entity.company_id,
             metadata: entity.metadata,
         }
     }
@@ -261,7 +253,6 @@ impl From<CreateRouteDto> for Route {
             product_selectable: dto.product_selectable,
             product_categ_selectable: dto.product_categ_selectable,
             warehouse_selectable: dto.warehouse_selectable,
-            company_id: dto.company_id,
             metadata: AuditMetadata::default(),
         }
     }
@@ -277,7 +268,6 @@ impl From<&Route> for RouteResponseDto {
             product_selectable: entity.product_selectable.clone(),
             product_categ_selectable: entity.product_categ_selectable.clone(),
             warehouse_selectable: entity.warehouse_selectable.clone(),
-            company_id: entity.company_id.clone(),
             metadata: entity.metadata.clone(),
         }
     }
@@ -297,7 +287,6 @@ impl backbone_core::ApplyUpdateDto<UpdateRouteDto> for Route {
         self.product_selectable = dto.product_selectable;
         self.product_categ_selectable = dto.product_categ_selectable;
         self.warehouse_selectable = dto.warehouse_selectable;
-        self.company_id = dto.company_id;
         Ok(self)
     }
 }

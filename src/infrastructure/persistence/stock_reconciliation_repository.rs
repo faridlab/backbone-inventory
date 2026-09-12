@@ -13,7 +13,7 @@ use rust_decimal::Decimal;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use backbone_orm::company_scope;
+use backbone_orm::{company_scope, org_scope};
 
 use super::gl_voucher_repository::GlSettlementState;
 
@@ -50,7 +50,6 @@ impl StockReconciliationRepository {
 pub struct NewReconciliationRow<'a> {
     pub id: Uuid,
     pub recon_number: &'a str,
-    pub company_id: Uuid,
     pub warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
     pub currency: &'a str,
@@ -62,7 +61,6 @@ pub struct NewReconciliationRow<'a> {
 /// header, never re-touching the SLE/Bin (the physical movement already happened). Mirrors the
 /// receipt/delivery repost headers (council 2026-07-29, parking-lot item: `repost_reconciliation`).
 pub struct ReconRepostHeaderRow {
-    pub company_id: Uuid,
     pub recon_number: String,
     pub posting_date: chrono::NaiveDate,
     pub currency: String,
@@ -77,7 +75,8 @@ impl StockReconciliationRepository {
     /// Insert the reconciliation header.
     ///
     /// Takes the CALLER'S connection so the header, its counted lines, and every bin/SLE write
-    /// commit as one unit. The caller has already bound the company on it — don't re-bind here.
+    /// commit as one unit. The caller has already relayed the ambient org scope onto it — don't
+    /// re-bind here.
     ///
     /// Returns the raw `sqlx::Error` deliberately: the caller inspects it for a unique violation to
     /// turn a duplicate recon number into `DuplicateNumber`.
@@ -88,11 +87,11 @@ impl StockReconciliationRepository {
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"INSERT INTO inventory.stock_reconciliations
-                (id, recon_number, company_id, warehouse_id, posting_date, currency, net_difference,
+                (id, recon_number, warehouse_id, posting_date, currency, net_difference,
                  inventory_account_id, adjustment_account_id, status, posting_state)
-               VALUES ($1,$2,$3,$4,$5,$6,0,$7,$8,'submitted'::doc_status,'pending'::gl_posting_state)"#,
+               VALUES ($1,$2,$3,$4,$5,0,$6,$7,'submitted'::doc_status,'pending'::gl_posting_state)"#,
         )
-        .bind(r.id).bind(r.recon_number).bind(r.company_id).bind(r.warehouse_id).bind(r.posting_date)
+        .bind(r.id).bind(r.recon_number).bind(r.warehouse_id).bind(r.posting_date)
         .bind(r.currency)
         .bind(r.inventory_account_id).bind(r.adjustment_account_id)
         .execute(conn)
@@ -116,14 +115,15 @@ impl StockReconciliationRepository {
 
     /// Mark a zero-net reconciliation as needing no GL post at all (the count matched the books).
     ///
-    /// Runs `execute_scoped` on the pool; the caller wraps it in `with_company_scope(Some(company))`
-    /// so the UPDATE passes the RLS fence (ADR-0008).
+    /// Runs `org_scope::execute_scoped` on the pool: the write rides the ambient org scope's
+    /// request-dedicated connection so it passes the composing decorator's fence (ADR-0029).
+    /// Undecorated (module tests) the UPDATE runs plain.
     pub async fn mark_not_applicable(
         &self,
         pool: &PgPool,
         id: Uuid,
     ) -> Result<(), sqlx::Error> {
-        company_scope::execute_scoped(
+        org_scope::execute_scoped(
             pool,
             sqlx::query("UPDATE inventory.stock_reconciliations SET posting_state='not_applicable'::gl_posting_state WHERE id=$1")
                 .bind(id),
@@ -133,9 +133,9 @@ impl StockReconciliationRepository {
     }
 
     /// Read the repost path's header. Same ID-only scope fence as the receipt/delivery repost
-    /// headers (`fetch_optional_row_scoped` rides the caller's `app.company_id`). Used by
-    /// `repost_reconciliation` to re-drive a stuck `pending`/`failed` post (or a `net==0` recon
-    /// that crashed before `mark_not_applicable`).
+    /// headers (`fetch_optional_row_scoped` rides the ambient org scope the composing service set
+    /// per request). Used by `repost_reconciliation` to re-drive a stuck `pending`/`failed` post
+    /// (or a `net==0` recon that crashed before `mark_not_applicable`).
     pub async fn fetch_repost_header(
         &self,
         pool: &PgPool,
@@ -144,7 +144,7 @@ impl StockReconciliationRepository {
         let row = company_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
-                r#"SELECT company_id, recon_number, posting_date, currency, net_difference,
+                r#"SELECT recon_number, posting_date, currency, net_difference,
                           inventory_account_id, adjustment_account_id,
                           posting_state::text AS ps, journal_id, accounting_post_id
                    FROM inventory.stock_reconciliations WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
@@ -153,7 +153,7 @@ impl StockReconciliationRepository {
         )
         .await?;
         Ok(row.map(|h| ReconRepostHeaderRow {
-            company_id: h.get("company_id"), recon_number: h.get("recon_number"),
+            recon_number: h.get("recon_number"),
             posting_date: h.get("posting_date"), currency: h.get("currency"),
             net_difference: h.get("net_difference"),
             inventory_account_id: h.get("inventory_account_id"),

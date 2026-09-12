@@ -7,7 +7,6 @@
 
 use async_trait::async_trait;
 use anyhow::Result;
-use uuid::Uuid;
 
 use crate::domain::entity::{PackageType, PackageUse};
 
@@ -48,13 +47,12 @@ pub struct PackageTypeFilter {
     pub barcode: Option<String>,
     pub package_use: Option<PackageUse>,
     pub active: Option<bool>,
-    pub company_id: Option<Uuid>,
 }
 
 impl PackageTypeFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.name.is_some() || self.barcode.is_some() || self.package_use.is_some() || self.active.is_some() || self.company_id.is_some()
+        self.name.is_some() || self.barcode.is_some() || self.package_use.is_some() || self.active.is_some()
     }
 }
 

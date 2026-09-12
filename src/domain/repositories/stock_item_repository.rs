@@ -45,7 +45,6 @@ pub struct StockItemPaginatedResult {
 #[derive(Debug, Clone, Default)]
 pub struct StockItemFilter {
     pub item_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
     pub stock_uom: Option<String>,
     pub is_stock_item: Option<bool>,
     pub has_batch: Option<bool>,
@@ -58,7 +57,7 @@ pub struct StockItemFilter {
 impl StockItemFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.item_id.is_some() || self.company_id.is_some() || self.stock_uom.is_some() || self.is_stock_item.is_some() || self.has_batch.is_some() || self.valuation_method.is_some() || self.service_tracking.is_some() || self.service_project_id.is_some() || self.service_project_template_id.is_some()
+        self.item_id.is_some() || self.stock_uom.is_some() || self.is_stock_item.is_some() || self.has_batch.is_some() || self.valuation_method.is_some() || self.service_tracking.is_some() || self.service_project_id.is_some() || self.service_project_template_id.is_some()
     }
 }
 

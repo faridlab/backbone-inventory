@@ -7,7 +7,6 @@
 
 use async_trait::async_trait;
 use anyhow::Result;
-use uuid::Uuid;
 
 use crate::domain::entity::{StorageCategory, StorageAllowNewProduct};
 
@@ -47,13 +46,12 @@ pub struct StorageCategoryFilter {
     pub name: Option<String>,
     pub allow_new_product: Option<StorageAllowNewProduct>,
     pub active: Option<bool>,
-    pub company_id: Option<Uuid>,
 }
 
 impl StorageCategoryFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.name.is_some() || self.allow_new_product.is_some() || self.active.is_some() || self.company_id.is_some()
+        self.name.is_some() || self.allow_new_product.is_some() || self.active.is_some()
     }
 }
 

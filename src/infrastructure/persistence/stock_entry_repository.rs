@@ -46,7 +46,6 @@ impl StockEntryRepository {
 pub struct NewTransferRow<'a> {
     pub id: Uuid,
     pub entry_number: &'a str,
-    pub company_id: Uuid,
     pub from_warehouse_id: Uuid,
     pub to_warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
@@ -58,7 +57,7 @@ impl StockEntryRepository {
     ///
     /// Takes the CALLER'S connection so the header, its items, and BOTH bins' movements commit as one
     /// unit — a transfer that half-committed would create or destroy value. The caller has already
-    /// bound the company on it — don't re-bind here.
+    /// relayed the ambient org scope onto it — don't re-bind here.
     ///
     /// Returns the raw `sqlx::Error` deliberately: the caller inspects it for a unique violation to
     /// turn a duplicate entry number into `DuplicateNumber`.
@@ -69,11 +68,11 @@ impl StockEntryRepository {
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"INSERT INTO inventory.stock_entries
-                (id, entry_number, company_id, stock_entry_type, from_warehouse_id, to_warehouse_id,
+                (id, entry_number, stock_entry_type, from_warehouse_id, to_warehouse_id,
                  posting_date, status, posting_state)
-               VALUES ($1,$2,$3,'transfer'::stock_entry_type,$4,$5,$6,'submitted'::doc_status,'not_applicable'::gl_posting_state)"#,
+               VALUES ($1,$2,'transfer'::stock_entry_type,$3,$4,$5,'submitted'::doc_status,'not_applicable'::gl_posting_state)"#,
         )
-        .bind(t.id).bind(t.entry_number).bind(t.company_id).bind(t.from_warehouse_id)
+        .bind(t.id).bind(t.entry_number).bind(t.from_warehouse_id)
         .bind(t.to_warehouse_id).bind(t.posting_date)
         .execute(conn)
         .await?;

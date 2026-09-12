@@ -60,7 +60,6 @@ pub struct Transfer {
     pub location_id: Uuid,
     pub location_dest_id: Uuid,
     pub partner_id: Option<Uuid>,
-    pub company_id: Uuid,
     pub move_type: MoveType,
     pub scheduled_date: DateTime<Utc>,
     pub date_done: Option<DateTime<Utc>>,
@@ -81,7 +80,7 @@ impl Transfer {
     }
 
     /// Create a new Transfer with required fields
-    pub fn new(name: String, priority: Priority, picking_type_id: Uuid, location_id: Uuid, location_dest_id: Uuid, company_id: Uuid, move_type: MoveType, scheduled_date: DateTime<Utc>, state: TransferState, is_locked: bool) -> Self {
+    pub fn new(name: String, priority: Priority, picking_type_id: Uuid, location_id: Uuid, location_dest_id: Uuid, move_type: MoveType, scheduled_date: DateTime<Utc>, state: TransferState, is_locked: bool) -> Self {
         Self {
             id: Uuid::new_v4(),
             name,
@@ -92,7 +91,6 @@ impl Transfer {
             location_id,
             location_dest_id,
             partner_id: None,
-            company_id,
             move_type,
             scheduled_date,
             date_done: None,
@@ -234,9 +232,6 @@ impl Transfer {
                 "partner_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.partner_id = v; }
                 }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 "move_type" => {
                     if let Ok(v) = serde_json::from_value(value) { self.move_type = v; }
                 }
@@ -319,7 +314,6 @@ impl backbone_orm::EntityRepoMeta for Transfer {
         m.insert("location_id".to_string(), "uuid".to_string());
         m.insert("location_dest_id".to_string(), "uuid".to_string());
         m.insert("partner_id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("backorder_id".to_string(), "uuid".to_string());
         m.insert("return_id".to_string(), "uuid".to_string());
         m.insert("batch_id".to_string(), "uuid".to_string());
@@ -330,9 +324,6 @@ impl backbone_orm::EntityRepoMeta for Transfer {
     }
     fn search_fields() -> &'static [&'static str] {
         &["name"]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -350,7 +341,6 @@ pub struct TransferBuilder {
     location_id: Option<Uuid>,
     location_dest_id: Option<Uuid>,
     partner_id: Option<Uuid>,
-    company_id: Option<Uuid>,
     move_type: Option<MoveType>,
     scheduled_date: Option<DateTime<Utc>>,
     date_done: Option<DateTime<Utc>>,
@@ -410,12 +400,6 @@ impl TransferBuilder {
         self
     }
 
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Set the move_type field (default: `MoveType::default()`)
     pub fn move_type(mut self, value: MoveType) -> Self {
         self.move_type = Some(value);
@@ -471,7 +455,6 @@ impl TransferBuilder {
         let picking_type_id = self.picking_type_id.ok_or_else(|| "picking_type_id is required".to_string())?;
         let location_id = self.location_id.ok_or_else(|| "location_id is required".to_string())?;
         let location_dest_id = self.location_dest_id.ok_or_else(|| "location_dest_id is required".to_string())?;
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
 
         Ok(Transfer {
             id: Uuid::new_v4(),
@@ -483,7 +466,6 @@ impl TransferBuilder {
             location_id,
             location_dest_id,
             partner_id: self.partner_id,
-            company_id,
             move_type: self.move_type.unwrap_or_default(),
             scheduled_date: self.scheduled_date.unwrap_or(Utc::now()),
             date_done: self.date_done,

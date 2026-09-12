@@ -64,7 +64,6 @@ pub struct RouteRule {
     pub picking_type_id: Uuid,
     pub route_id: Uuid,
     pub warehouse_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
     pub propagate_cancel: bool,
     #[serde(default)]
     #[sqlx(json)]
@@ -93,7 +92,6 @@ impl RouteRule {
             picking_type_id,
             route_id,
             warehouse_id: None,
-            company_id: None,
             propagate_cancel,
             metadata: AuditMetadata::default(),
         }
@@ -166,12 +164,6 @@ impl RouteRule {
         self
     }
 
-    /// Set the company_id field (chainable)
-    pub fn with_company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     // ==========================================================
     // Partial Update
     // ==========================================================
@@ -215,9 +207,6 @@ impl RouteRule {
                 }
                 "warehouse_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.warehouse_id = v; }
-                }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
                 }
                 "propagate_cancel" => {
                     if let Ok(v) = serde_json::from_value(value) { self.propagate_cancel = v; }
@@ -281,7 +270,6 @@ impl backbone_orm::EntityRepoMeta for RouteRule {
         m.insert("picking_type_id".to_string(), "uuid".to_string());
         m.insert("route_id".to_string(), "uuid".to_string());
         m.insert("warehouse_id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("action".to_string(), "rule_action".to_string());
         m.insert("auto".to_string(), "rule_auto".to_string());
         m.insert("procure_method".to_string(), "procure_method".to_string());
@@ -289,9 +277,6 @@ impl backbone_orm::EntityRepoMeta for RouteRule {
     }
     fn search_fields() -> &'static [&'static str] {
         &["name"]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
     fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
         &[("route", "routes", "routeId")]
@@ -316,7 +301,6 @@ pub struct RouteRuleBuilder {
     picking_type_id: Option<Uuid>,
     route_id: Option<Uuid>,
     warehouse_id: Option<Uuid>,
-    company_id: Option<Uuid>,
     propagate_cancel: Option<bool>,
 }
 
@@ -393,12 +377,6 @@ impl RouteRuleBuilder {
         self
     }
 
-    /// Set the company_id field (optional)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Set the propagate_cancel field (default: `false`)
     pub fn propagate_cancel(mut self, value: bool) -> Self {
         self.propagate_cancel = Some(value);
@@ -428,7 +406,6 @@ impl RouteRuleBuilder {
             picking_type_id,
             route_id,
             warehouse_id: self.warehouse_id,
-            company_id: self.company_id,
             propagate_cancel: self.propagate_cancel.unwrap_or(false),
             metadata: AuditMetadata::default(),
         })

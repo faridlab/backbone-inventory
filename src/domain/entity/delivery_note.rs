@@ -53,7 +53,6 @@ impl std::ops::Deref for DeliveryNoteId {
 pub struct DeliveryNote {
     pub id: Uuid,
     pub delivery_number: String,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub customer_id: Uuid,
     pub source_so_id: Option<Uuid>,
@@ -81,11 +80,10 @@ impl DeliveryNote {
     }
 
     /// Create a new DeliveryNote with required fields
-    pub fn new(delivery_number: String, company_id: Uuid, customer_id: Uuid, warehouse_id: Uuid, posting_date: NaiveDate, total_cogs: Decimal, cogs_account_id: Uuid, inventory_account_id: Uuid, status: DocStatus, posting_state: GlPostingState) -> Self {
+    pub fn new(delivery_number: String, customer_id: Uuid, warehouse_id: Uuid, posting_date: NaiveDate, total_cogs: Decimal, cogs_account_id: Uuid, inventory_account_id: Uuid, status: DocStatus, posting_state: GlPostingState) -> Self {
         Self {
             id: Uuid::new_v4(),
             delivery_number,
-            company_id,
             branch_id: None,
             customer_id,
             source_so_id: None,
@@ -218,9 +216,6 @@ impl DeliveryNote {
                 "delivery_number" => {
                     if let Ok(v) = serde_json::from_value(value) { self.delivery_number = v; }
                 }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 "branch_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.branch_id = v; }
                 }
@@ -320,7 +315,6 @@ impl backbone_orm::EntityRepoMeta for DeliveryNote {
     fn column_types() -> std::collections::HashMap<String, String> {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("branch_id".to_string(), "uuid".to_string());
         m.insert("customer_id".to_string(), "uuid".to_string());
         m.insert("source_so_id".to_string(), "uuid".to_string());
@@ -337,9 +331,6 @@ impl backbone_orm::EntityRepoMeta for DeliveryNote {
     fn search_fields() -> &'static [&'static str] {
         &["delivery_number"]
     }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
-    }
 }
 
 /// Builder for DeliveryNote entity
@@ -349,7 +340,6 @@ impl backbone_orm::EntityRepoMeta for DeliveryNote {
 #[derive(Debug, Clone, Default)]
 pub struct DeliveryNoteBuilder {
     delivery_number: Option<String>,
-    company_id: Option<Uuid>,
     branch_id: Option<Uuid>,
     customer_id: Option<Uuid>,
     source_so_id: Option<Uuid>,
@@ -371,12 +361,6 @@ impl DeliveryNoteBuilder {
     /// Set the delivery_number field (required)
     pub fn delivery_number(mut self, value: String) -> Self {
         self.delivery_number = Some(value);
-        self
-    }
-
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
         self
     }
 
@@ -475,7 +459,6 @@ impl DeliveryNoteBuilder {
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<DeliveryNote, String> {
         let delivery_number = self.delivery_number.ok_or_else(|| "delivery_number is required".to_string())?;
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
         let customer_id = self.customer_id.ok_or_else(|| "customer_id is required".to_string())?;
         let warehouse_id = self.warehouse_id.ok_or_else(|| "warehouse_id is required".to_string())?;
         let posting_date = self.posting_date.ok_or_else(|| "posting_date is required".to_string())?;
@@ -485,7 +468,6 @@ impl DeliveryNoteBuilder {
         Ok(DeliveryNote {
             id: Uuid::new_v4(),
             delivery_number,
-            company_id,
             branch_id: self.branch_id,
             customer_id,
             source_so_id: self.source_so_id,

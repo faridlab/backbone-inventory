@@ -1,9 +1,9 @@
 # =============================================================================
 # # Domain: Inventory
 # Entity: InventoryCompanySetting
-# Description: Per-company valuation posture — the cost-method vocabulary, the
+# Description: Per-org-unit valuation posture — the cost-method vocabulary, the
 # perpetual-vs-periodic posting axis, and the anglo-saxon delivery-debit
-# posture. One row per company; an ABSENT row means the runtime defaults
+# posture. One row per org unit; an ABSENT row means the runtime defaults
 # (average / perpetual / anglo off), which are exactly today's behavior — so
 # rolling the module out without creating settings rows changes nothing.
 #
@@ -16,7 +16,7 @@
 models:
   - name: InventoryCompanySetting
     collection: inventory_company_settings
-    description: "Per-company valuation posture (cost method, perpetual/periodic posting, anglo-saxon interim delivery debit); absent row = runtime defaults"
+    description: "Per-org-unit valuation posture (cost method, perpetual/periodic posting, anglo-saxon interim delivery debit); absent row = runtime defaults"
 
     fields:
       id:
@@ -24,10 +24,6 @@ models:
         attributes: ["@id", "@default(uuid)"]
         description: "Unique settings row identifier"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "Owning company # logical FK to organization.Company.id; settings are per-company by definition — this table is STRICT-fenced (NOT NULL company_id, one row per company)"
 
       cost_method:
         type: InventoryCostMethod
@@ -55,10 +51,6 @@ models:
         description: "Audit metadata (created_at, updated_at, deleted_at, created_by, updated_by, deleted_by)"
 
     indexes:
-      - type: unique
-        fields: [company_id]
-        where: "deleted_at IS NULL"
-        description: "One settings row per company"
 
 # =============================================================================
 # Enums

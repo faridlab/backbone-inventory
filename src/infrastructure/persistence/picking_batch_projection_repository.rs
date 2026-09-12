@@ -30,8 +30,6 @@ use uuid::Uuid;
 #[derive(Debug, Clone)]
 pub struct BatchHeaderRow {
     pub id: Uuid,
-    /// The batch's owning company (strict fence) — the caller binds the RLS scope from it.
-    pub company_id: Uuid,
     pub name: String,
     pub state: String,
     pub is_wave: bool,
@@ -56,7 +54,6 @@ pub struct BatchMemberRow {
 pub struct NewBatchRow<'a> {
     pub id: Uuid,
     pub name: &'a str,
-    pub company_id: Uuid,
     pub is_wave: bool,
     pub user_id: Option<Uuid>,
 }
@@ -73,8 +70,8 @@ impl PickingBatchProjectionRepository {
     }
 
     /// Insert the batch header (a draft grouping point). Leaks the raw `sqlx::Error`
-    /// deliberately so the service can turn a unique violation on (name, company_id)
-    /// into the typed duplicate-name error.
+    /// deliberately so the service can turn a unique violation on the name — the composing
+    /// decorator's org-scoped arbiter — into the typed duplicate-name error.
     pub async fn insert_batch(
         &self,
         conn: &mut PgConnection,
@@ -82,12 +79,11 @@ impl PickingBatchProjectionRepository {
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"INSERT INTO inventory.picking_batches
-                 (id, name, company_id, is_wave, user_id, scheduled_date, state, had_members)
-               VALUES ($1, $2, $3, $4, $5, NOW(), 'draft'::picking_batch_state, FALSE)"#,
+                 (id, name, is_wave, user_id, scheduled_date, state, had_members)
+               VALUES ($1, $2, $3, $4, NOW(), 'draft'::picking_batch_state, FALSE)"#,
         )
         .bind(b.id)
         .bind(b.name)
-        .bind(b.company_id)
         .bind(b.is_wave)
         .bind(b.user_id)
         .execute(conn)
@@ -103,7 +99,7 @@ impl PickingBatchProjectionRepository {
         batch_id: Uuid,
     ) -> Result<Option<BatchHeaderRow>, sqlx::Error> {
         let row = sqlx::query(
-            r#"SELECT id, company_id, name, state::text AS state, is_wave, user_id,
+            r#"SELECT id, name, state::text AS state, is_wave, user_id,
                       scheduled_date, had_members
                FROM inventory.picking_batches
                WHERE id = $1 AND (metadata->>'deleted_at') IS NULL"#,
@@ -113,7 +109,6 @@ impl PickingBatchProjectionRepository {
         .await?;
         Ok(row.map(|r| BatchHeaderRow {
             id: r.get("id"),
-            company_id: r.get("company_id"),
             name: r.get("name"),
             state: r.get("state"),
             is_wave: r.get("is_wave"),
@@ -151,8 +146,7 @@ impl PickingBatchProjectionRepository {
     /// Attach a picking to its batch: set the membership pointer and stamp the SB-1
     /// discriminator (`had_members` — once true, an empty batch auto-cancels instead of
     /// falling back to `draft`). The caller reprojects right after; this write only
-    /// moves the pointer. The `batch_member_company_guard` trigger backstops the
-    /// same-company requirement (the service checks first, loudly).
+    /// moves the pointer.
     pub async fn add_member(
         &self,
         conn: &mut PgConnection,
@@ -257,7 +251,7 @@ impl PickingBatchProjectionRepository {
     }
 
     /// Read one picking's batch membership. Outer `None` = the transfer row is absent
-    /// (or fenced out — the caller has bound the company scope); inner `None` = the
+    /// (or fenced out — the ambient org scope's fence hides it); inner `None` = the
     /// picking belongs to no batch. The membership-guard input for the typed
     /// already-batched refusal.
     pub async fn picking_membership(

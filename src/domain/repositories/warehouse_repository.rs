@@ -44,7 +44,6 @@ pub struct WarehousePaginatedResult {
 /// Filter parameters for list queries
 #[derive(Debug, Clone, Default)]
 pub struct WarehouseFilter {
-    pub company_id: Option<Uuid>,
     pub code: Option<String>,
     pub name: Option<String>,
     pub warehouse_type: Option<WarehouseType>,
@@ -55,7 +54,7 @@ pub struct WarehouseFilter {
 impl WarehouseFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.company_id.is_some() || self.code.is_some() || self.name.is_some() || self.warehouse_type.is_some() || self.parent_warehouse_id.is_some() || self.is_group.is_some()
+        self.code.is_some() || self.name.is_some() || self.warehouse_type.is_some() || self.parent_warehouse_id.is_some() || self.is_group.is_some()
     }
 }
 

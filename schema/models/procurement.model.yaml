@@ -8,9 +8,9 @@
 #                    category / warehouse;
 #   RouteRule      — pull (bring stock TO dest) / push (propagate FROM src) /
 #                    pull_push, tied to an operation type (guard R11: rule ==
-#                    picking type == warehouse company);
+#                    picking type == warehouse org unit);
 #   ReorderingRule — min/max replenishment per item x location, unique per
-#                    (item, location, company) — guard R6; its qty_* computes
+#                    (item, location, org unit) — guard R6; its qty_* computes
 #                    (on hand / forecast / to order / lead days) drive the
 #                    daily scheduler (trigger T11).
 #
@@ -18,10 +18,11 @@
 # (run_scheduler) are SERVICE METHODS, not CRUD — implemented in the custom
 # service layer; this file declares only their data shapes.
 #
-# Company fence (ADR-0014): Route and RouteRule are configuration master
-# data — shared_blank (nullable company; the seeded MTO route is a shared
-# row). ReorderingRule is a strict transaction-surface row (company required,
-# part of its unique key).
+# Tenancy: none, by design (ADR-0029) — the module is tenant-agnostic. Route
+# and RouteRule are shared masters: the composing decorator anchors them at the
+# tenant ROOT org node (allow_root); the seeded MTO route is a shared row.
+# ReorderingRule is an org-scoped row — its (item, location) uniqueness is
+# re-declared org-scoped in the composing decorator.
 # =============================================================================
 
 models:
@@ -68,10 +69,6 @@ models:
         attributes: ["@default(false)"]
         description: "Available per warehouse"
 
-      company_id:
-        type: uuid?
-        attributes: ["@exclude_from_foreign_key_check"]
-        description: "Owning company; NULL = shared route visible to every company (shared_blank, ADR-0014 — the global MTO route's posture) # logical FK to organization.Company.id"
 
       metadata:
         type: Metadata
@@ -86,15 +83,13 @@ models:
         inverse: route
 
     indexes:
-      - type: index
-        fields: [company_id]
 
   # ===========================================================================
   # Entity: RouteRule — one pull/push step
   # ===========================================================================
   - name: RouteRule
     collection: route_rules
-    description: "A procurement rule — pull / push / pull_push tying a (src -> dest) location pair to an operation type; company must match the type's and warehouse's (guard R11)"
+    description: "A procurement rule — pull / push / pull_push tying a (src -> dest) location pair to an operation type; org unit must match the type's and warehouse's (guard R11)"
 
     fields:
       id:
@@ -150,7 +145,7 @@ models:
       picking_type_id:
         type: uuid
         attributes: ["@required", "@foreign_key(OperationType.id)"]
-        description: "The operation type this rule produces (guard R11: same company as the rule and the warehouse)"
+        description: "The operation type this rule produces (guard R11: same org unit as the rule and the warehouse)"
 
       route_id:
         type: uuid
@@ -160,12 +155,8 @@ models:
       warehouse_id:
         type: uuid?
         attributes: ["@foreign_key(Warehouse.id)"]
-        description: "Owning warehouse (guard R11: same company as the rule and the picking type)"
+        description: "Owning warehouse (guard R11: same org unit as the rule and the picking type)"
 
-      company_id:
-        type: uuid?
-        attributes: ["@exclude_from_foreign_key_check"]
-        description: "Owning company; NULL = shared rule (shared_blank, ADR-0014). Must equal picking_type.company and warehouse.company when set — guard R11 # logical FK to organization.Company.id"
 
       propagate_cancel:
         type: bool
@@ -197,15 +188,13 @@ models:
         fields: [picking_type_id]
       - type: index
         fields: [warehouse_id]
-      - type: index
-        fields: [company_id]
 
   # ===========================================================================
   # Entity: ReorderingRule — min/max replenishment (the orderpoint)
   # ===========================================================================
   - name: ReorderingRule
     collection: reordering_rules
-    description: "A reordering rule (min/max) per item x location; unique per (item, location, company) — guard R6. The daily scheduler orders when qty_forecast < item_min_qty (trigger T11)"
+    description: "A reordering rule (min/max) per item x location; unique per (item, location, org unit) — guard R6. The daily scheduler orders when qty_forecast < item_min_qty (trigger T11)"
 
     fields:
       id:
@@ -247,10 +236,6 @@ models:
         attributes: ["@required", "@foreign_key(Warehouse.id)"]
         description: "The warehouse the replenishment lands in"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "STRICT transaction fence — part of the R6 unique key # logical FK to organization.Company.id"
 
       item_min_qty:
         type: decimal
@@ -302,18 +287,12 @@ models:
         description: "Audit metadata"
 
     indexes:
-      - type: unique
-        fields: [item_id, location_id, company_id]
-        where: "deleted_at IS NULL"
-        description: "R6 — one reordering rule per item x location x company (_product_location_check)"
       - type: index
         fields: [item_id]
       - type: index
         fields: [location_id]
       - type: index
         fields: [warehouse_id]
-      - type: index
-        fields: [company_id]
 
 # =============================================================================
 # Enums

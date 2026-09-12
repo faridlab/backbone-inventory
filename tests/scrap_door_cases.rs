@@ -57,53 +57,53 @@ fn gl() -> MoveGlDirective {
     }
 }
 
-async fn warehouse(w: &InventoryWriteService, company: Uuid) -> Uuid {
+async fn warehouse(w: &InventoryWriteService) -> Uuid {
     w.create_warehouse(NewWarehouse {
-        company_id: company, code: uq("WH"), name: uq("Main"),
+        code: uq("WH"), name: uq("Main"),
         warehouse_type: None, parent_warehouse_id: None, is_group: false,
     }).await.unwrap()
 }
 
-async fn loc(pool: &PgPool, company: Uuid, usage: &str, wh: Option<Uuid>) -> Uuid {
+async fn loc(pool: &PgPool, usage: &str, wh: Option<Uuid>) -> Uuid {
     let id = Uuid::new_v4();
     let name = uq("LOC");
     sqlx::query(
         r#"INSERT INTO inventory.locations
-             (id, name, complete_name, usage, parent_path, company_id, warehouse_id)
-           VALUES ($1,$2,$3,$4::location_usage,$5,$6,$7)"#,
+             (id, name, complete_name, usage, parent_path, warehouse_id)
+           VALUES ($1,$2,$3,$4::location_usage,$5,$6)"#,
     )
-    .bind(id).bind(&name).bind(&name).bind(usage).bind("").bind(company).bind(wh)
+    .bind(id).bind(&name).bind(&name).bind(usage).bind("").bind(wh)
     .execute(pool).await.unwrap();
     id
 }
 
-async fn seed_quant(pool: &PgPool, company: Uuid, item: Uuid, location: Uuid, qty: &str) {
+async fn seed_quant(pool: &PgPool, item: Uuid, location: Uuid, qty: &str) {
     sqlx::query(
         r#"INSERT INTO inventory.stock_quants
-             (id, item_id, location_id, quantity, reserved_quantity, available_quantity, company_id)
-           VALUES ($1,$2,$3,$4,0,$4,$5)"#,
+             (id, item_id, location_id, quantity, reserved_quantity, available_quantity)
+           VALUES ($1,$2,$3,$4,0,$4)"#,
     )
-    .bind(Uuid::new_v4()).bind(item).bind(location).bind(d(qty)).bind(company)
+    .bind(Uuid::new_v4()).bind(item).bind(location).bind(d(qty))
     .execute(pool).await.unwrap();
 }
 
-async fn seed_bin(pool: &PgPool, company: Uuid, item: Uuid, wh: Uuid, qty: &str, rate: &str) {
+async fn seed_bin(pool: &PgPool, item: Uuid, wh: Uuid, qty: &str, rate: &str) {
     sqlx::query(
         r#"INSERT INTO inventory.bins
-             (id, company_id, item_id, warehouse_id, actual_qty, reserved_qty, valuation_rate, stock_value)
-           VALUES ($1,$2,$3,$4,$5,0,$6,$7)"#,
+             (id, item_id, warehouse_id, actual_qty, reserved_qty, valuation_rate, stock_value)
+           VALUES ($1,$2,$3,$4,0,$5,$6)"#,
     )
-    .bind(Uuid::new_v4()).bind(company).bind(item).bind(wh)
+    .bind(Uuid::new_v4()).bind(item).bind(wh)
     .bind(d(qty)).bind(d(rate)).bind(d(qty) * d(rate))
     .execute(pool).await.unwrap();
 }
 
-async fn on_hand(pool: &PgPool, company: Uuid, item: Uuid, location: Uuid) -> Decimal {
+async fn on_hand(pool: &PgPool, item: Uuid, location: Uuid) -> Decimal {
     sqlx::query_scalar(
         r#"SELECT COALESCE(SUM(quantity),0) FROM inventory.stock_quants
-           WHERE company_id=$1 AND item_id=$2 AND location_id=$3 AND (metadata->>'deleted_at') IS NULL"#,
+           WHERE item_id=$1 AND location_id=$2 AND (metadata->>'deleted_at') IS NULL"#,
     )
-    .bind(company).bind(item).bind(location)
+    .bind(item).bind(location)
     .fetch_one(pool).await.unwrap()
 }
 
@@ -116,22 +116,21 @@ async fn on_hand(pool: &PgPool, company: Uuid, item: Uuid, location: Uuid) -> De
 async fn scrap_processes_through_the_engine_once() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let stock = loc(&pool, company, "internal", Some(wh)).await;
+    let wh = warehouse(&svc).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
     let item = Uuid::new_v4();
-    seed_quant(&pool, company, item, stock, "7").await;
-    seed_bin(&pool, company, item, wh, "7", "3").await;
+    seed_quant(&pool, item, stock, "7").await;
+    seed_bin(&pool, item, wh, "7", "3").await;
 
     let created = svc.create_scrap(NewScrap {
-        company_id: company, item_id: item, scrap_qty: d("3"),
+        item_id: item, scrap_qty: d("3"),
         location_id: stock, scrap_location_id: None,
         lot_id: None, package_id: None, owner_id: None, picking_id: None,
         origin: None, scrap_reason_tag_ids: vec![],
     }).await.unwrap();
     assert_eq!(created.state, "draft");
     assert!(created.move_id.is_none());
-    // The default scrap sink: the company's inventory-loss location (bootstrapped).
+    // The default scrap sink: the bootstrapped inventory-loss location.
     let loss_usage: String = sqlx::query_scalar(
         r#"SELECT usage::text FROM inventory.locations WHERE id = $1"#,
     )
@@ -140,12 +139,12 @@ async fn scrap_processes_through_the_engine_once() {
     assert_eq!(loss_usage, "inventory");
 
     let sink = counting_sink();
-    let processed = svc.process_scrap(company, created.id, &gl(), &*sink).await.unwrap();
+    let processed = svc.process_scrap(created.id, &gl(), &*sink).await.unwrap();
     assert_eq!(processed.scrap_id, created.id);
 
     // The header closed done, bound to the engine move — and the move carries the scrap
     // markers (scrapped + is_inventory: the adjustment shape, never a second estate).
-    let header = svc.fetch_scrap(company, created.id).await.unwrap().unwrap();
+    let header = svc.fetch_scrap(created.id).await.unwrap().unwrap();
     assert_eq!(header.state, "done");
     assert_eq!(header.move_id, Some(processed.move_id));
     let mv: (bool, bool, String) = sqlx::query_as(
@@ -156,12 +155,12 @@ async fn scrap_processes_through_the_engine_once() {
     assert_eq!(mv, (true, true, "done".into()));
 
     // Physical truth: the scrapped 3 left the source quant.
-    assert_eq!(on_hand(&pool, company, item, stock).await, d("4"));
+    assert_eq!(on_hand(&pool, item, stock).await, d("4"));
     // GL posted exactly once (3 × 3 at the current average, adjustment shape).
     assert_eq!(sink.posts.load(Ordering::SeqCst), 1);
 
     // Second process: the typed not-draft refusal.
-    let err = svc.process_scrap(company, created.id, &gl(), &*sink).await.unwrap_err();
+    let err = svc.process_scrap(created.id, &gl(), &*sink).await.unwrap_err();
     assert!(matches!(err, InventoryError::ScrapNotDraft { .. }), "got {err:?}");
     assert_eq!(sink.posts.load(Ordering::SeqCst), 1);
 }
@@ -172,45 +171,42 @@ async fn scrap_processes_through_the_engine_once() {
 async fn scrap_deferred_lands_without_gl() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let stock = loc(&pool, company, "internal", Some(wh)).await;
+    let wh = warehouse(&svc).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
     let item = Uuid::new_v4();
-    seed_quant(&pool, company, item, stock, "5").await;
-    seed_bin(&pool, company, item, wh, "5", "2").await;
+    seed_quant(&pool, item, stock, "5").await;
+    seed_bin(&pool, item, wh, "5", "2").await;
 
     let created = svc.create_scrap(NewScrap {
-        company_id: company, item_id: item, scrap_qty: d("2"),
+        item_id: item, scrap_qty: d("2"),
         location_id: stock, scrap_location_id: None,
         lot_id: None, package_id: None, owner_id: None, picking_id: None,
         origin: None, scrap_reason_tag_ids: vec![],
     }).await.unwrap();
-    let processed = svc.process_scrap_deferred(company, created.id).await.unwrap();
-    assert_eq!(on_hand(&pool, company, item, stock).await, d("3"));
+    let processed = svc.process_scrap_deferred(created.id).await.unwrap();
+    assert_eq!(on_hand(&pool, item, stock).await, d("3"));
     let posting: String = sqlx::query_scalar(
         r#"SELECT posting_state::text FROM inventory.stock_moves WHERE id = $1"#,
     )
     .bind(processed.move_id)
     .fetch_one(&pool).await.unwrap();
     assert_eq!(posting, "not_applicable", "no accounts on the directive → the engine built no envelope");
-    let header = svc.fetch_scrap(company, created.id).await.unwrap().unwrap();
+    let header = svc.fetch_scrap(created.id).await.unwrap().unwrap();
     assert_eq!(header.state, "done");
 }
 
 /// Mint guards: a non-positive quantity is refused loudly (the door's half of the
-/// positivity CHECK), a view location holds no stock to scrap, and a wrong-company probe
-/// reads the scrap as absent (the fence — never a leak).
+/// positivity CHECK) and a view location holds no stock to scrap.
 #[tokio::test]
 async fn scrap_mint_guards() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let stock = loc(&pool, company, "internal", Some(wh)).await;
-    let view = loc(&pool, company, "view", None).await;
+    let wh = warehouse(&svc).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
+    let view = loc(&pool, "view", None).await;
 
     let err = svc.create_scrap(NewScrap {
-        company_id: company, item_id: Uuid::new_v4(), scrap_qty: d("0"),
+        item_id: Uuid::new_v4(), scrap_qty: d("0"),
         location_id: stock, scrap_location_id: None,
         lot_id: None, package_id: None, owner_id: None, picking_id: None,
         origin: None, scrap_reason_tag_ids: vec![],
@@ -218,49 +214,51 @@ async fn scrap_mint_guards() {
     assert!(matches!(err, InventoryError::NegativeQuantity), "got {err:?}");
 
     let err = svc.create_scrap(NewScrap {
-        company_id: company, item_id: Uuid::new_v4(), scrap_qty: d("1"),
+        item_id: Uuid::new_v4(), scrap_qty: d("1"),
         location_id: view, scrap_location_id: None,
         lot_id: None, package_id: None, owner_id: None, picking_id: None,
         origin: None, scrap_reason_tag_ids: vec![],
     }).await.unwrap_err();
     assert!(matches!(err, InventoryError::ViewLocationHoldsNoStock { .. }), "got {err:?}");
-
-    // Cross-company probe: another company's scrap reads as absent.
-    let created = svc.create_scrap(NewScrap {
-        company_id: company, item_id: Uuid::new_v4(), scrap_qty: d("1"),
-        location_id: stock, scrap_location_id: None,
-        lot_id: None, package_id: None, owner_id: None, picking_id: None,
-        origin: None, scrap_reason_tag_ids: vec![],
-    }).await.unwrap();
-    assert!(svc.fetch_scrap(Uuid::new_v4(), created.id).await.unwrap().is_none());
 }
 
 // ── master-data guards at the DB level (a raw-SQL writer cannot skip them) ────
 
-/// R7: a scrap reason tag's name is unique — shared (company NULL) tags collide with each
-/// other, company-scoped tags collide within their company, and the two scopes coexist.
+/// R7 posture (ADR-0029): the tag-label unique's guarantee moved to the composing
+/// service's decorator (the org-leading (org unit, name) re-declaration) — the module
+/// ships no name unique of its own, so an undecorated module database cannot refuse a
+/// duplicate. Pin that posture: duplicates are admitted undecorated and the table
+/// carries no non-primary-key unique.
 #[tokio::test]
 async fn r7_scrap_reason_tag_names_unique() {
     let pool = pool().await;
     let name = uq("DMG");
-    let ins = |company: Option<Uuid>| {
+    let ins = |name: String| {
         let pool = pool.clone();
-        let name = name.clone();
         async move {
             sqlx::query(
-                r#"INSERT INTO inventory.scrap_reason_tags (id, name, company_id)
-                   VALUES ($1, $2, $3)"#,
+                r#"INSERT INTO inventory.scrap_reason_tags (id, name)
+                   VALUES ($1, $2)"#,
             )
-            .bind(Uuid::new_v4()).bind(name).bind(company)
+            .bind(Uuid::new_v4()).bind(name)
             .execute(&pool).await
         }
     };
-    ins(None).await.unwrap();
-    assert!(ins(None).await.is_err(), "shared tag names collide");
-    let a = Uuid::new_v4();
-    ins(Some(a)).await.unwrap();
-    assert!(ins(Some(a)).await.is_err(), "same-company tag names collide");
-    ins(Some(Uuid::new_v4())).await.unwrap(); // a different company may reuse the name
+    ins(name.clone()).await.unwrap();
+    ins(name).await.unwrap();
+    ins(uq("DMG")).await.unwrap();
+    let uniques: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM pg_indexes WHERE schemaname = 'inventory' \
+          AND tablename = 'scrap_reason_tags' AND indexdef ILIKE 'CREATE UNIQUE%' \
+          AND indexname NOT LIKE '%\\_pkey'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        uniques, 0,
+        "the module ships no scrap_reason_tags unique — the decorator owns the (org unit, name) slot"
+    );
 }
 
 /// R8/R9: a storage-category capacity row is unique per target — one item row and one
@@ -383,16 +381,15 @@ async fn storage_capacity_target_xor() {
 #[tokio::test]
 async fn scrap_positive_qty_check() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
     let svc = InventoryWriteService::new(pool.clone());
-    let wh = warehouse(&svc, company).await;
-    let stock = loc(&pool, company, "internal", Some(wh)).await;
+    let wh = warehouse(&svc).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
     let res = sqlx::query(
         r#"INSERT INTO inventory.scraps
-             (id, name, item_id, scrap_qty, location_id, scrap_location_id, company_id)
-           VALUES ($1, $2, $3, $4, $5, $5, $6)"#,
+             (id, name, item_id, scrap_qty, location_id, scrap_location_id)
+           VALUES ($1, $2, $3, $4, $5, $5)"#,
     )
-    .bind(Uuid::new_v4()).bind(uq("SCRAP")).bind(Uuid::new_v4()).bind(d("0")).bind(stock).bind(company)
+    .bind(Uuid::new_v4()).bind(uq("SCRAP")).bind(Uuid::new_v4()).bind(d("0")).bind(stock)
     .execute(&pool).await;
     assert!(res.is_err(), "scrap_qty must be strictly positive at the DB level");
 }
@@ -403,12 +400,11 @@ async fn scrap_positive_qty_check() {
 #[tokio::test]
 async fn t12_putaway_storage_category_derivation() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
     let svc = InventoryWriteService::new(pool.clone());
-    let wh = warehouse(&svc, company).await;
-    let in_loc = loc(&pool, company, "internal", Some(wh)).await;
-    let out_a = loc(&pool, company, "internal", Some(wh)).await;
-    let out_b = loc(&pool, company, "internal", Some(wh)).await;
+    let wh = warehouse(&svc).await;
+    let in_loc = loc(&pool, "internal", Some(wh)).await;
+    let out_a = loc(&pool, "internal", Some(wh)).await;
+    let out_b = loc(&pool, "internal", Some(wh)).await;
     let cat_a = Uuid::new_v4();
     let cat_b = Uuid::new_v4();
     for (cat, name) in [(cat_a, uq("CATA")), (cat_b, uq("CATB"))] {
@@ -446,45 +442,4 @@ async fn t12_putaway_storage_category_derivation() {
         r#"SELECT storage_category_id FROM inventory.putaway_rules WHERE id = $1"#)
         .bind(rule).fetch_one(&pool).await.unwrap();
     assert_eq!(rederived, cat_b, "the trigger re-derives on destination change, ignoring the claim");
-}
-
-/// The batch-member company guard trigger: a picking may only join a batch of its own
-/// company — the DB half of the fence (the service refuses loudly first).
-#[tokio::test]
-async fn batch_member_company_guard_trigger() {
-    let pool = pool().await;
-    let company = Uuid::new_v4();
-    let other = Uuid::new_v4();
-    let svc = InventoryWriteService::new(pool.clone());
-
-    let batch = svc.create_batch(company, uq("BATCH"), false, None).await.unwrap();
-    // A transfer of ANOTHER company (staged raw: the service path is covered by the batch
-    // cases; this case proves the TRIGGER fires for any writer).
-    let wh_other = warehouse(&svc, other).await;
-    let supplier = loc(&pool, other, "supplier", None).await;
-    let stock_other = loc(&pool, other, "internal", Some(wh_other)).await;
-    let op = Uuid::new_v4();
-    sqlx::query(
-        r#"INSERT INTO inventory.operation_types
-             (id, name, sequence_code, code, company_id,
-              default_location_src_id, default_location_dest_id, reservation_method, create_backorder)
-           VALUES ($1,$2,$3,'incoming'::picking_code,$4,$5,$6,'manual'::reservation_method,'ask'::create_backorder)"#,
-    )
-    .bind(op).bind(uq("PT")).bind(uq("SEQ")).bind(other).bind(supplier).bind(stock_other)
-    .execute(&pool).await.unwrap();
-    let foreign = Uuid::new_v4();
-    sqlx::query(
-        r#"INSERT INTO inventory.transfers
-             (id, name, picking_type_id, location_id, location_dest_id, company_id, move_type, state)
-           VALUES ($1,$2,$3,$4,$5,$6,'direct'::move_type,'draft'::transfer_state)"#,
-    )
-    .bind(foreign).bind(uq("WH/IN")).bind(op).bind(supplier).bind(stock_other).bind(other)
-    .execute(&pool).await.unwrap();
-
-    let res = sqlx::query("UPDATE inventory.transfers SET batch_id = $1 WHERE id = $2")
-        .bind(batch.id).bind(foreign)
-        .execute(&pool).await;
-    assert!(res.is_err(), "the trigger must refuse a cross-company batch member");
-    let err_text = format!("{:?}", res.err());
-    assert!(err_text.contains("batch_member_company_mismatch"), "got {err_text}");
 }

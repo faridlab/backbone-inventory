@@ -74,9 +74,6 @@ pub struct CreateStockMoveDto {
     pub location_dest_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "partner_id")]
     pub partner_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "rule_id")]
     pub rule_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
@@ -147,9 +144,6 @@ pub struct UpdateStockMoveDto {
     pub location_dest_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "partner_id")]
     pub partner_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "rule_id")]
     pub rule_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
@@ -225,9 +219,6 @@ pub struct PatchStockMoveDto {
     pub location_dest_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "partner_id")]
     pub partner_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "rule_id")]
     pub rule_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
@@ -252,7 +243,7 @@ pub struct PatchStockMoveDto {
 impl PatchStockMoveDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.name.is_some() || self.state.is_some() || self.posting_state.is_some() || self.priority.is_some() || self.create_date.is_some() || self.date.is_some() || self.item_id.is_some() || self.demand_qty.is_some() || self.quantity.is_some() || self.price_unit.is_some() || self.forced_value.is_some() || self.procure_method.is_some() || self.picking_id.is_some() || self.origin.is_some() || self.location_id.is_some() || self.location_dest_id.is_some() || self.partner_id.is_some() || self.company_id.is_some() || self.rule_id.is_some() || self.warehouse_id.is_some() || self.orderpoint_id.is_some() || self.move_orig_ids.is_some() || self.move_dest_ids.is_some() || self.is_inventory.is_some() || self.scrapped.is_some() || self.propagate_cancel.is_some()
+        self.name.is_some() || self.state.is_some() || self.posting_state.is_some() || self.priority.is_some() || self.create_date.is_some() || self.date.is_some() || self.item_id.is_some() || self.demand_qty.is_some() || self.quantity.is_some() || self.price_unit.is_some() || self.forced_value.is_some() || self.procure_method.is_some() || self.picking_id.is_some() || self.origin.is_some() || self.location_id.is_some() || self.location_dest_id.is_some() || self.partner_id.is_some() || self.rule_id.is_some() || self.warehouse_id.is_some() || self.orderpoint_id.is_some() || self.move_orig_ids.is_some() || self.move_dest_ids.is_some() || self.is_inventory.is_some() || self.scrapped.is_some() || self.propagate_cancel.is_some()
     }
 }
 
@@ -293,8 +284,6 @@ pub struct StockMoveResponseDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub location_dest_id: Uuid,
     pub partner_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     pub rule_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
     pub orderpoint_id: Option<Uuid>,
@@ -394,7 +383,6 @@ impl From<StockMove> for StockMoveResponseDto {
             location_id: entity.location_id,
             location_dest_id: entity.location_dest_id,
             partner_id: entity.partner_id,
-            company_id: entity.company_id,
             rule_id: entity.rule_id,
             warehouse_id: entity.warehouse_id,
             orderpoint_id: entity.orderpoint_id,
@@ -442,7 +430,6 @@ impl From<CreateStockMoveDto> for StockMove {
             location_id: dto.location_id,
             location_dest_id: dto.location_dest_id,
             partner_id: dto.partner_id,
-            company_id: dto.company_id,
             rule_id: dto.rule_id,
             warehouse_id: dto.warehouse_id,
             orderpoint_id: dto.orderpoint_id,
@@ -477,7 +464,6 @@ impl From<&StockMove> for StockMoveResponseDto {
             location_id: entity.location_id.clone(),
             location_dest_id: entity.location_dest_id.clone(),
             partner_id: entity.partner_id.clone(),
-            company_id: entity.company_id.clone(),
             rule_id: entity.rule_id.clone(),
             warehouse_id: entity.warehouse_id.clone(),
             orderpoint_id: entity.orderpoint_id.clone(),
@@ -516,7 +502,6 @@ impl backbone_core::ApplyUpdateDto<UpdateStockMoveDto> for StockMove {
         self.location_id = dto.location_id;
         self.location_dest_id = dto.location_dest_id;
         self.partner_id = dto.partner_id;
-        self.company_id = dto.company_id;
         self.rule_id = dto.rule_id;
         self.warehouse_id = dto.warehouse_id;
         self.orderpoint_id = dto.orderpoint_id;

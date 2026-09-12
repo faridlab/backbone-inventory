@@ -42,7 +42,6 @@ impl StockEntryItemRepository {
 pub struct NewStockEntryItemRow {
     pub id: Uuid,
     pub entry_id: Uuid,
-    pub company_id: Uuid,
     pub item_id: Uuid,
     pub quantity: Decimal,
 }
@@ -50,14 +49,15 @@ pub struct NewStockEntryItemRow {
 /// Hand-written StockEntryItem SQL. Lives here per the module's 4-layer rule.
 impl StockEntryItemRepository {
     /// Insert one transfer line. Takes the CALLER'S connection so it commits with the paired
-    /// out/in movement; the caller has already bound the company on it — don't re-bind here.
+    /// out/in movement; the caller has already relayed the ambient org scope onto it — don't
+    /// re-bind here.
     pub async fn insert_item(
         &self,
         conn: &mut sqlx::PgConnection,
         l: &NewStockEntryItemRow,
     ) -> Result<(), sqlx::Error> {
-        sqlx::query("INSERT INTO inventory.stock_entry_items (id, entry_id, company_id, item_id, quantity) VALUES ($1,$2,$3,$4,$5)")
-            .bind(l.id).bind(l.entry_id).bind(l.company_id).bind(l.item_id).bind(l.quantity)
+        sqlx::query("INSERT INTO inventory.stock_entry_items (id, entry_id, item_id, quantity) VALUES ($1,$2,$3,$4)")
+            .bind(l.id).bind(l.entry_id).bind(l.item_id).bind(l.quantity)
             .execute(conn)
             .await?;
         Ok(())

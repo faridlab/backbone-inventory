@@ -1,21 +1,22 @@
-//! Valuation-overlay repository (hand-authored, user-owned) — the SQL behind the per-company
-//! posting posture and the landed-cost document family.
+//! Valuation-overlay repository (hand-authored, user-owned) — the SQL behind the posting
+//! posture and the landed-cost document family.
 //!
 //! Not schema-derived: this file exists for the same reason `gl_voucher_repository.rs` does —
 //! the reads and writes here cut across the generated per-entity shapes. The settings row is a
-//! one-per-company posture read (not a CRUD list), the landed-cost draft write mints header +
+//! one-per-org-unit posture read (not a CRUD list), the landed-cost draft write mints header +
 //! lines as one unit, and the allocation worksheet is a TRANSIENT recompute surface
 //! (delete + recreate, ordered) that must never be written row-by-row by clients.
 //!
 //! Per the module's 4-layer rule the services orchestrate and this file holds the SQL. Every
-//! method takes the CALLER'S connection (or runs `*_scoped` on the pool with the company bound
-//! by the caller) so the company fence (ADR-0008) holds on every read and write.
+//! method takes the CALLER'S connection (or runs `*_scoped` on the pool). Tenancy is
+//! composition-installed (ADR-0029): the composing service's org fence bounds every read and
+//! write, so no statement keys on tenancy.
 
 use rust_decimal::Decimal;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-/// The per-company valuation posture, as the settings row stores it. An ABSENT row means the
+/// The valuation posture, as the settings row stores it. An ABSENT row means the
 /// runtime defaults (`average` / `perpetual` / anglo off) — exactly the pre-overlay behavior.
 #[derive(Debug, Clone)]
 pub struct PostureRow {
@@ -32,7 +33,6 @@ pub struct PostureRow {
 pub struct LcHeaderRow {
     pub id: Uuid,
     pub lc_number: String,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub target_receipt_id: Uuid,
     pub currency: String,
@@ -86,7 +86,6 @@ pub struct WorksheetRow {
 pub struct NewLandedCostRow<'a> {
     pub id: Uuid,
     pub lc_number: &'a str,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub target_receipt_id: Uuid,
     pub currency: &'a str,
@@ -98,7 +97,6 @@ pub struct NewLandedCostRow<'a> {
 pub struct NewLcLineRow<'a> {
     pub id: Uuid,
     pub lc_id: Uuid,
-    pub company_id: Uuid,
     pub name: &'a str,
     pub account_id: Uuid,
     pub split_method: &'a str,
@@ -109,7 +107,6 @@ pub struct NewLcLineRow<'a> {
 /// the last row is a deterministic rounding-diff recipient.
 pub struct NewWorksheetRow {
     pub lc_id: Uuid,
-    pub company_id: Uuid,
     pub move_line_id: Uuid,
     pub cost_line_id: Uuid,
     pub share: Decimal,
@@ -130,13 +127,12 @@ impl ValuationOverlayRepository {
 
     // ---- posting posture ------------------------------------------------------
 
-    /// Read the company's valuation settings row. `None` when the company has no row — the
-    /// caller applies the runtime defaults (average / perpetual / anglo off), which makes
-    /// rolling the module out a no-op for companies that never configure it.
+    /// Read the caller's org-unit valuation settings row. `None` when the org unit has no row
+    /// — the caller applies the runtime defaults (average / perpetual / anglo off), which
+    /// makes rolling the module out a no-op for tenants that never configure it.
     pub async fn fetch_posture(
         &self,
         pool: &PgPool,
-        company_id: Uuid,
     ) -> Result<Option<PostureRow>, sqlx::Error> {
         let row = backbone_orm::company_scope::fetch_optional_row_scoped(
             pool,
@@ -144,29 +140,26 @@ impl ValuationOverlayRepository {
                 r#"SELECT cost_method::text AS cost_method, valuation_policy::text AS valuation_policy,
                           anglo_saxon_accounting, stock_interim_delivered_account_id
                    FROM inventory.inventory_company_settings
-                   WHERE company_id=$1 AND (metadata->>'deleted_at') IS NULL"#,
-            )
-            .bind(company_id),
+                   WHERE (metadata->>'deleted_at') IS NULL"#,
+            ),
         )
         .await?;
         Ok(row.map(Self::map_posture_row))
     }
 
     /// The same posture read on the CALLER'S connection — the variant the move engine uses
-    /// inside its open movement transaction (the company is already bound there, so the
-    /// strict-fenced read is RLS-correct without opening a second transaction).
+    /// inside its open movement transaction (the ambient org scope is already bound there, so
+    /// the fenced read is correct without opening a second transaction).
     pub async fn fetch_posture_on(
         &self,
         conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
     ) -> Result<Option<PostureRow>, sqlx::Error> {
         let row = sqlx::query(
             r#"SELECT cost_method::text AS cost_method, valuation_policy::text AS valuation_policy,
                       anglo_saxon_accounting, stock_interim_delivered_account_id
                FROM inventory.inventory_company_settings
-               WHERE company_id=$1 AND (metadata->>'deleted_at') IS NULL"#,
+               WHERE (metadata->>'deleted_at') IS NULL"#,
         )
-        .bind(company_id)
         .fetch_optional(&mut *conn)
         .await?;
         Ok(row.map(Self::map_posture_row))
@@ -184,12 +177,9 @@ impl ValuationOverlayRepository {
     /// A location's valuation-account override, when set. `None` = no override (the caller
     /// falls through to the door-header account).
     ///
-    /// The read runs company-scoped. Locations carry the shared_blank fence (`company_id =
-    /// app.company_id OR company_id IS NULL`): a shared row stays visible unscoped, but a
-    /// COMPANY-OWNED location's override is invisible to an unbound read under an armed fence —
-    /// the resolution chain would silently fall through to the door-header account. The scoped
-    /// execute binds the caller's company first, so both arms of the policy match and the
-    /// override is resolved for company locations exactly as for shared ones.
+    /// The read runs org-scoped: locations are shared masters under the composition's
+    /// root-shared fence, so a scoped read resolves the override for tenant-specific and
+    /// shared locations alike.
     pub async fn fetch_location_valuation_override(
         &self,
         pool: &PgPool,
@@ -212,14 +202,12 @@ impl ValuationOverlayRepository {
     pub async fn fetch_item_weight(
         &self,
         conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
         item_id: Uuid,
     ) -> Result<Decimal, sqlx::Error> {
         let row: Option<Decimal> = sqlx::query_scalar(
             r#"SELECT weight_per_unit FROM inventory.stock_items
-               WHERE company_id=$1 AND item_id=$2 AND (metadata->>'deleted_at') IS NULL"#,
+               WHERE item_id=$1 AND (metadata->>'deleted_at') IS NULL"#,
         )
-        .bind(company_id)
         .bind(item_id)
         .fetch_optional(conn)
         .await?;
@@ -228,14 +216,14 @@ impl ValuationOverlayRepository {
 
     // ---- landed-cost document -------------------------------------------------
 
-    /// Read one landed-cost header. The caller binds the company (strict fence) first.
+    /// Read one landed-cost header.
     pub async fn fetch_lc_header(
         &self,
         conn: &mut sqlx::PgConnection,
         lc_id: Uuid,
     ) -> Result<Option<LcHeaderRow>, sqlx::Error> {
         let row = sqlx::query(
-            r#"SELECT id, lc_number, company_id, branch_id, target_receipt_id, currency,
+            r#"SELECT id, lc_number, branch_id, target_receipt_id, currency,
                       posting_date, state::text AS state, posting_state::text AS posting_state,
                       journal_id, accounting_post_id
                FROM inventory.landed_costs
@@ -247,7 +235,6 @@ impl ValuationOverlayRepository {
         Ok(row.map(|r| LcHeaderRow {
             id: r.get("id"),
             lc_number: r.get("lc_number"),
-            company_id: r.get("company_id"),
             branch_id: r.get("branch_id"),
             target_receipt_id: r.get("target_receipt_id"),
             currency: r.get("currency"),
@@ -259,7 +246,7 @@ impl ValuationOverlayRepository {
         }))
     }
 
-    /// Read the landed cost's charge lines. The caller binds the company first.
+    /// Read the landed cost's charge lines.
     pub async fn fetch_lc_lines(
         &self,
         conn: &mut sqlx::PgConnection,
@@ -296,13 +283,12 @@ impl ValuationOverlayRepository {
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"INSERT INTO inventory.landed_costs
-                 (id, lc_number, company_id, branch_id, target_receipt_id, currency,
+                 (id, lc_number, branch_id, target_receipt_id, currency,
                   posting_date, state, amount_total, posting_state, notes)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,'draft',$8,'not_applicable',$9)"#,
+               VALUES ($1,$2,$3,$4,$5,$6,'draft',$7,'not_applicable',$8)"#,
         )
         .bind(lc.id)
         .bind(lc.lc_number)
-        .bind(lc.company_id)
         .bind(lc.branch_id)
         .bind(lc.target_receipt_id)
         .bind(lc.currency)
@@ -322,12 +308,11 @@ impl ValuationOverlayRepository {
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"INSERT INTO inventory.landed_cost_lines
-                 (id, lc_id, company_id, name, account_id, split_method, amount)
-               VALUES ($1,$2,$3,$4,$5,$6::landed_cost_split_method,$7)"#,
+                 (id, lc_id, name, account_id, split_method, amount)
+               VALUES ($1,$2,$3,$4,$5::landed_cost_split_method,$6)"#,
         )
         .bind(l.id)
         .bind(l.lc_id)
-        .bind(l.company_id)
         .bind(l.name)
         .bind(l.account_id)
         .bind(l.split_method)
@@ -341,7 +326,7 @@ impl ValuationOverlayRepository {
     /// door stamped as `origin` on every line move, the header inventory account (the fallback
     /// of the debit leg's account-resolution chain), and the status (a landed cost only ever
     /// targets a receipt whose moves are DONE; the service derives that from the moves
-    /// themselves). Takes the caller's connection; the caller binds the company first.
+    /// themselves). Takes the caller's connection.
     pub async fn fetch_lc_target_receipt(
         &self,
         conn: &mut sqlx::PgConnection,
@@ -429,13 +414,12 @@ impl ValuationOverlayRepository {
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"INSERT INTO inventory.landed_cost_adjustment_lines
-                 (id, lc_id, company_id, move_line_id, cost_line_id, share,
+                 (id, lc_id, move_line_id, cost_line_id, share,
                   additional_landed_cost, remaining_qty)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)"#,
+               VALUES ($1,$2,$3,$4,$5,$6,$7)"#,
         )
         .bind(Uuid::new_v4())
         .bind(w.lc_id)
-        .bind(w.company_id)
         .bind(w.move_line_id)
         .bind(w.cost_line_id)
         .bind(w.share)
@@ -446,8 +430,7 @@ impl ValuationOverlayRepository {
         Ok(())
     }
 
-    /// Read the landed cost's worksheet back (tests + GL repost reconstruction). The caller
-    /// binds the company first.
+    /// Read the landed cost's worksheet back (tests + GL repost reconstruction).
     pub async fn fetch_worksheet(
         &self,
         conn: &mut sqlx::PgConnection,

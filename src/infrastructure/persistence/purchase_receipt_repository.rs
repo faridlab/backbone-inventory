@@ -51,7 +51,6 @@ impl PurchaseReceiptRepository {
 pub struct NewReceiptRow<'a> {
     pub id: Uuid,
     pub receipt_number: &'a str,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub supplier_id: Uuid,
     pub source_po_id: Option<Uuid>,
@@ -66,7 +65,6 @@ pub struct NewReceiptRow<'a> {
 /// The submit path's header projection — everything needed to drive the movement + the asset post.
 pub struct ReceiptSubmitHeaderRow {
     pub receipt_number: String,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
@@ -81,7 +79,6 @@ pub struct ReceiptSubmitHeaderRow {
 /// The repost path's header projection — rebuilds the SAME envelope from the stored header, never
 /// re-touching the SLE/Bin (the physical movement already happened).
 pub struct ReceiptRepostHeaderRow {
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub receipt_number: String,
     pub posting_date: chrono::NaiveDate,
@@ -99,7 +96,6 @@ pub struct ReceiptRepostHeaderRow {
 /// `posting_type='reversal'` post. Carries the original `accounting_post_id` (to reverse) and any
 /// already-recorded `reversal_accounting_post_id` (the idempotency/recovery short-circuit).
 pub struct ReceiptCancelHeaderRow {
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
@@ -122,7 +118,7 @@ impl PurchaseReceiptRepository {
     /// Insert the draft receipt header.
     ///
     /// Takes the CALLER'S connection so the header and its items commit as one unit. The caller has
-    /// already bound the company on it (`bind_company_on`) — don't re-bind here.
+    /// already relayed the ambient org scope onto it — don't re-bind here.
     ///
     /// Returns the raw `sqlx::Error` deliberately: the caller inspects it for a unique violation to
     /// turn a duplicate receipt number into `DuplicateNumber`.
@@ -133,12 +129,12 @@ impl PurchaseReceiptRepository {
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"INSERT INTO inventory.purchase_receipts
-                (id, receipt_number, company_id, branch_id, supplier_id, source_po_id, warehouse_id,
+                (id, receipt_number, branch_id, supplier_id, source_po_id, warehouse_id,
                  posting_date, currency, total_value, inventory_account_id, grir_account_id,
                  status, posting_state)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'draft'::doc_status,'pending'::gl_posting_state)"#,
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'draft'::doc_status,'pending'::gl_posting_state)"#,
         )
-        .bind(r.id).bind(r.receipt_number).bind(r.company_id).bind(r.branch_id).bind(r.supplier_id)
+        .bind(r.id).bind(r.receipt_number).bind(r.branch_id).bind(r.supplier_id)
         .bind(r.source_po_id).bind(r.warehouse_id).bind(r.posting_date).bind(r.currency).bind(r.total_value)
         .bind(r.inventory_account_id).bind(r.grir_account_id)
         .execute(conn)
@@ -148,8 +144,8 @@ impl PurchaseReceiptRepository {
 
     /// Read the submit path's header. `Ok(None)` = no such live receipt in scope.
     ///
-    /// ID-only: no company argument. `fetch_optional_row_scoped` means it rides a connection carrying
-    /// the caller's `app.company_id` (ADR-0008), so it is fenced by the request/inherited scope.
+    /// ID-only: `fetch_optional_row_scoped` means it rides the ambient org scope's request-dedicated
+    /// connection (ADR-0029), so the decorator's fence bounds what the read can see.
     pub async fn fetch_submit_header(
         &self,
         pool: &PgPool,
@@ -158,7 +154,7 @@ impl PurchaseReceiptRepository {
         let row = company_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
-                r#"SELECT receipt_number, company_id, branch_id, warehouse_id, posting_date, source_po_id,
+                r#"SELECT receipt_number, branch_id, warehouse_id, posting_date, source_po_id,
                           currency, status::text AS st, inventory_account_id, grir_account_id
                    FROM inventory.purchase_receipts WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
             )
@@ -166,7 +162,7 @@ impl PurchaseReceiptRepository {
         )
         .await?;
         Ok(row.map(|h| ReceiptSubmitHeaderRow {
-            receipt_number: h.get("receipt_number"), company_id: h.get("company_id"),
+            receipt_number: h.get("receipt_number"),
             branch_id: h.get("branch_id"), warehouse_id: h.get("warehouse_id"),
             posting_date: h.get("posting_date"), source_po_id: h.get("source_po_id"),
             currency: h.get("currency"),
@@ -184,7 +180,7 @@ impl PurchaseReceiptRepository {
         let row = company_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
-                r#"SELECT company_id, branch_id, receipt_number, posting_date, currency, total_value,
+                r#"SELECT branch_id, receipt_number, posting_date, currency, total_value,
                           inventory_account_id, grir_account_id, posting_state::text AS ps, journal_id, accounting_post_id,
                           warehouse_id
                    FROM inventory.purchase_receipts WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
@@ -193,7 +189,7 @@ impl PurchaseReceiptRepository {
         )
         .await?;
         Ok(row.map(|h| ReceiptRepostHeaderRow {
-            company_id: h.get("company_id"), branch_id: h.get("branch_id"),
+            branch_id: h.get("branch_id"),
             receipt_number: h.get("receipt_number"), posting_date: h.get("posting_date"),
             currency: h.get("currency"),
             total_value: h.get("total_value"), inventory_account_id: h.get("inventory_account_id"),
@@ -244,7 +240,7 @@ impl PurchaseReceiptRepository {
         let row = company_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
-                r#"SELECT company_id, branch_id, warehouse_id, posting_date, currency, receipt_number,
+                r#"SELECT branch_id, warehouse_id, posting_date, currency, receipt_number,
                           total_value, status::text AS st, inventory_account_id, grir_account_id,
                           posting_state::text AS ps, journal_id, accounting_post_id,
                           reversal_journal_id, reversal_accounting_post_id
@@ -254,7 +250,7 @@ impl PurchaseReceiptRepository {
         )
         .await?;
         Ok(row.map(|h| ReceiptCancelHeaderRow {
-            company_id: h.get("company_id"), branch_id: h.get("branch_id"),
+            branch_id: h.get("branch_id"),
             warehouse_id: h.get("warehouse_id"), posting_date: h.get("posting_date"),
             currency: h.get("currency"), receipt_number: h.get("receipt_number"),
             total_value: h.get("total_value"),

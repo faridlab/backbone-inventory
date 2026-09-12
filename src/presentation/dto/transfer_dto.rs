@@ -56,9 +56,6 @@ pub struct CreateTransferDto {
     pub location_dest_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "partner_id")]
     pub partner_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[serde(alias = "move_type")]
     pub move_type: MoveType,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
@@ -112,9 +109,6 @@ pub struct UpdateTransferDto {
     pub location_dest_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "partner_id")]
     pub partner_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[serde(alias = "move_type")]
     pub move_type: MoveType,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
@@ -170,9 +164,6 @@ pub struct PatchTransferDto {
     pub location_dest_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "partner_id")]
     pub partner_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "move_type")]
     pub move_type: Option<MoveType>,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
@@ -196,7 +187,7 @@ pub struct PatchTransferDto {
 impl PatchTransferDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.name.is_some() || self.origin.is_some() || self.note.is_some() || self.priority.is_some() || self.picking_type_id.is_some() || self.location_id.is_some() || self.location_dest_id.is_some() || self.partner_id.is_some() || self.company_id.is_some() || self.move_type.is_some() || self.scheduled_date.is_some() || self.date_done.is_some() || self.state.is_some() || self.is_locked.is_some() || self.backorder_id.is_some() || self.return_id.is_some() || self.batch_id.is_some()
+        self.name.is_some() || self.origin.is_some() || self.note.is_some() || self.priority.is_some() || self.picking_type_id.is_some() || self.location_id.is_some() || self.location_dest_id.is_some() || self.partner_id.is_some() || self.move_type.is_some() || self.scheduled_date.is_some() || self.date_done.is_some() || self.state.is_some() || self.is_locked.is_some() || self.backorder_id.is_some() || self.return_id.is_some() || self.batch_id.is_some()
     }
 }
 
@@ -226,8 +217,6 @@ pub struct TransferResponseDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub location_dest_id: Uuid,
     pub partner_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     pub move_type: MoveType,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
     pub scheduled_date: DateTime<Utc>,
@@ -317,7 +306,6 @@ impl From<Transfer> for TransferResponseDto {
             location_id: entity.location_id,
             location_dest_id: entity.location_dest_id,
             partner_id: entity.partner_id,
-            company_id: entity.company_id,
             move_type: entity.move_type,
             scheduled_date: entity.scheduled_date,
             date_done: entity.date_done,
@@ -356,7 +344,6 @@ impl From<CreateTransferDto> for Transfer {
             location_id: dto.location_id,
             location_dest_id: dto.location_dest_id,
             partner_id: dto.partner_id,
-            company_id: dto.company_id,
             move_type: dto.move_type,
             scheduled_date: dto.scheduled_date,
             date_done: dto.date_done,
@@ -382,7 +369,6 @@ impl From<&Transfer> for TransferResponseDto {
             location_id: entity.location_id.clone(),
             location_dest_id: entity.location_dest_id.clone(),
             partner_id: entity.partner_id.clone(),
-            company_id: entity.company_id.clone(),
             move_type: entity.move_type.clone(),
             scheduled_date: entity.scheduled_date.clone(),
             date_done: entity.date_done.clone(),
@@ -412,7 +398,6 @@ impl backbone_core::ApplyUpdateDto<UpdateTransferDto> for Transfer {
         self.location_id = dto.location_id;
         self.location_dest_id = dto.location_dest_id;
         self.partner_id = dto.partner_id;
-        self.company_id = dto.company_id;
         self.move_type = dto.move_type;
         self.scheduled_date = dto.scheduled_date;
         self.date_done = dto.date_done;

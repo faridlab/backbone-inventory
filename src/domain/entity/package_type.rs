@@ -60,7 +60,6 @@ pub struct PackageType {
     pub height: Option<Decimal>,
     pub max_weight: Option<Decimal>,
     pub active: bool,
-    pub company_id: Option<Uuid>,
     #[serde(default)]
     #[sqlx(json)]
     pub metadata: AuditMetadata,
@@ -85,7 +84,6 @@ impl PackageType {
             height: None,
             max_weight: None,
             active,
-            company_id: None,
             metadata: AuditMetadata::default(),
         }
     }
@@ -175,12 +173,6 @@ impl PackageType {
         self
     }
 
-    /// Set the company_id field (chainable)
-    pub fn with_company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     // ==========================================================
     // Partial Update
     // ==========================================================
@@ -215,9 +207,6 @@ impl PackageType {
                 }
                 "active" => {
                     if let Ok(v) = serde_json::from_value(value) { self.active = v; }
-                }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
                 }
                 _ => {} // ignore unknown fields
             }
@@ -273,15 +262,11 @@ impl backbone_orm::EntityRepoMeta for PackageType {
     fn column_types() -> std::collections::HashMap<String, String> {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("package_use".to_string(), "package_use".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
         &["name"]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -300,7 +285,6 @@ pub struct PackageTypeBuilder {
     height: Option<Decimal>,
     max_weight: Option<Decimal>,
     active: Option<bool>,
-    company_id: Option<Uuid>,
 }
 
 impl PackageTypeBuilder {
@@ -358,12 +342,6 @@ impl PackageTypeBuilder {
         self
     }
 
-    /// Set the company_id field (optional)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Build the PackageType entity
     ///
     /// Returns Err if any required field without a default is missing.
@@ -381,7 +359,6 @@ impl PackageTypeBuilder {
             height: self.height,
             max_weight: self.max_weight,
             active: self.active.unwrap_or(true),
-            company_id: self.company_id,
             metadata: AuditMetadata::default(),
         })
     }

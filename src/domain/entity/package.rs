@@ -51,7 +51,6 @@ pub struct Package {
     pub name: String,
     pub complete_name: String,
     pub location_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
     pub parent_package_id: Option<Uuid>,
     pub parent_path: String,
     pub pack_date: Option<NaiveDate>,
@@ -74,7 +73,6 @@ impl Package {
             name,
             complete_name,
             location_id: None,
-            company_id: None,
             parent_package_id: None,
             parent_path,
             pack_date: None,
@@ -144,12 +142,6 @@ impl Package {
         self
     }
 
-    /// Set the company_id field (chainable)
-    pub fn with_company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Set the parent_package_id field (chainable)
     pub fn with_parent_package_id(mut self, value: Uuid) -> Self {
         self.parent_package_id = Some(value);
@@ -184,9 +176,6 @@ impl Package {
                 }
                 "location_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.location_id = v; }
-                }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
                 }
                 "parent_package_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.parent_package_id = v; }
@@ -255,16 +244,12 @@ impl backbone_orm::EntityRepoMeta for Package {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
         m.insert("location_id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("parent_package_id".to_string(), "uuid".to_string());
         m.insert("package_type_id".to_string(), "uuid".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
         &["name", "complete_name", "parent_path"]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -277,7 +262,6 @@ pub struct PackageBuilder {
     name: Option<String>,
     complete_name: Option<String>,
     location_id: Option<Uuid>,
-    company_id: Option<Uuid>,
     parent_package_id: Option<Uuid>,
     parent_path: Option<String>,
     pack_date: Option<NaiveDate>,
@@ -300,12 +284,6 @@ impl PackageBuilder {
     /// Set the location_id field (optional)
     pub fn location_id(mut self, value: Uuid) -> Self {
         self.location_id = Some(value);
-        self
-    }
-
-    /// Set the company_id field (optional)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
         self
     }
 
@@ -346,7 +324,6 @@ impl PackageBuilder {
             name,
             complete_name,
             location_id: self.location_id,
-            company_id: self.company_id,
             parent_package_id: self.parent_package_id,
             parent_path,
             pack_date: self.pack_date,

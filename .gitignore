@@ -28,3 +28,6 @@ graphify-out/
 # dev. .cargo/config.toml.example is tracked as the template; the real file stays local.
 .cargo/config.toml
 .cargo/config.toml.quarantined
+
+# Local dit CLI index cache (local, not committed)
+.dit-cache/

@@ -39,9 +39,6 @@ pub struct CreateLandedCostDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "lc_number")]
     pub lc_number: String,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "branch_id")]
     pub branch_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -88,9 +85,6 @@ pub struct UpdateLandedCostDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "lc_number")]
     pub lc_number: String,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "branch_id")]
     pub branch_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -137,9 +131,6 @@ pub struct PatchLandedCostDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "lc_number")]
     pub lc_number: Option<String>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "branch_id")]
     pub branch_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -174,7 +165,7 @@ pub struct PatchLandedCostDto {
 impl PatchLandedCostDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.lc_number.is_some() || self.company_id.is_some() || self.branch_id.is_some() || self.target_receipt_id.is_some() || self.transfer_id.is_some() || self.currency.is_some() || self.posting_date.is_some() || self.state.is_some() || self.amount_total.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some() || self.posted_at.is_some() || self.notes.is_some()
+        self.lc_number.is_some() || self.branch_id.is_some() || self.target_receipt_id.is_some() || self.transfer_id.is_some() || self.currency.is_some() || self.posting_date.is_some() || self.state.is_some() || self.amount_total.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some() || self.posted_at.is_some() || self.notes.is_some()
     }
 }
 
@@ -194,8 +185,6 @@ pub struct LandedCostResponseDto {
     pub id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub lc_number: String,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub target_receipt_id: Uuid,
@@ -269,8 +258,8 @@ impl LandedCostListResponseDto {
 pub struct LandedCostSummaryDto {
     pub id: Uuid,
     pub lc_number: String,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
+    pub target_receipt_id: Uuid,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -283,7 +272,6 @@ impl From<LandedCost> for LandedCostResponseDto {
         Self {
             id: entity.id,
             lc_number: entity.lc_number,
-            company_id: entity.company_id,
             branch_id: entity.branch_id,
             target_receipt_id: entity.target_receipt_id,
             transfer_id: entity.transfer_id,
@@ -307,8 +295,8 @@ impl From<LandedCost> for LandedCostSummaryDto {
         Self {
             id: entity.id,
             lc_number: entity.lc_number,
-            company_id: entity.company_id,
             branch_id: entity.branch_id,
+            target_receipt_id: entity.target_receipt_id,
             created_at,
         }
     }
@@ -319,7 +307,6 @@ impl From<CreateLandedCostDto> for LandedCost {
         Self {
             id: Uuid::new_v4(),
             lc_number: dto.lc_number,
-            company_id: dto.company_id,
             branch_id: dto.branch_id,
             target_receipt_id: dto.target_receipt_id,
             transfer_id: dto.transfer_id,
@@ -342,7 +329,6 @@ impl From<&LandedCost> for LandedCostResponseDto {
         Self {
             id: entity.id.clone(),
             lc_number: entity.lc_number.clone(),
-            company_id: entity.company_id.clone(),
             branch_id: entity.branch_id.clone(),
             target_receipt_id: entity.target_receipt_id.clone(),
             transfer_id: entity.transfer_id.clone(),
@@ -369,7 +355,6 @@ impl backbone_core::FromCreateDto<CreateLandedCostDto> for LandedCost {
 impl backbone_core::ApplyUpdateDto<UpdateLandedCostDto> for LandedCost {
     fn apply_update(mut self, dto: UpdateLandedCostDto) -> backbone_core::ServiceResult<Self> {
         self.lc_number = dto.lc_number;
-        self.company_id = dto.company_id;
         self.branch_id = dto.branch_id;
         self.target_receipt_id = dto.target_receipt_id;
         self.transfer_id = dto.transfer_id;

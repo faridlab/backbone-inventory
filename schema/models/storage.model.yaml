@@ -20,8 +20,9 @@
 #                            location_out write (the R27 write-time-derivation
 #                            posture — never a free column)
 #
-# Company fence (ADR-0014): all four are MASTER DATA — shared_blank (nullable
-# company; NULL rows are first-class shared rows, the [False] escape).
+# Tenancy: none, by design (ADR-0029) — the module is tenant-agnostic; all four
+# are shared masters. The composing decorator anchors them at the tenant ROOT
+# org node (allow_root); every entitled scope sees them via the scope union.
 # =============================================================================
 
 models:
@@ -83,10 +84,6 @@ models:
         attributes: ["@default(true)"]
         description: "Archive support"
 
-      company_id:
-        type: uuid?
-        attributes: ["@exclude_from_foreign_key_check"]
-        description: "Owning company; NULL = shared type visible to every company (shared_blank, ADR-0014) # logical FK to organization.Company.id"
 
       metadata:
         type: Metadata
@@ -98,8 +95,6 @@ models:
         fields: [barcode]
         where: "deleted_at IS NULL AND barcode IS NOT NULL"
         description: "R10 — one package type per barcode (_barcode_uniq)"
-      - type: index
-        fields: [company_id]
 
   # ===========================================================================
   # Entity: StorageCategory — a capacity constraint frame (guard R17)
@@ -134,10 +129,6 @@ models:
         attributes: ["@default(true)"]
         description: "Archive support"
 
-      company_id:
-        type: uuid?
-        attributes: ["@exclude_from_foreign_key_check"]
-        description: "Owning company; NULL = shared category visible to every company (shared_blank, ADR-0014) # logical FK to organization.Company.id"
 
       metadata:
         type: Metadata
@@ -145,8 +136,6 @@ models:
         description: "Audit metadata"
 
     indexes:
-      - type: index
-        fields: [company_id]
 
   # ===========================================================================
   # Entity: StorageCategoryCapacity — one capacity row (guards R8, R9, R15)
@@ -181,10 +170,6 @@ models:
         attributes: ["@required", "@default(1)", "@precision(18,4)"]
         description: "Capacity quantity (> 0 — guard R15, _positive_quantity)"
 
-      company_id:
-        type: uuid?
-        attributes: ["@exclude_from_foreign_key_check"]
-        description: "Owning company; NULL = shared row visible to every company (shared_blank, ADR-0014) # logical FK to organization.Company.id"
 
       metadata:
         type: Metadata
@@ -202,8 +187,6 @@ models:
         description: "R9 — one capacity rule per package type per category (_unique_package_type)"
       - type: index
         fields: [storage_category_id]
-      - type: index
-        fields: [company_id]
 
   # ===========================================================================
   # Entity: PutawayRule — where arriving stock is stored (trigger T12)
@@ -263,10 +246,6 @@ models:
         attributes: ["@default(true)"]
         description: "Archive support"
 
-      company_id:
-        type: uuid?
-        attributes: ["@exclude_from_foreign_key_check"]
-        description: "Owning company; NULL = shared rule visible to every company (shared_blank, ADR-0014; R28 company auto-check lives on the write path) # logical FK to organization.Company.id"
 
       metadata:
         type: Metadata
@@ -280,8 +259,6 @@ models:
         fields: [location_out_id]
       - type: index
         fields: [storage_category_id]
-      - type: index
-        fields: [company_id]
 
 # =============================================================================
 # Enums

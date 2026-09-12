@@ -63,86 +63,86 @@ fn adj_gl() -> MoveGlDirective {
     }
 }
 
-async fn warehouse(w: &InventoryWriteService, company: Uuid) -> Uuid {
+async fn warehouse(w: &InventoryWriteService) -> Uuid {
     w.create_warehouse(NewWarehouse {
-        company_id: company, code: uq("WH"), name: uq("Main"),
+        code: uq("WH"), name: uq("Main"),
         warehouse_type: None, parent_warehouse_id: None, is_group: false,
     }).await.unwrap()
 }
 
 /// Insert a location row. `warehouse_id` binds the valuation bin an internal location
 /// resolves to (and the warehouse whose stock location the reconciliation door resolves to).
-async fn loc(pool: &PgPool, company: Uuid, usage: &str, wh: Option<Uuid>) -> Uuid {
+async fn loc(pool: &PgPool, usage: &str, wh: Option<Uuid>) -> Uuid {
     let id = Uuid::new_v4();
     let name = uq("LOC");
     sqlx::query(
         r#"INSERT INTO inventory.locations
-             (id, name, complete_name, usage, parent_path, company_id, warehouse_id)
-           VALUES ($1,$2,$3,$4::location_usage,$5,$6,$7)"#,
+             (id, name, complete_name, usage, parent_path, warehouse_id)
+           VALUES ($1,$2,$3,$4::location_usage,$5,$6)"#,
     )
-    .bind(id).bind(&name).bind(&name).bind(usage).bind("").bind(company).bind(wh)
+    .bind(id).bind(&name).bind(&name).bind(usage).bind("").bind(wh)
     .execute(pool).await.unwrap();
     id
 }
 
-async fn op_type(pool: &PgPool, company: Uuid, code: &str, reservation: &str, src: Uuid, dst: Uuid) -> Uuid {
+async fn op_type(pool: &PgPool, code: &str, reservation: &str, src: Uuid, dst: Uuid) -> Uuid {
     let id = Uuid::new_v4();
     sqlx::query(
         r#"INSERT INTO inventory.operation_types
-             (id, name, sequence_code, code, company_id,
+             (id, name, sequence_code, code,
               default_location_src_id, default_location_dest_id, reservation_method, create_backorder)
-           VALUES ($1,$2,$3,$4::picking_code,$5,$6,$7,$8::reservation_method,'ask'::create_backorder)"#,
+           VALUES ($1,$2,$3,$4::picking_code,$5,$6,$7::reservation_method,'ask'::create_backorder)"#,
     )
-    .bind(id).bind(uq("PT")).bind(uq("SEQ")).bind(code).bind(company)
+    .bind(id).bind(uq("PT")).bind(uq("SEQ")).bind(code)
     .bind(src).bind(dst).bind(reservation)
     .execute(pool).await.unwrap();
     id
 }
 
 /// Seed on-hand stock at a location (the quant grain: one row, untracked dims).
-async fn seed_quant(pool: &PgPool, company: Uuid, item: Uuid, location: Uuid, qty: &str) {
+async fn seed_quant(pool: &PgPool, item: Uuid, location: Uuid, qty: &str) {
     sqlx::query(
         r#"INSERT INTO inventory.stock_quants
-             (id, item_id, location_id, quantity, reserved_quantity, available_quantity, company_id)
-           VALUES ($1,$2,$3,$4,0,$4,$5)"#,
+             (id, item_id, location_id, quantity, reserved_quantity, available_quantity)
+           VALUES ($1,$2,$3,$4,0,$4)"#,
     )
-    .bind(Uuid::new_v4()).bind(item).bind(location).bind(d(qty)).bind(company)
+    .bind(Uuid::new_v4()).bind(item).bind(location).bind(d(qty))
     .execute(pool).await.unwrap();
 }
 
 /// Seed a Bin running balance (item x warehouse) for the valuation core.
-async fn seed_bin(pool: &PgPool, company: Uuid, item: Uuid, wh: Uuid, qty: &str, rate: &str) {
+async fn seed_bin(pool: &PgPool, item: Uuid, wh: Uuid, qty: &str, rate: &str) {
     sqlx::query(
         r#"INSERT INTO inventory.bins
-             (id, company_id, item_id, warehouse_id, actual_qty, reserved_qty, valuation_rate, stock_value)
-           VALUES ($1,$2,$3,$4,$5,0,$6,$7)"#,
+             (id, item_id, warehouse_id, actual_qty, reserved_qty, valuation_rate, stock_value)
+           VALUES ($1,$2,$3,$4,0,$5,$6)"#,
     )
-    .bind(Uuid::new_v4()).bind(company).bind(item).bind(wh)
+    .bind(Uuid::new_v4()).bind(item).bind(wh)
     .bind(d(qty)).bind(d(rate)).bind(d(qty) * d(rate))
     .execute(pool).await.unwrap();
 }
 
-async fn on_hand(pool: &PgPool, company: Uuid, item: Uuid, location: Uuid) -> Decimal {
+async fn on_hand(pool: &PgPool, item: Uuid, location: Uuid) -> Decimal {
     sqlx::query_scalar(
         r#"SELECT COALESCE(SUM(quantity),0) FROM inventory.stock_quants
-           WHERE company_id=$1 AND item_id=$2 AND location_id=$3 AND (metadata->>'deleted_at') IS NULL"#,
+           WHERE item_id=$1 AND location_id=$2 AND (metadata->>'deleted_at') IS NULL"#,
     )
-    .bind(company).bind(item).bind(location)
+    .bind(item).bind(location)
     .fetch_one(pool).await.unwrap()
 }
 
-async fn count_inventory_moves(pool: &PgPool, company: Uuid, item: Uuid) -> i64 {
+async fn count_inventory_moves(pool: &PgPool, item: Uuid) -> i64 {
     sqlx::query_scalar(
         r#"SELECT COUNT(*) FROM inventory.stock_moves
-           WHERE company_id=$1 AND item_id=$2 AND is_inventory"#,
+           WHERE item_id=$1 AND is_inventory"#,
     )
-    .bind(company).bind(item)
+    .bind(item)
     .fetch_one(pool).await.unwrap()
 }
 
-fn picking(name: &str, company: Uuid, op: Uuid, src: Uuid, dst: Uuid, lines: Vec<PickingLine>) -> NewPicking {
+fn picking(name: &str, op: Uuid, src: Uuid, dst: Uuid, lines: Vec<PickingLine>) -> NewPicking {
     NewPicking {
-        name: name.into(), company_id: company, picking_type_id: op,
+        name: name.into(), picking_type_id: op,
         location_id: src, location_dest_id: dst, partner_id: None,
         move_type: "direct".into(), origin: None, lines,
     }
@@ -157,14 +157,13 @@ fn picking(name: &str, company: Uuid, op: Uuid, src: Uuid, dst: Uuid, lines: Vec
 async fn picking_projects_confirm_assign_and_done() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let supplier = loc(&pool, company, "supplier", None).await;
-    let stock = loc(&pool, company, "internal", Some(wh)).await;
-    let op = op_type(&pool, company, "incoming", "at_confirm", supplier, stock).await;
+    let wh = warehouse(&svc).await;
+    let supplier = loc(&pool, "supplier", None).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
+    let op = op_type(&pool, "incoming", "at_confirm", supplier, stock).await;
     let item = Uuid::new_v4();
 
-    let created = svc.create_picking(picking(&uq("PICK"), company, op, supplier, stock, vec![
+    let created = svc.create_picking(picking(&uq("PICK"), op, supplier, stock, vec![
         PickingLine { item_id: item, demand_qty: d("10"), price_unit: d("2") },
     ])).await.unwrap();
     assert_eq!(created.move_ids.len(), 1);
@@ -172,13 +171,13 @@ async fn picking_projects_confirm_assign_and_done() {
     // Inbound move: assign mints the execution line unconditionally → the member move (and
     // so the projection) reads `assigned`. A READ of the stored compute, never an assertion
     // this test could have written.
-    let (header, moves) = svc.fetch_picking(company, created.transfer_id).await.unwrap();
+    let (header, moves) = svc.fetch_picking(created.transfer_id).await.unwrap();
     assert_eq!(header.state, "assigned");
     assert_eq!(moves[0].state, "assigned");
 
     // button_validate: _action_done over the transfer's moves — the only validate verb.
     let sink = counting_sink();
-    let validated = svc.validate_picking(company, created.transfer_id, &adj_gl(), &*sink).await.unwrap();
+    let validated = svc.validate_picking(created.transfer_id, &adj_gl(), &*sink).await.unwrap();
     assert_eq!(validated.projected_state, "done");
     assert_eq!(validated.validated_moves.len(), 1);
     assert!(validated.validated_moves[0].gl_posted);
@@ -186,40 +185,48 @@ async fn picking_projects_confirm_assign_and_done() {
 
     // The physical truth: the destination quant landed the demand; the projection was never
     // a second writer of it.
-    assert_eq!(on_hand(&pool, company, item, stock).await, d("10"));
+    assert_eq!(on_hand(&pool, item, stock).await, d("10"));
     assert_eq!(sink.posts.load(Ordering::SeqCst), 1);
 
     // Idempotent re-validate: every member move is done — nothing re-runs, no second GL.
-    let again = svc.validate_picking(company, created.transfer_id, &adj_gl(), &*sink).await.unwrap();
+    let again = svc.validate_picking(created.transfer_id, &adj_gl(), &*sink).await.unwrap();
     assert_eq!(again.validated_moves.len(), 0);
     assert_eq!(again.projected_state, "done");
     assert_eq!(sink.posts.load(Ordering::SeqCst), 1);
 }
 
-/// R3: the picking name is unique per company — the typed duplicate error.
+/// R3 posture (ADR-0029): the picking-name unique's guarantee moved to the composing
+/// service's decorator (the org-leading (org unit, name) re-declaration) — the module
+/// ships no name unique of its own, so an undecorated module database cannot refuse a
+/// duplicate (the typed `DuplicateNumber` error fires only when the decorator's unique
+/// rejects). Pin that posture: duplicates are admitted undecorated and `transfers`
+/// carries no non-primary-key unique.
 #[tokio::test]
-async fn r3_picking_name_unique_per_company() {
+async fn r3_picking_name_unique() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let supplier = loc(&pool, company, "supplier", None).await;
-    let stock = loc(&pool, company, "internal", Some(wh)).await;
-    let op = op_type(&pool, company, "incoming", "manual", supplier, stock).await;
+    let wh = warehouse(&svc).await;
+    let supplier = loc(&pool, "supplier", None).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
+    let op = op_type(&pool, "incoming", "manual", supplier, stock).await;
     let name = uq("DUP");
 
     let line = || vec![PickingLine { item_id: Uuid::new_v4(), demand_qty: d("1"), price_unit: d("1") }];
-    svc.create_picking(picking(&name, company, op, supplier, stock, line())).await.unwrap();
-    let err = svc.create_picking(picking(&name, company, op, supplier, stock, line())).await.unwrap_err();
-    assert!(matches!(err, InventoryError::DuplicateNumber(_)), "got {err:?}");
-
-    // A different company may reuse the name (uniqueness is per company).
-    let other = Uuid::new_v4();
-    let wh2 = warehouse(&svc, other).await;
-    let stock2 = loc(&pool, other, "internal", Some(wh2)).await;
-    let supplier2 = loc(&pool, other, "supplier", None).await;
-    let op2 = op_type(&pool, other, "incoming", "manual", supplier2, stock2).await;
-    svc.create_picking(picking(&name, other, op2, supplier2, stock2, line())).await.unwrap();
+    let first = svc.create_picking(picking(&name, op, supplier, stock, line())).await.unwrap();
+    let second = svc.create_picking(picking(&name, op, supplier, stock, line())).await.unwrap();
+    assert_ne!(first.transfer_id, second.transfer_id, "undecorated, the module admits the duplicate");
+    let uniques: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM pg_indexes WHERE schemaname = 'inventory' \
+          AND tablename = 'transfers' AND indexdef ILIKE 'CREATE UNIQUE%' \
+          AND indexname NOT LIKE '%\\_pkey'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        uniques, 0,
+        "the module ships no transfers unique — the decorator owns the (org unit, name) slot"
+    );
 }
 
 /// Mixed member-move states aggregate to the LEAST-advanced live state (the projection
@@ -229,33 +236,32 @@ async fn r3_picking_name_unique_per_company() {
 async fn projection_aggregates_and_reprojects_on_cancel() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let supplier = loc(&pool, company, "supplier", None).await;
-    let stock = loc(&pool, company, "internal", Some(wh)).await;
+    let wh = warehouse(&svc).await;
+    let supplier = loc(&pool, "supplier", None).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
     // manual reservation: the moves stay `confirmed` after mint (the aggregate under test).
-    let op = op_type(&pool, company, "incoming", "manual", supplier, stock).await;
+    let op = op_type(&pool, "incoming", "manual", supplier, stock).await;
     let a = Uuid::new_v4();
     let b = Uuid::new_v4();
 
-    let created = svc.create_picking(picking(&uq("MIX"), company, op, supplier, stock, vec![
+    let created = svc.create_picking(picking(&uq("MIX"), op, supplier, stock, vec![
         PickingLine { item_id: a, demand_qty: d("2"), price_unit: d("1") },
         PickingLine { item_id: b, demand_qty: d("3"), price_unit: d("1") },
     ])).await.unwrap();
-    let (header, moves) = svc.fetch_picking(company, created.transfer_id).await.unwrap();
+    let (header, moves) = svc.fetch_picking(created.transfer_id).await.unwrap();
     assert_eq!(header.state, "confirmed");
     assert!(moves.iter().all(|m| m.state == "confirmed"));
 
     // Cancel ONE member move through the move engine — the transfer reprojects (min-rank
     // over live moves: one cancelled, one confirmed → still `confirmed`, never `cancel`).
-    svc.action_cancel(company, moves[0].id).await.unwrap();
-    let (header, moves) = svc.fetch_picking(company, created.transfer_id).await.unwrap();
+    svc.action_cancel(moves[0].id).await.unwrap();
+    let (header, moves) = svc.fetch_picking(created.transfer_id).await.unwrap();
     assert_eq!(header.state, "confirmed");
     assert_eq!(moves.iter().filter(|m| m.state == "cancel").count(), 1);
 
     // Cancel the remaining member: all-cancelled → the projection reads `cancel`.
-    svc.action_cancel(company, moves[1].id).await.unwrap();
-    let (header, _) = svc.fetch_picking(company, created.transfer_id).await.unwrap();
+    svc.action_cancel(moves[1].id).await.unwrap();
+    let (header, _) = svc.fetch_picking(created.transfer_id).await.unwrap();
     assert_eq!(header.state, "cancel");
 }
 
@@ -265,27 +271,26 @@ async fn projection_aggregates_and_reprojects_on_cancel() {
 async fn partial_validate_keeps_projection_open_via_backorder() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let stock = loc(&pool, company, "internal", Some(wh)).await;
-    let customer = loc(&pool, company, "customer", None).await;
-    let op = op_type(&pool, company, "outgoing", "manual", stock, customer).await;
+    let wh = warehouse(&svc).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
+    let customer = loc(&pool, "customer", None).await;
+    let op = op_type(&pool, "outgoing", "manual", stock, customer).await;
     let item = Uuid::new_v4();
-    seed_quant(&pool, company, item, stock, "4").await;
-    seed_bin(&pool, company, item, wh, "4", "2").await;
+    seed_quant(&pool, item, stock, "4").await;
+    seed_bin(&pool, item, wh, "4", "2").await;
 
-    let created = svc.create_picking(picking(&uq("PART"), company, op, stock, customer, vec![
+    let created = svc.create_picking(picking(&uq("PART"), op, stock, customer, vec![
         PickingLine { item_id: item, demand_qty: d("10"), price_unit: d("0") },
     ])).await.unwrap();
     // manual posture → confirm only; the move reads `confirmed` (nothing reserved yet).
-    let (header, _) = svc.fetch_picking(company, created.transfer_id).await.unwrap();
+    let (header, _) = svc.fetch_picking(created.transfer_id).await.unwrap();
     assert_eq!(header.state, "confirmed");
 
     let sink = counting_sink();
-    let validated = svc.validate_picking(company, created.transfer_id, &adj_gl(), &*sink).await.unwrap();
+    let validated = svc.validate_picking(created.transfer_id, &adj_gl(), &*sink).await.unwrap();
     // Only 4 were on hand: the prepare pass reserved them; _action_done drew exactly that.
     assert_eq!(validated.validated_moves[0].done_qty, d("4"));
-    let (header, moves) = svc.fetch_picking(company, created.transfer_id).await.unwrap();
+    let (header, moves) = svc.fetch_picking(created.transfer_id).await.unwrap();
     // One done member + the minted backorder (confirmed, unreserved — nothing is left on the
     // source to reserve): the projection stays OPEN — the least-advanced live move keeps the
     // transfer below `done` (and below `assigned`).
@@ -295,8 +300,8 @@ async fn partial_validate_keeps_projection_open_via_backorder() {
     assert!(moves.iter().any(|m| m.state == "confirmed"),
         "the backorder is minted confirmed (reserve-on-mint found nothing free to hold)");
     // Stock truth: the source quant holds none of the drawn 4; the customer location got 4.
-    assert_eq!(on_hand(&pool, company, item, stock).await, d("0"));
-    assert_eq!(on_hand(&pool, company, item, customer).await, d("4"));
+    assert_eq!(on_hand(&pool, item, stock).await, d("0"));
+    assert_eq!(on_hand(&pool, item, customer).await, d("4"));
 }
 
 // ── the ONE adjustment door (spec §5.2) ──────────────────────────────────────
@@ -308,14 +313,13 @@ async fn partial_validate_keeps_projection_open_via_backorder() {
 async fn stage_and_apply_count_up_mints_is_inventory_move() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let stock = loc(&pool, company, "internal", Some(wh)).await;
+    let wh = warehouse(&svc).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
     let item = Uuid::new_v4();
-    seed_quant(&pool, company, item, stock, "10").await;
-    seed_bin(&pool, company, item, wh, "10", "2").await;
+    seed_quant(&pool, item, stock, "10").await;
+    seed_bin(&pool, item, wh, "10", "2").await;
 
-    let staged = svc.stage_quant_count(company, item, stock, d("15")).await.unwrap();
+    let staged = svc.stage_quant_count(item, stock, d("15")).await.unwrap();
     assert_eq!(staged.on_hand_qty, d("10"));
     assert_eq!(staged.diff_qty, d("5"));
 
@@ -330,17 +334,16 @@ async fn stage_and_apply_count_up_mints_is_inventory_move() {
     assert!(row.get::<bool, _>("inventory_quantity_set"));
 
     let sink = counting_sink();
-    let applied = svc.apply_inventory(
-        company, QuantSelector::ItemLocation { item_id: item, location_id: stock },
+    let applied = svc.apply_inventory(QuantSelector::ItemLocation { item_id: item, location_id: stock },
         &adj_gl(), &*sink,
     ).await.unwrap();
     assert!(applied.applied);
     assert!(applied.move_id.is_some());
     assert_eq!(applied.diff_qty, d("5"));
-    assert_eq!(on_hand(&pool, company, item, stock).await, d("15"));
+    assert_eq!(on_hand(&pool, item, stock).await, d("15"));
 
     // The move is the ONE writer: a done is_inventory move exists; the staging is consumed.
-    assert_eq!(count_inventory_moves(&pool, company, item).await, 1);
+    assert_eq!(count_inventory_moves(&pool, item).await, 1);
     let mv_state: String = sqlx::query_scalar(
         "SELECT state::text FROM inventory.stock_moves WHERE id=$1",
     )
@@ -363,21 +366,19 @@ async fn stage_and_apply_count_up_mints_is_inventory_move() {
 async fn apply_count_down_reverses_leg() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let stock = loc(&pool, company, "internal", Some(wh)).await;
+    let wh = warehouse(&svc).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
     let item = Uuid::new_v4();
-    seed_quant(&pool, company, item, stock, "9").await;
-    seed_bin(&pool, company, item, wh, "9", "3").await;
+    seed_quant(&pool, item, stock, "9").await;
+    seed_bin(&pool, item, wh, "9", "3").await;
 
-    svc.stage_quant_count(company, item, stock, d("6")).await.unwrap();
+    svc.stage_quant_count(item, stock, d("6")).await.unwrap();
     let sink = counting_sink();
-    let applied = svc.apply_inventory(
-        company, QuantSelector::ItemLocation { item_id: item, location_id: stock },
+    let applied = svc.apply_inventory(QuantSelector::ItemLocation { item_id: item, location_id: stock },
         &adj_gl(), &*sink,
     ).await.unwrap();
     assert_eq!(applied.diff_qty, d("-3"));
-    assert_eq!(on_hand(&pool, company, item, stock).await, d("6"));
+    assert_eq!(on_hand(&pool, item, stock).await, d("6"));
     assert_eq!(sink.posts.load(Ordering::SeqCst), 1);
 }
 
@@ -387,24 +388,23 @@ async fn apply_count_down_reverses_leg() {
 async fn reapply_is_a_noop() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let stock = loc(&pool, company, "internal", Some(wh)).await;
+    let wh = warehouse(&svc).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
     let item = Uuid::new_v4();
-    seed_quant(&pool, company, item, stock, "8").await;
-    seed_bin(&pool, company, item, wh, "8", "2").await;
+    seed_quant(&pool, item, stock, "8").await;
+    seed_bin(&pool, item, wh, "8", "2").await;
 
-    svc.stage_quant_count(company, item, stock, d("12")).await.unwrap();
+    svc.stage_quant_count(item, stock, d("12")).await.unwrap();
     let sink = counting_sink();
     let selector = QuantSelector::ItemLocation { item_id: item, location_id: stock };
-    let first = svc.apply_inventory(company, selector, &adj_gl(), &*sink).await.unwrap();
+    let first = svc.apply_inventory(selector, &adj_gl(), &*sink).await.unwrap();
     assert!(first.applied);
-    let second = svc.apply_inventory(company, selector, &adj_gl(), &*sink).await.unwrap();
+    let second = svc.apply_inventory(selector, &adj_gl(), &*sink).await.unwrap();
     assert!(!second.applied);
     assert!(second.move_id.is_none());
-    assert_eq!(count_inventory_moves(&pool, company, item).await, 1);
+    assert_eq!(count_inventory_moves(&pool, item).await, 1);
     assert_eq!(sink.posts.load(Ordering::SeqCst), 1);
-    assert_eq!(on_hand(&pool, company, item, stock).await, d("12"));
+    assert_eq!(on_hand(&pool, item, stock).await, d("12"));
 }
 
 /// Outdated count (spec `is_outdated`): a move landing between the count and the apply is
@@ -413,36 +413,33 @@ async fn reapply_is_a_noop() {
 async fn move_between_count_and_apply_is_a_loud_conflict() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let stock = loc(&pool, company, "internal", Some(wh)).await;
+    let wh = warehouse(&svc).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
     let item = Uuid::new_v4();
-    seed_quant(&pool, company, item, stock, "10").await;
-    seed_bin(&pool, company, item, wh, "10", "2").await;
+    seed_quant(&pool, item, stock, "10").await;
+    seed_bin(&pool, item, wh, "10", "2").await;
 
-    svc.stage_quant_count(company, item, stock, d("15")).await.unwrap();
+    svc.stage_quant_count(item, stock, d("15")).await.unwrap();
     // A move lands between the count and the apply (simulated at the quant surface — the
     // observable invariant is the on-hand moved after the count staged its diff).
-    sqlx::query("UPDATE inventory.stock_quants SET quantity = quantity + 3 WHERE company_id=$1 AND item_id=$2 AND location_id=$3")
-        .bind(company).bind(item).bind(stock)
+    sqlx::query("UPDATE inventory.stock_quants SET quantity = quantity + 3 WHERE item_id=$1 AND location_id=$2")
+        .bind(item).bind(stock)
         .execute(&pool).await.unwrap();
 
     let sink = counting_sink();
-    let err = svc.apply_inventory(
-        company, QuantSelector::ItemLocation { item_id: item, location_id: stock },
+    let err = svc.apply_inventory(QuantSelector::ItemLocation { item_id: item, location_id: stock },
         &adj_gl(), &*sink,
     ).await.unwrap_err();
     assert!(matches!(err, InventoryError::OutdatedCount { .. }), "got {err:?}");
     assert_eq!(sink.posts.load(Ordering::SeqCst), 0);
-    assert_eq!(count_inventory_moves(&pool, company, item).await, 0);
+    assert_eq!(count_inventory_moves(&pool, item).await, 0);
 
     // Re-staging against the new on-hand (the count is a level) applies cleanly.
-    svc.stage_quant_count(company, item, stock, d("15")).await.unwrap();
-    svc.apply_inventory(
-        company, QuantSelector::ItemLocation { item_id: item, location_id: stock },
+    svc.stage_quant_count(item, stock, d("15")).await.unwrap();
+    svc.apply_inventory(QuantSelector::ItemLocation { item_id: item, location_id: stock },
         &adj_gl(), &*sink,
     ).await.unwrap();
-    assert_eq!(on_hand(&pool, company, item, stock).await, d("15"));
+    assert_eq!(on_hand(&pool, item, stock).await, d("15"));
 }
 
 /// R24 (`no_count_while_reserved`): a quant holding reservations cannot be staged or
@@ -451,20 +448,19 @@ async fn move_between_count_and_apply_is_a_loud_conflict() {
 async fn reserved_quant_refuses_counts() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let stock = loc(&pool, company, "internal", Some(wh)).await;
+    let wh = warehouse(&svc).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
     let item = Uuid::new_v4();
     let quant = Uuid::new_v4();
     sqlx::query(
         r#"INSERT INTO inventory.stock_quants
-             (id, item_id, location_id, quantity, reserved_quantity, available_quantity, company_id)
-           VALUES ($1,$2,$3,10,2,8,$4)"#,
+             (id, item_id, location_id, quantity, reserved_quantity, available_quantity)
+           VALUES ($1,$2,$3,10,2,8)"#,
     )
-    .bind(quant).bind(item).bind(stock).bind(company)
+    .bind(quant).bind(item).bind(stock)
     .execute(&pool).await.unwrap();
 
-    let err = svc.stage_quant_count(company, item, stock, d("10")).await.unwrap_err();
+    let err = svc.stage_quant_count(item, stock, d("10")).await.unwrap_err();
     assert!(matches!(err, InventoryError::CountReserved { .. }), "got {err:?}");
 
     // An already-staged count on a reserved quant is refused at the apply door too.
@@ -476,7 +472,7 @@ async fn reserved_quant_refuses_counts() {
     .bind(quant)
     .execute(&pool).await.unwrap();
     let sink = counting_sink();
-    let err = svc.apply_inventory(company, QuantSelector::ById(quant), &adj_gl(), &*sink).await.unwrap_err();
+    let err = svc.apply_inventory(QuantSelector::ById(quant), &adj_gl(), &*sink).await.unwrap_err();
     assert!(matches!(err, InventoryError::CountReserved { .. }), "got {err:?}");
 }
 
@@ -487,21 +483,19 @@ async fn reserved_quant_refuses_counts() {
 async fn reconciliation_converges_onto_the_door() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
+    let wh = warehouse(&svc).await;
     // The warehouse's stock location (what the voucher door resolves to) carries the stock.
-    let stock = loc(&pool, company, "internal", Some(wh)).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
     let a = Uuid::new_v4();
     let b = Uuid::new_v4();
-    seed_quant(&pool, company, a, stock, "10").await;
-    seed_bin(&pool, company, a, wh, "10", "2").await;   // 20 value
-    seed_quant(&pool, company, b, stock, "6").await;
-    seed_bin(&pool, company, b, wh, "6", "3").await;    // 18 value
+    seed_quant(&pool, a, stock, "10").await;
+    seed_bin(&pool, a, wh, "10", "2").await;   // 20 value
+    seed_quant(&pool, b, stock, "6").await;
+    seed_bin(&pool, b, wh, "6", "3").await;    // 18 value
 
     let sink = counting_sink();
     let id = svc.submit_reconciliation(NewReconciliation {
         recon_number: uq("REC"),
-        company_id: company,
         warehouse_id: wh,
         posting_date: chrono::Utc::now().date_naive(),
         currency: "IDR".into(),
@@ -514,10 +508,10 @@ async fn reconciliation_converges_onto_the_door() {
     }, &*sink).await.unwrap();
 
     // Physical: both quants hold their counts; one is_inventory move per non-zero diff.
-    assert_eq!(on_hand(&pool, company, a, stock).await, d("12"));
-    assert_eq!(on_hand(&pool, company, b, stock).await, d("5"));
-    assert_eq!(count_inventory_moves(&pool, company, a).await, 1);
-    assert_eq!(count_inventory_moves(&pool, company, b).await, 1);
+    assert_eq!(on_hand(&pool, a, stock).await, d("12"));
+    assert_eq!(on_hand(&pool, b, stock).await, d("5"));
+    assert_eq!(count_inventory_moves(&pool, a).await, 1);
+    assert_eq!(count_inventory_moves(&pool, b).await, 1);
 
     // Voucher: recorded with the net difference (4.00 − 3.00) and its items' diffs.
     let row = sqlx::query(
@@ -532,12 +526,11 @@ async fn reconciliation_converges_onto_the_door() {
     assert_eq!(sink.posts.load(Ordering::SeqCst), 1);
 
     // A second apply of the same counts mints nothing (the gate is consumed per line).
-    svc.stage_quant_count(company, a, stock, d("12")).await.unwrap();
-    svc.apply_inventory(
-        company, QuantSelector::ItemLocation { item_id: a, location_id: stock },
+    svc.stage_quant_count(a, stock, d("12")).await.unwrap();
+    svc.apply_inventory(QuantSelector::ItemLocation { item_id: a, location_id: stock },
         &MoveGlDirective::default(), &*counting_sink(),
     ).await.unwrap();
-    assert_eq!(count_inventory_moves(&pool, company, a).await, 1);
+    assert_eq!(count_inventory_moves(&pool, a).await, 1);
 }
 
 /// A count that matches the on-hand is a zero-diff recon: no GL envelope, `not_applicable`.
@@ -545,17 +538,15 @@ async fn reconciliation_converges_onto_the_door() {
 async fn zero_diff_recon_posts_no_gl() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let stock = loc(&pool, company, "internal", Some(wh)).await;
+    let wh = warehouse(&svc).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
     let item = Uuid::new_v4();
-    seed_quant(&pool, company, item, stock, "7").await;
-    seed_bin(&pool, company, item, wh, "7", "2").await;
+    seed_quant(&pool, item, stock, "7").await;
+    seed_bin(&pool, item, wh, "7", "2").await;
 
     let sink = counting_sink();
     let id = svc.submit_reconciliation(NewReconciliation {
         recon_number: uq("REC0"),
-        company_id: company,
         warehouse_id: wh,
         posting_date: chrono::Utc::now().date_naive(),
         currency: "IDR".into(),
@@ -564,8 +555,8 @@ async fn zero_diff_recon_posts_no_gl() {
         lines: vec![ReconLine { item_id: item, counted_qty: d("7"), counted_rate: d("0") }],
     }, &*sink).await.unwrap();
 
-    assert_eq!(on_hand(&pool, company, item, stock).await, d("7"));
-    assert_eq!(count_inventory_moves(&pool, company, item).await, 0); // zero diff mints nothing
+    assert_eq!(on_hand(&pool, item, stock).await, d("7"));
+    assert_eq!(count_inventory_moves(&pool, item).await, 0); // zero diff mints nothing
     assert_eq!(sink.posts.load(Ordering::SeqCst), 0);
     let ps: String = sqlx::query_scalar(
         "SELECT posting_state::text FROM inventory.stock_reconciliations WHERE id=$1",
@@ -580,13 +571,11 @@ async fn zero_diff_recon_posts_no_gl() {
 async fn counted_rate_is_refused() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
+    let wh = warehouse(&svc).await;
     let item = Uuid::new_v4();
 
     let err = svc.submit_reconciliation(NewReconciliation {
         recon_number: uq("RECR"),
-        company_id: company,
         warehouse_id: wh,
         posting_date: chrono::Utc::now().date_naive(),
         currency: "IDR".into(),
@@ -610,23 +599,22 @@ async fn counted_rate_is_refused() {
 async fn projection_rederives_after_every_move_transition() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let stock = loc(&pool, company, "internal", Some(wh)).await;
-    let customer = loc(&pool, company, "customer", None).await;
-    let supplier = loc(&pool, company, "supplier", None).await;
-    let op = op_type(&pool, company, "outgoing", "manual", stock, customer).await;
+    let wh = warehouse(&svc).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
+    let customer = loc(&pool, "customer", None).await;
+    let supplier = loc(&pool, "supplier", None).await;
+    let op = op_type(&pool, "outgoing", "manual", stock, customer).await;
     let item = Uuid::new_v4();
-    seed_quant(&pool, company, item, stock, "4").await;
-    seed_bin(&pool, company, item, wh, "4", "2").await;
+    seed_quant(&pool, item, stock, "4").await;
+    seed_bin(&pool, item, wh, "4", "2").await;
     let sink = counting_sink();
     let probe = {
         let svc = &svc;
-        move |tid: Uuid| async move { svc.fetch_picking(company, tid).await.unwrap() }
+        move |tid: Uuid| async move { svc.fetch_picking(tid).await.unwrap() }
     };
 
     // Mint + auto-confirm: the projection derives `confirmed` from the member move.
-    let created = svc.create_picking(picking(&uq("WALK"), company, op, stock, customer, vec![
+    let created = svc.create_picking(picking(&uq("WALK"), op, stock, customer, vec![
         PickingLine { item_id: item, demand_qty: d("6"), price_unit: d("0") },
     ])).await.unwrap();
     let tid = created.transfer_id;
@@ -637,7 +625,7 @@ async fn projection_rederives_after_every_move_transition() {
     // minted CONFIRMED (the minting policy confirms it; reserve-on-mint finds nothing free —
     // the source is drained) — the projection re-derives DOWNWARD to the least-advanced live
     // move (below `done`, which the lone done member would have projected).
-    let validated = svc.validate_picking(company, tid, &adj_gl(), &*sink).await.unwrap();
+    let validated = svc.validate_picking(tid, &adj_gl(), &*sink).await.unwrap();
     assert_eq!(validated.validated_moves[0].done_qty, d("4"));
     let (h, moves) = probe(tid).await;
     assert_eq!(h.state, "confirmed", "open backorder re-derives the projection down");
@@ -647,17 +635,17 @@ async fn projection_rederives_after_every_move_transition() {
     // Land the remaining supply, then assign the (already-confirmed) backorder member.
     sqlx::query(
         "UPDATE inventory.stock_quants SET quantity = quantity + 2, available_quantity = available_quantity + 2 \
-         WHERE company_id=$1 AND item_id=$2 AND location_id=$3",
-    ).bind(company).bind(item).bind(stock).execute(&pool).await.unwrap();
+         WHERE item_id=$1 AND location_id=$2",
+    ).bind(item).bind(stock).execute(&pool).await.unwrap();
     sqlx::query(
         "UPDATE inventory.bins SET actual_qty = actual_qty + 2, stock_value = stock_value + 4 \
-         WHERE company_id=$1 AND item_id=$2 AND warehouse_id=$3",
-    ).bind(company).bind(item).bind(wh).execute(&pool).await.unwrap();
+         WHERE item_id=$1 AND warehouse_id=$2",
+    ).bind(item).bind(wh).execute(&pool).await.unwrap();
 
     let (h, _) = probe(tid).await;
     assert_eq!(h.state, "confirmed", "probe with the confirmed backorder live");
 
-    let a = svc.action_assign(company, backorder).await.unwrap();
+    let a = svc.action_assign(backorder).await.unwrap();
     assert_eq!(a.state, "assigned");
     let (h, _) = probe(tid).await;
     assert_eq!(h.state, "assigned", "probe after backorder assign");
@@ -665,7 +653,7 @@ async fn projection_rederives_after_every_move_transition() {
     // A raw draft member chained onto the backorder (pick/pack shape): the mint itself
     // re-derives the projection back DOWN to `draft`.
     let mut chained = NewStockMove {
-        name: uq("CHAIN"), company_id: company, item_id: item, demand_qty: d("1"),
+        name: uq("CHAIN"), item_id: item, demand_qty: d("1"),
         price_unit: Decimal::ZERO, procure_method: "make_to_stock".into(), picking_id: Some(tid),
         origin: None, location_id: supplier, location_dest_id: customer, partner_id: None,
         warehouse_id: None, orderpoint_id: None, move_orig_ids: vec![backorder],
@@ -677,24 +665,24 @@ async fn projection_rederives_after_every_move_transition() {
 
     // Confirm the chained member: its parent is not done, so it parks at `waiting` and the
     // projection follows it there.
-    let to = svc.action_confirm(company, child).await.unwrap();
+    let to = svc.action_confirm(child).await.unwrap();
     assert_eq!(to, "waiting");
     let (h, _) = probe(tid).await;
     assert_eq!(h.state, "waiting", "probe after the chained confirm parks at waiting");
 
     // Parent done: the waiting child is RELEASED to confirmed by the chain propagation and
     // the projection re-derives off the released child (the only live non-done member).
-    svc.action_done(company, backorder, BackorderPolicy::Never, &adj_gl(), &*sink).await.unwrap();
+    svc.action_done(backorder, BackorderPolicy::Never, &adj_gl(), &*sink).await.unwrap();
     let (h, moves) = probe(tid).await;
     assert_eq!(h.state, "confirmed", "waiting-gate release re-derives the projection");
     assert!(moves.iter().any(|m| m.id == child && m.state == "confirmed"));
 
     // Assign the child (virtual supplier source — supply is unconditionally available),
     // then validate it: every member is done, the projection reads `done` and date_done lands.
-    svc.action_assign(company, child).await.unwrap();
+    svc.action_assign(child).await.unwrap();
     let (h, _) = probe(tid).await;
     assert_eq!(h.state, "assigned", "probe after the child assign");
-    svc.action_done(company, child, BackorderPolicy::Never, &adj_gl(), &*sink).await.unwrap();
+    svc.action_done(child, BackorderPolicy::Never, &adj_gl(), &*sink).await.unwrap();
     let (h, _) = probe(tid).await;
     assert_eq!(h.state, "done", "probe after the last member lands");
     assert!(h.date_done.is_some(), "date_done is stamped by the projection");
@@ -706,7 +694,7 @@ async fn projection_rederives_after_every_move_transition() {
     let stray = svc.create_move(chained).await.unwrap();
     let (h, _) = probe(tid).await;
     assert_eq!(h.state, "draft", "the stray draft re-derives the projection down");
-    svc.action_cancel(company, stray).await.unwrap();
+    svc.action_cancel(stray).await.unwrap();
     let (h, moves) = probe(tid).await;
     assert_eq!(h.state, "done", "the cancelled member drops out of the aggregation");
     assert!(moves.iter().all(|m| m.state == "done" || m.state == "cancel"));

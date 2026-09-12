@@ -22,10 +22,10 @@
 # membership write. The entity is mounted read_only over HTTP so no generic
 # write path can hand-set the projection.
 #
-# Company fence (ADR-0014): a batch is a TRANSACTION — strict. company_id is
-# NOT NULL and every member must carry the same company (the add verb checks;
-# a DB trigger backstops — the same `enforcement: both` pair the R11 rule
-# guard uses).
+# Tenancy: none, by design (ADR-0029). The module is tenant-agnostic; the
+# composing service's decorator owns org scoping. A batch and every member
+# anchor at one org unit (the decorator's fill stamps the acting unit); the
+# same-unit membership check the add verb performs rides the org axis.
 # =============================================================================
 
 models:
@@ -46,7 +46,7 @@ models:
       name:
         type: string
         attributes: ["@required", "@max(40)", "@default(\"/\")"]
-        description: "Reference (sequence-filled; unique per company — the R3 posture the transfer carries)"
+        description: "Reference (sequence-filled; unique per org unit — the R3 posture the transfer carries)"
 
       note:
         type: string?
@@ -79,10 +79,6 @@ models:
         attributes: ["@default(false)"]
         description: "True once the batch has ever grouped a picking — the SB-1 discriminator: a batch that never grouped anything stays draft when empty, a batch emptied after grouping auto-cancels (set only by the membership write path, never a free write)"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "STRICT transaction fence; every member picking carries the same company # logical FK to organization.Company.id"
 
       metadata:
         type: Metadata
@@ -97,17 +93,11 @@ models:
         inverse: batch
 
     indexes:
-      - type: unique
-        fields: [name, company_id]
-        where: "deleted_at IS NULL"
-        description: "Batch reference unique per company (the R3 posture)"
       - type: index
         fields: [state]
         description: "The projected value is still indexed (hot filter)"
       - type: index
         fields: [user_id]
-      - type: index
-        fields: [company_id]
 
 # =============================================================================
 # Enums

@@ -45,7 +45,6 @@ impl StockLedgerEntryRepository {
 /// error, and `status` is a literal 'active' (the SLE is append-only — a correction is a new
 /// entry, never an edit).
 pub struct NewSleRow<'a> {
-    pub company_id: Uuid,
     pub item_id: Uuid,
     pub warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
@@ -70,8 +69,8 @@ impl StockLedgerEntryRepository {
     /// Append one immutable SLE.
     ///
     /// Takes the CALLER'S connection: the SLE and the Bin balance it describes must commit as one
-    /// unit, on the transaction holding the bin's `FOR UPDATE`. The caller has already bound the
-    /// company on it — don't re-bind here.
+    /// unit, on the transaction holding the bin's `FOR UPDATE`. The caller has already relayed the
+    /// ambient org scope onto it — don't re-bind here.
     pub async fn insert_sle(
         &self,
         conn: &mut sqlx::PgConnection,
@@ -79,12 +78,12 @@ impl StockLedgerEntryRepository {
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"INSERT INTO inventory.stock_ledger_entries
-                (id, company_id, item_id, warehouse_id, posting_date, actual_qty, qty_after_txn,
+                (id, item_id, warehouse_id, posting_date, actual_qty, qty_after_txn,
                  incoming_rate, valuation_rate, stock_value, stock_value_difference, voucher_type,
                  voucher_id, voucher_no, sle_no, status)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::voucher_type,$13,$14,$15,'active')"#,
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::voucher_type,$12,$13,$14,'active')"#,
         )
-        .bind(Uuid::new_v4()).bind(e.company_id).bind(e.item_id).bind(e.warehouse_id).bind(e.posting_date)
+        .bind(Uuid::new_v4()).bind(e.item_id).bind(e.warehouse_id).bind(e.posting_date)
         .bind(e.actual_qty).bind(e.qty_after_txn).bind(e.incoming_rate).bind(e.valuation_rate)
         .bind(e.stock_value).bind(e.stock_value_difference).bind(e.voucher_type).bind(e.voucher_id)
         .bind(e.voucher_no).bind(e.sle_no)
@@ -122,7 +121,6 @@ impl StockLedgerEntryRepository {
     pub async fn sum_move_value(
         &self,
         pool: &PgPool,
-        company_id: Uuid,
         move_name: &str,
     ) -> Result<Decimal, sqlx::Error> {
         let row = backbone_orm::company_scope::fetch_one_row_scoped(
@@ -130,10 +128,9 @@ impl StockLedgerEntryRepository {
             sqlx::query(
                 r#"SELECT COALESCE(-SUM(stock_value_difference), 0) AS carried
                    FROM inventory.stock_ledger_entries
-                   WHERE company_id=$1 AND voucher_no=$2 AND voucher_type='stock_entry'
+                   WHERE voucher_no=$1 AND voucher_type='stock_entry'
                      AND (metadata->>'deleted_at') IS NULL"#,
             )
-            .bind(company_id)
             .bind(move_name),
         )
         .await?;
@@ -150,7 +147,6 @@ impl StockLedgerEntryRepository {
     pub async fn move_leg_values(
         &self,
         pool: &PgPool,
-        company_id: Uuid,
         move_id: Uuid,
     ) -> Result<(Decimal, Decimal), sqlx::Error> {
         let row = backbone_orm::company_scope::fetch_one_row_scoped(
@@ -160,10 +156,9 @@ impl StockLedgerEntryRepository {
                        COALESCE(-SUM(stock_value_difference) FILTER (WHERE stock_value_difference < 0), 0) AS out_value,
                        COALESCE(SUM(stock_value_difference) FILTER (WHERE stock_value_difference > 0), 0) AS in_value
                    FROM inventory.stock_ledger_entries
-                   WHERE company_id=$1 AND voucher_type='stock_entry' AND voucher_id=$2
+                   WHERE voucher_type='stock_entry' AND voucher_id=$1
                      AND (metadata->>'deleted_at') IS NULL"#,
             )
-            .bind(company_id)
             .bind(move_id),
         )
         .await?;
@@ -177,16 +172,14 @@ impl StockLedgerEntryRepository {
     pub async fn sum_move_in_value(
         &self,
         conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
         move_id: Uuid,
     ) -> Result<Decimal, sqlx::Error> {
         let row: Option<Decimal> = sqlx::query_scalar(
             r#"SELECT COALESCE(SUM(stock_value_difference), 0)
                FROM inventory.stock_ledger_entries
-               WHERE company_id=$1 AND voucher_type='stock_entry' AND voucher_id=$2
+               WHERE voucher_type='stock_entry' AND voucher_id=$1
                  AND stock_value_difference > 0 AND (metadata->>'deleted_at') IS NULL"#,
         )
-        .bind(company_id)
         .bind(move_id)
         .fetch_one(&mut *conn)
         .await?;
@@ -200,16 +193,14 @@ impl StockLedgerEntryRepository {
     pub async fn fetch_lc_revaluations(
         &self,
         conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
         lc_id: Uuid,
     ) -> Result<Vec<(String, Decimal)>, sqlx::Error> {
         let rows = sqlx::query(
             r#"SELECT voucher_no, stock_value_difference FROM inventory.stock_ledger_entries
-               WHERE company_id=$1 AND voucher_type='landed_cost' AND voucher_id=$2
+               WHERE voucher_type='landed_cost' AND voucher_id=$1
                  AND (metadata->>'deleted_at') IS NULL
                ORDER BY sle_no"#,
         )
-        .bind(company_id)
         .bind(lc_id)
         .fetch_all(&mut *conn)
         .await?;
@@ -260,7 +251,6 @@ impl StockLedgerEntryRepository {
     pub async fn remaining_qty_for_moves(
         &self,
         pool: &PgPool,
-        company_id: Uuid,
         move_ids: &[Uuid],
     ) -> Result<std::collections::HashMap<Uuid, Decimal>, sqlx::Error> {
         if move_ids.is_empty() { return Ok(std::collections::HashMap::new()); }
@@ -276,19 +266,18 @@ impl StockLedgerEntryRepository {
                                   ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
                               ), 0) AS prior_in
                        FROM inventory.stock_ledger_entries s
-                       WHERE s.company_id=$1 AND s.voucher_type='stock_entry'
+                       WHERE s.voucher_type='stock_entry'
                          AND s.actual_qty > 0 AND (s.metadata->>'deleted_at') IS NULL
                    )
                    SELECT ins.move_id,
                           LEAST(ins.qty, GREATEST(COALESCE(b.actual_qty, 0) - ins.prior_in, 0)) AS remaining
                    FROM ins
                    LEFT JOIN inventory.bins b
-                          ON b.company_id=$1 AND b.item_id=ins.item_id
+                          ON b.item_id=ins.item_id
                          AND b.warehouse_id=ins.warehouse_id
                          AND (b.metadata->>'deleted_at') IS NULL
-                   WHERE ins.move_id = ANY($2)"#,
+                   WHERE ins.move_id = ANY($1)"#,
             )
-            .bind(company_id)
             .bind(move_ids),
         )
         .await?;

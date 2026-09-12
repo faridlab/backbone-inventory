@@ -45,7 +45,6 @@ impl DeliveryNoteItemRepository {
 pub struct NewDeliveryItemRow {
     pub id: Uuid,
     pub delivery_id: Uuid,
-    pub company_id: Uuid,
     pub item_id: Uuid,
     pub quantity: Decimal,
 }
@@ -70,25 +69,26 @@ pub struct DeliveryCancelItemRow {
 /// Hand-written DeliveryNoteItem SQL. Lives here per the module's 4-layer rule.
 impl DeliveryNoteItemRepository {
     /// Insert one delivery line. Takes the CALLER'S connection so it commits with its header; the
-    /// caller has already bound the company on it — don't re-bind here.
+    /// caller has already relayed the ambient org scope onto it — don't re-bind here.
     pub async fn insert_item(
         &self,
         conn: &mut sqlx::PgConnection,
         l: &NewDeliveryItemRow,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
-            r#"INSERT INTO inventory.delivery_note_items (id, delivery_id, company_id, item_id, quantity, valuation_rate, cogs_amount)
-               VALUES ($1,$2,$3,$4,$5,0,0)"#,
+            r#"INSERT INTO inventory.delivery_note_items (id, delivery_id, item_id, quantity, valuation_rate, cogs_amount)
+               VALUES ($1,$2,$3,$4,0,0)"#,
         )
-        .bind(l.id).bind(l.delivery_id).bind(l.company_id).bind(l.item_id).bind(l.quantity)
+        .bind(l.id).bind(l.delivery_id).bind(l.item_id).bind(l.quantity)
         .execute(conn)
         .await?;
         Ok(())
     }
 
     /// Read the live lines in `id` order — the order the movement applies them (and therefore the
-    /// order `sle_no` is assigned in), so it must not change. The caller wraps this in
-    /// `with_company_scope(Some(company))` so the read passes the RLS fence (ADR-0008).
+    /// order `sle_no` is assigned in), so it must not change. The scoped read helper makes it ride
+    /// the ambient org scope's request-dedicated connection, so the composing decorator's fence
+    /// (ADR-0029) bounds what the read can see.
     pub async fn fetch_items(
         &self,
         pool: &PgPool,
@@ -125,7 +125,7 @@ impl DeliveryNoteItemRepository {
     }
 
     /// Read the live lines with their stored COGS — what the cancel path reverses. Same scope/order
-    /// guarantees as [`Self::fetch_items`] (caller wraps in `with_company_scope`).
+    /// guarantees as [`Self::fetch_items`].
     pub async fn fetch_cancel_items(
         &self,
         pool: &PgPool,

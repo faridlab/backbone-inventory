@@ -8,8 +8,7 @@
 //!
 //! Guards carried here: R24 (no staging/applying while the quant holds
 //! reservations — checked by the service from the locked row this file returns),
-//! R13 (only internal locations hold countable stock), R26 (the quant's company
-//! follows its location — a shared location cannot hold a company-fenced quant).
+//! R13 (only internal locations hold countable stock).
 //!
 //! Per the module's 4-layer rule the statements live here and take the caller's
 //! connection, so the stage/apply writes commit as one unit with the move mint,
@@ -32,8 +31,6 @@ pub struct QuantCountRow {
     pub inventory_date: Option<chrono::NaiveDate>,
     /// Location usage as text (`internal` / `view` / ... — R13 check).
     pub location_usage: String,
-    /// The location's owning company (NULL = shared; R26 check).
-    pub location_company_id: Option<Uuid>,
     /// The location's warehouse — the grain the valuation engine (Bin/SLE) keys on.
     pub location_warehouse_id: Option<Uuid>,
 }
@@ -82,7 +79,7 @@ impl StockAdjustmentRepository {
             r#"SELECT q.id, q.item_id, q.location_id, q.quantity, q.reserved_quantity,
                       q.inventory_quantity, q.inventory_diff_quantity, q.inventory_quantity_set,
                       q.inventory_date,
-                      l.usage::text AS location_usage, l.company_id AS location_company_id,
+                      l.usage::text AS location_usage,
                       l.warehouse_id AS location_warehouse_id
                FROM inventory.stock_quants q
                JOIN inventory.locations l ON l.id = q.location_id
@@ -105,32 +102,29 @@ impl StockAdjustmentRepository {
             inventory_quantity_set: r.get("inventory_quantity_set"),
             inventory_date: r.get("inventory_date"),
             location_usage: r.get("location_usage"),
-            location_company_id: r.get("location_company_id"),
             location_warehouse_id: r.get("location_warehouse_id"),
         }))
     }
 
     /// Initialize the zeroed quant for (item, location) — the count surface exists
     /// even before any stock does. Returns its id; the caller has already verified
-    /// the location is internal and company-fenced (R13 / R26).
+    /// the location is internal (R13).
     pub async fn init_quant(
         &self,
         conn: &mut PgConnection,
         item_id: Uuid,
         location_id: Uuid,
-        company_id: Uuid,
     ) -> Result<Uuid, sqlx::Error> {
         let id = Uuid::new_v4();
         sqlx::query(
             r#"INSERT INTO inventory.stock_quants
                  (id, item_id, location_id, quantity, reserved_quantity, available_quantity,
-                  inventory_quantity_set, sn_duplicated, company_id)
-               VALUES ($1, $2, $3, 0, 0, 0, FALSE, FALSE, $4)"#,
+                  inventory_quantity_set, sn_duplicated)
+               VALUES ($1, $2, $3, 0, 0, 0, FALSE, FALSE)"#,
         )
         .bind(id)
         .bind(item_id)
         .bind(location_id)
-        .bind(company_id)
         .execute(conn)
         .await?;
         Ok(id)

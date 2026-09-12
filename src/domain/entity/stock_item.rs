@@ -53,7 +53,6 @@ impl std::ops::Deref for StockItemId {
 pub struct StockItem {
     pub id: Uuid,
     pub item_id: Uuid,
-    pub company_id: Uuid,
     pub stock_uom: String,
     pub is_stock_item: bool,
     pub has_batch: bool,
@@ -75,11 +74,10 @@ impl StockItem {
     }
 
     /// Create a new StockItem with required fields
-    pub fn new(item_id: Uuid, company_id: Uuid, stock_uom: String, is_stock_item: bool, has_batch: bool, valuation_method: ValuationMethod, reorder_level: Decimal, weight_per_unit: Decimal, service_tracking: ServiceTrackingType) -> Self {
+    pub fn new(item_id: Uuid, stock_uom: String, is_stock_item: bool, has_batch: bool, valuation_method: ValuationMethod, reorder_level: Decimal, weight_per_unit: Decimal, service_tracking: ServiceTrackingType) -> Self {
         Self {
             id: Uuid::new_v4(),
             item_id,
-            company_id,
             stock_uom,
             is_stock_item,
             has_batch,
@@ -171,9 +169,6 @@ impl StockItem {
                 "item_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.item_id = v; }
                 }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 "stock_uom" => {
                     if let Ok(v) = serde_json::from_value(value) { self.stock_uom = v; }
                 }
@@ -256,7 +251,6 @@ impl backbone_orm::EntityRepoMeta for StockItem {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
         m.insert("item_id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("service_project_id".to_string(), "uuid".to_string());
         m.insert("service_project_template_id".to_string(), "uuid".to_string());
         m.insert("valuation_method".to_string(), "valuation_method".to_string());
@@ -265,9 +259,6 @@ impl backbone_orm::EntityRepoMeta for StockItem {
     }
     fn search_fields() -> &'static [&'static str] {
         &["stock_uom"]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -278,7 +269,6 @@ impl backbone_orm::EntityRepoMeta for StockItem {
 #[derive(Debug, Clone, Default)]
 pub struct StockItemBuilder {
     item_id: Option<Uuid>,
-    company_id: Option<Uuid>,
     stock_uom: Option<String>,
     is_stock_item: Option<bool>,
     has_batch: Option<bool>,
@@ -294,12 +284,6 @@ impl StockItemBuilder {
     /// Set the item_id field (required)
     pub fn item_id(mut self, value: Uuid) -> Self {
         self.item_id = Some(value);
-        self
-    }
-
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
         self
     }
 
@@ -362,13 +346,11 @@ impl StockItemBuilder {
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<StockItem, String> {
         let item_id = self.item_id.ok_or_else(|| "item_id is required".to_string())?;
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
         let stock_uom = self.stock_uom.ok_or_else(|| "stock_uom is required".to_string())?;
 
         Ok(StockItem {
             id: Uuid::new_v4(),
             item_id,
-            company_id,
             stock_uom,
             is_stock_item: self.is_stock_item.unwrap_or(true),
             has_batch: self.has_batch.unwrap_or(false),

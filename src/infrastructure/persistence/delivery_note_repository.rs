@@ -50,7 +50,6 @@ impl DeliveryNoteRepository {
 pub struct NewDeliveryRow<'a> {
     pub id: Uuid,
     pub delivery_number: &'a str,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub customer_id: Uuid,
     pub source_so_id: Option<Uuid>,
@@ -64,7 +63,6 @@ pub struct NewDeliveryRow<'a> {
 /// The submit path's header projection — everything needed to drive the movement + the COGS post.
 pub struct DeliverySubmitHeaderRow {
     pub delivery_number: String,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
@@ -78,7 +76,6 @@ pub struct DeliverySubmitHeaderRow {
 
 /// The repost path's header projection — rebuilds the SAME envelope from the stored header.
 pub struct DeliveryRepostHeaderRow {
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub delivery_number: String,
     pub posting_date: chrono::NaiveDate,
@@ -96,7 +93,6 @@ pub struct DeliveryRepostHeaderRow {
 /// `posting_type='reversal'` post. Carries the original `accounting_post_id` (to reverse) and any
 /// already-recorded `reversal_accounting_post_id` (the idempotency/recovery short-circuit).
 pub struct DeliveryCancelHeaderRow {
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     pub warehouse_id: Uuid,
     pub posting_date: chrono::NaiveDate,
@@ -118,7 +114,7 @@ impl DeliveryNoteRepository {
     /// Insert the draft delivery header.
     ///
     /// Takes the CALLER'S connection so the header and its items commit as one unit. The caller has
-    /// already bound the company on it — don't re-bind here.
+    /// already relayed the ambient org scope onto it — don't re-bind here.
     ///
     /// Returns the raw `sqlx::Error` deliberately: the caller inspects it for a unique violation to
     /// turn a duplicate delivery number into `DuplicateNumber`.
@@ -129,11 +125,11 @@ impl DeliveryNoteRepository {
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"INSERT INTO inventory.delivery_notes
-                (id, delivery_number, company_id, branch_id, customer_id, source_so_id, warehouse_id,
+                (id, delivery_number, branch_id, customer_id, source_so_id, warehouse_id,
                  posting_date, currency, total_cogs, cogs_account_id, inventory_account_id, status, posting_state)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,$11,'draft'::doc_status,'pending'::gl_posting_state)"#,
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,0,$9,$10,'draft'::doc_status,'pending'::gl_posting_state)"#,
         )
-        .bind(d.id).bind(d.delivery_number).bind(d.company_id).bind(d.branch_id).bind(d.customer_id)
+        .bind(d.id).bind(d.delivery_number).bind(d.branch_id).bind(d.customer_id)
         .bind(d.source_so_id).bind(d.warehouse_id).bind(d.posting_date).bind(d.currency)
         .bind(d.cogs_account_id).bind(d.inventory_account_id)
         .execute(conn)
@@ -143,7 +139,8 @@ impl DeliveryNoteRepository {
 
     /// Read the submit path's header. `Ok(None)` = no such live delivery in scope.
     ///
-    /// ID-only: fenced by the request/inherited scope (ADR-0008).
+    /// ID-only: the scoped read helper rides the ambient org scope's request-dedicated connection,
+    /// so the composing decorator's fence (ADR-0029) bounds what the read can see.
     pub async fn fetch_submit_header(
         &self,
         pool: &PgPool,
@@ -152,7 +149,7 @@ impl DeliveryNoteRepository {
         let row = company_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
-                r#"SELECT delivery_number, company_id, branch_id, warehouse_id, posting_date, source_so_id,
+                r#"SELECT delivery_number, branch_id, warehouse_id, posting_date, source_so_id,
                           currency, status::text AS st, cogs_account_id, inventory_account_id
                    FROM inventory.delivery_notes WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
             )
@@ -160,7 +157,7 @@ impl DeliveryNoteRepository {
         )
         .await?;
         Ok(row.map(|h| DeliverySubmitHeaderRow {
-            delivery_number: h.get("delivery_number"), company_id: h.get("company_id"),
+            delivery_number: h.get("delivery_number"),
             branch_id: h.get("branch_id"), warehouse_id: h.get("warehouse_id"),
             posting_date: h.get("posting_date"), source_so_id: h.get("source_so_id"),
             currency: h.get("currency"),
@@ -178,7 +175,7 @@ impl DeliveryNoteRepository {
         let row = company_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
-                r#"SELECT company_id, branch_id, delivery_number, posting_date, currency, total_cogs,
+                r#"SELECT branch_id, delivery_number, posting_date, currency, total_cogs,
                           cogs_account_id, inventory_account_id, posting_state::text AS ps, journal_id, accounting_post_id,
                           warehouse_id
                    FROM inventory.delivery_notes WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
@@ -187,7 +184,7 @@ impl DeliveryNoteRepository {
         )
         .await?;
         Ok(row.map(|h| DeliveryRepostHeaderRow {
-            company_id: h.get("company_id"), branch_id: h.get("branch_id"),
+            branch_id: h.get("branch_id"),
             delivery_number: h.get("delivery_number"), posting_date: h.get("posting_date"),
             currency: h.get("currency"),
             total_cogs: h.get("total_cogs"), cogs_account_id: h.get("cogs_account_id"),
@@ -238,7 +235,7 @@ impl DeliveryNoteRepository {
         let row = company_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
-                r#"SELECT company_id, branch_id, warehouse_id, posting_date, currency, delivery_number,
+                r#"SELECT branch_id, warehouse_id, posting_date, currency, delivery_number,
                           total_cogs, status::text AS st, cogs_account_id, inventory_account_id,
                           posting_state::text AS ps, journal_id, accounting_post_id,
                           reversal_journal_id, reversal_accounting_post_id
@@ -248,7 +245,7 @@ impl DeliveryNoteRepository {
         )
         .await?;
         Ok(row.map(|h| DeliveryCancelHeaderRow {
-            company_id: h.get("company_id"), branch_id: h.get("branch_id"),
+            branch_id: h.get("branch_id"),
             warehouse_id: h.get("warehouse_id"), posting_date: h.get("posting_date"),
             currency: h.get("currency"), delivery_number: h.get("delivery_number"),
             total_cogs: h.get("total_cogs"),

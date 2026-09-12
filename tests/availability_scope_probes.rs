@@ -58,9 +58,8 @@ async fn pool() -> PgPool {
     });
     PgPool::connect(&url).await.expect("connect DB")
 }
-async fn warehouse(w: &InventoryWriteService, company: Uuid, is_group: bool) -> Uuid {
+async fn warehouse(w: &InventoryWriteService, is_group: bool) -> Uuid {
     w.create_warehouse(NewWarehouse {
-        company_id: company,
         code: uq("WH"),
         name: uq("Main"),
         warehouse_type: None,
@@ -70,17 +69,10 @@ async fn warehouse(w: &InventoryWriteService, company: Uuid, is_group: bool) -> 
     .await
     .unwrap()
 }
-async fn receive(
-    w: &InventoryWriteService,
-    company: Uuid,
-    wh: Uuid,
-    item: Uuid,
-    qty: Decimal,
-) {
+async fn receive(w: &InventoryWriteService, wh: Uuid, item: Uuid, qty: Decimal) {
     let rid = w
         .create_purchase_receipt(NewReceipt {
             receipt_number: uq("PR"),
-            company_id: company,
             branch_id: None,
             supplier_id: Uuid::new_v4(),
             source_po_id: None,
@@ -100,11 +92,10 @@ async fn receive(
         .unwrap();
     w.submit_purchase_receipt(rid, &StubGl).await.unwrap();
 }
-async fn deliver(w: &InventoryWriteService, company: Uuid, wh: Uuid, item: Uuid, qty: Decimal) {
+async fn deliver(w: &InventoryWriteService, wh: Uuid, item: Uuid, qty: Decimal) {
     let did = w
         .create_delivery_note(NewDelivery {
             delivery_number: uq("DN"),
-            company_id: company,
             branch_id: None,
             customer_id: Uuid::new_v4(),
             source_so_id: None,
@@ -129,13 +120,12 @@ async fn sold_out_verdict_evaluates_every_variant() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
     let read = AvailabilityScopeRead::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&w, company, false).await;
+    let wh = warehouse(&w, false).await;
     // The template's variant set: v1 (never received), v2 (holding 5), v3 (never received).
     let (v1, v2, v3) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
-    receive(&w, company, wh, v2, d("5")).await;
+    receive(&w, wh, v2, d("5")).await;
 
-    let verdict = read.sold_out(company, &[v1, v2, v3], wh).await.unwrap();
+    let verdict = read.sold_out(&[v1, v2, v3], wh).await.unwrap();
     // First-variant-only would answer true (v1 has nothing). Every-variant answers false.
     assert!(!verdict.sold_out, "v2 holds stock: the set is not sold out");
     // The verdict is complete over the input set, in input order.
@@ -148,8 +138,8 @@ async fn sold_out_verdict_evaluates_every_variant() {
     assert_eq!(verdict.per_item[2].available_qty, d("0"));
 
     // Exhaust the holding variant: NOW every member reads zero → sold out.
-    deliver(&w, company, wh, v2, d("5")).await;
-    let exhausted = read.sold_out(company, &[v1, v2, v3], wh).await.unwrap();
+    deliver(&w, wh, v2, d("5")).await;
+    let exhausted = read.sold_out(&[v1, v2, v3], wh).await.unwrap();
     assert!(exhausted.sold_out, "no variant holds availability");
 }
 
@@ -161,14 +151,13 @@ async fn display_and_checkout_scopes_differ_and_stay_fresh() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
     let read = AvailabilityScopeRead::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&w, company, false).await;
+    let wh = warehouse(&w, false).await;
     let item = Uuid::new_v4();
-    receive(&w, company, wh, item, d("10")).await;
+    receive(&w, wh, item, d("10")).await;
 
     // Display scope: the raw fresh availability.
     let display = read
-        .display_availability(company, &[item], wh)
+        .display_availability(&[item], wh)
         .await
         .unwrap();
     assert_eq!(display[0].on_hand_qty, d("10"));
@@ -177,7 +166,6 @@ async fn display_and_checkout_scopes_differ_and_stay_fresh() {
     // Checkout scope: the same freshness minus the caller's own holdings.
     let with_six_held = read
         .checkout_free_qty(
-            company,
             &[CheckoutDemand { item_id: item, held_qty: d("6") }],
             wh,
         )
@@ -189,7 +177,6 @@ async fn display_and_checkout_scopes_differ_and_stay_fresh() {
     // Held beyond availability floors at zero — never negative.
     let over_held = read
         .checkout_free_qty(
-            company,
             &[CheckoutDemand { item_id: item, held_qty: d("12") }],
             wh,
         )
@@ -198,15 +185,14 @@ async fn display_and_checkout_scopes_differ_and_stay_fresh() {
     assert_eq!(over_held[0].free_qty, d("0"));
 
     // Freshness: deliver 4 with NO write between the reads around it — both scopes move.
-    deliver(&w, company, wh, item, d("4")).await;
+    deliver(&w, wh, item, d("4")).await;
     let display_after = read
-        .display_availability(company, &[item], wh)
+        .display_availability(&[item], wh)
         .await
         .unwrap();
     assert_eq!(display_after[0].on_hand_qty, d("6"), "read tracks the estate per call");
     let checkout_after = read
         .checkout_free_qty(
-            company,
             &[CheckoutDemand { item_id: item, held_qty: d("6") }],
             wh,
         )
@@ -223,19 +209,18 @@ async fn no_all_warehouses_fallback_at_the_pivot() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
     let read = AvailabilityScopeRead::new(pool.clone());
-    let company = Uuid::new_v4();
-    let w1 = warehouse(&w, company, false).await;
-    let w2 = warehouse(&w, company, false).await;
+    let w1 = warehouse(&w, false).await;
+    let w2 = warehouse(&w, false).await;
     let item = Uuid::new_v4();
     // All 10 units sit in W2; W1 holds nothing.
-    receive(&w, company, w2, item, d("10")).await;
+    receive(&w, w2, item, d("10")).await;
 
-    let at_shop = read.display_availability(company, &[item], w1).await.unwrap();
+    let at_shop = read.display_availability(&[item], w1).await.unwrap();
     assert_eq!(at_shop[0].available_qty, d("0"), "W2's stock must not leak into W1");
-    let verdict = read.sold_out(company, &[item], w1).await.unwrap();
+    let verdict = read.sold_out(&[item], w1).await.unwrap();
     assert!(verdict.sold_out, "sold out at the shop pivot despite stock in W2");
 
-    let at_w2 = read.display_availability(company, &[item], w2).await.unwrap();
+    let at_w2 = read.display_availability(&[item], w2).await.unwrap();
     assert_eq!(at_w2[0].available_qty, d("10"));
 }
 
@@ -246,52 +231,42 @@ async fn pivot_refusals_are_typed() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
     let read = AvailabilityScopeRead::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&w, company, false).await;
+    let wh = warehouse(&w, false).await;
     let item = Uuid::new_v4();
-    let other_company = Uuid::new_v4();
 
     // A pivot warehouse that does not exist.
     let bogus = Uuid::new_v4();
     assert!(matches!(
-        read.display_availability(company, &[item], bogus).await,
-        Err(AvailabilityScopeError::UnknownWarehouse(w, c)) if w == bogus && c == company
-    ));
-
-    // A pivot warehouse owned by a DIFFERENT company.
-    let foreign = warehouse(&w, other_company, false).await;
-    assert!(matches!(
-        read.sold_out(company, &[item], foreign).await,
-        Err(AvailabilityScopeError::UnknownWarehouse(w, c)) if w == foreign && c == company
+        read.display_availability(&[item], bogus).await,
+        Err(AvailabilityScopeError::UnknownWarehouse(w)) if w == bogus
     ));
 
     // A warehouse GROUP as the pivot — a grouping node is not a stock warehouse.
-    let group = warehouse(&w, company, true).await;
+    let group = warehouse(&w, true).await;
     assert!(matches!(
-        read.display_availability(company, &[item], group).await,
+        read.display_availability(&[item], group).await,
         Err(AvailabilityScopeError::GroupPivot(g)) if g == group
     ));
 
     // Empty and duplicate item sets refuse — a vacuous read is a failure, never a green tick.
     assert!(matches!(
-        read.display_availability(company, &[], wh).await,
+        read.display_availability(&[], wh).await,
         Err(AvailabilityScopeError::EmptyItemSet)
     ));
     assert!(matches!(
-        read.sold_out(company, &[], wh).await,
+        read.sold_out(&[], wh).await,
         Err(AvailabilityScopeError::EmptyItemSet)
     ));
     assert!(matches!(
-        read.checkout_free_qty(company, &[], wh).await,
+        read.checkout_free_qty(&[], wh).await,
         Err(AvailabilityScopeError::EmptyItemSet)
     ));
     assert!(matches!(
-        read.display_availability(company, &[item, item], wh).await,
+        read.display_availability(&[item, item], wh).await,
         Err(AvailabilityScopeError::DuplicateItem(i)) if i == item
     ));
     assert!(matches!(
         read.checkout_free_qty(
-            company,
             &[
                 CheckoutDemand { item_id: item, held_qty: d("1") },
                 CheckoutDemand { item_id: item, held_qty: d("2") },
@@ -305,7 +280,6 @@ async fn pivot_refusals_are_typed() {
     // A negative held quantity refuses.
     assert!(matches!(
         read.checkout_free_qty(
-            company,
             &[CheckoutDemand { item_id: item, held_qty: d("-1") }],
             wh
         )
@@ -324,10 +298,9 @@ async fn no_materialized_readiness_state_and_reads_write_nothing() {
     let pool = pool().await;
     let w = InventoryWriteService::new(pool.clone());
     let read = AvailabilityScopeRead::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&w, company, false).await;
+    let wh = warehouse(&w, false).await;
     let item = Uuid::new_v4();
-    receive(&w, company, wh, item, d("3")).await;
+    receive(&w, wh, item, d("3")).await;
 
     // No persisted readiness vocabulary exists in the inventory schema.
     let persisted: i64 = sqlx::query_scalar(
@@ -342,37 +315,36 @@ async fn no_materialized_readiness_state_and_reads_write_nothing() {
     .unwrap();
     assert_eq!(persisted, 0, "no readiness/warning/sold-out column may exist");
 
-    // A barrage of reads across every scope moves no row state: the company's quant
-    // audit fingerprint (count + max updated_at) is identical before and after. Scoped
-    // to this test's company — sibling tests write their own companies concurrently.
+    // A barrage of reads across every scope moves no row state: the quant audit
+    // fingerprint (count + max updated_at) is identical before and after. Scoped
+    // to this test's item — sibling tests write their own items concurrently.
     let before: (i64, Option<String>) = sqlx::query(
         r#"SELECT COUNT(*), MAX(metadata->>'updated_at')::text FROM inventory.stock_quants
-           WHERE company_id = $1"#,
+           WHERE item_id = $1"#,
     )
-    .bind(company)
+    .bind(item)
     .fetch_one(&pool)
     .await
     .map(|r| (r.get(0), r.get(1)))
     .unwrap();
 
     for _ in 0..3 {
-        let _ = read.display_availability(company, &[item], wh).await.unwrap();
+        let _ = read.display_availability(&[item], wh).await.unwrap();
         let _ = read
             .checkout_free_qty(
-                company,
                 &[CheckoutDemand { item_id: item, held_qty: d("1") }],
                 wh,
             )
             .await
             .unwrap();
-        let _ = read.sold_out(company, &[item], wh).await.unwrap();
+        let _ = read.sold_out(&[item], wh).await.unwrap();
     }
 
     let after: (i64, Option<String>) = sqlx::query(
         r#"SELECT COUNT(*), MAX(metadata->>'updated_at')::text FROM inventory.stock_quants
-           WHERE company_id = $1"#,
+           WHERE item_id = $1"#,
     )
-    .bind(company)
+    .bind(item)
     .fetch_one(&pool)
     .await
     .map(|r| (r.get(0), r.get(1)))

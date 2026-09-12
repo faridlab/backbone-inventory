@@ -25,7 +25,6 @@ impl TestDataGenerator for DeliveryNoteTestData {
         json!({
             "id": Uuid::new_v4().to_string(),
             "delivery_number": format!("Test {}", Uuid::new_v4().to_string().split('-').next().unwrap()),
-            "company_id": Uuid::new_v4().to_string(),
             "branch_id": null,
             "customer_id": Uuid::new_v4().to_string(),
             "source_so_id": null,
@@ -49,7 +48,6 @@ impl TestDataGenerator for DeliveryNoteTestData {
         json!({
             "id": id,
             "delivery_number": format!("Test {}", Uuid::new_v4().to_string().split('-').next().unwrap()),
-            "company_id": Uuid::new_v4().to_string(),
             "branch_id": null,
             "customer_id": Uuid::new_v4().to_string(),
             "source_so_id": null,

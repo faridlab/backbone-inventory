@@ -1,16 +1,16 @@
-//! Routes / rules / orderpoints + the daily scheduler (stock-business-logic §6, §7, §11 R6/R11,
+//! Routes / rules / orderpoints + the daily scheduler (stock-business-logic §6, §7, §11 R6,
 //! §12 T11; ADR-0020 scheduler postures). Requires DATABASE_URL — defaults to the module's test
-//! database inside the metaphora dev postgres container; every test seeds its own company so the
-//! cases run concurrently against one database without colliding.
+//! database inside the metaphora dev postgres container; every test seeds its own uniquely-named
+//! rows so the cases run concurrently against one database without colliding.
 //!
 //! Proven here, per flag:
-//! - **R11 (enforcement: both)** — the service pre-check returns the typed `rule_company_mismatch`
-//!   error AND a raw INSERT (a writer that skips the service) hits the DB trigger.
-//! - **R13-rule** — a rule destination that is a `view` location is rejected (both halves).
-//! - **R6** — duplicate (item, location, company) orderpoint coverage: typed service error +
+//! - **R13-rule** — a rule destination that is a `view` location is rejected (both halves:
+//!   the service pre-check and the DB trigger that catches a raw writer).
+//! - **R6** — duplicate (item, location) orderpoint coverage: typed service error +
 //!   unique-index backstop.
 //! - **SS6 rule selection** — `_search_rule` ordering (highest sequence), visibility (inactive
-//!   route / wrong company excluded, NULL-company shared rule visible), explicit route filter.
+//!   route excluded, a destination outside the demand subtree never selected), explicit route
+//!   filter.
 //! - **T11 computes** — forecast = on hand + incoming − outgoing over the location subtree,
 //!   to-order = max − forecast floored at zero, lead days from the matched rule's delay.
 //! - **SS7 scheduler** — the three ordered tasks: reorder mints the draft replenishment move +
@@ -49,6 +49,13 @@ fn d(s: &str) -> Decimal {
 fn uq(p: &str) -> String {
     format!("{p}-{}", &Uuid::new_v4().simple().to_string()[..8])
 }
+/// The scheduler, claim, and assign sweeps read whole undecorated tables — the org fence
+/// that used to partition them lives in the composing decorator (ADR-0029) — while the
+/// tests below seed those same tables concurrently. Serialize the file so each global
+/// count sees only its own rows; whole-table DELETEs at the sweep tests' starts cover
+/// rows left by earlier tests in the same run.
+static SERIAL: Mutex<()> = Mutex::new(());
+
 async fn pool() -> PgPool {
     let url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
         "postgresql://sherpa:27bb6a7f7a46ad66a0fbee9277dcb286c33fbdc6f317ff7a@localhost:5432/backbone_inventory_test".to_string()
@@ -65,7 +72,6 @@ async fn loc(
     name: &str,
     usage: &str,
     parent_path: Option<String>,
-    company: Uuid,
 ) -> Uuid {
     let id = Uuid::new_v4();
     let path = match &parent_path {
@@ -73,25 +79,23 @@ async fn loc(
         None => format!("{id}/"),
     };
     sqlx::query(
-        r#"INSERT INTO inventory.locations (id, name, complete_name, usage, parent_path, company_id)
-           VALUES ($1, $2, $2, $3::location_usage, $4, $5)"#,
+        r#"INSERT INTO inventory.locations (id, name, complete_name, usage, parent_path)
+           VALUES ($1, $2, $2, $3::location_usage, $4)"#,
     )
     .bind(id)
     .bind(name)
     .bind(usage)
     .bind(path)
-    .bind(company)
     .execute(&mut *conn)
     .await
     .unwrap();
     id
 }
 
-async fn warehouse(conn: &mut PgConnection, company: Uuid) -> Uuid {
+async fn warehouse(conn: &mut PgConnection) -> Uuid {
     let id = Uuid::new_v4();
-    sqlx::query("INSERT INTO inventory.warehouses (id, company_id, code, name) VALUES ($1, $2, $3, $4)")
+    sqlx::query("INSERT INTO inventory.warehouses (id, code, name) VALUES ($1, $2, $3)")
         .bind(id)
-        .bind(company)
         .bind(uq("WH"))
         .bind(uq("Warehouse"))
         .execute(&mut *conn)
@@ -102,21 +106,19 @@ async fn warehouse(conn: &mut PgConnection, company: Uuid) -> Uuid {
 
 async fn op_type(
     conn: &mut PgConnection,
-    company: Uuid,
     src: Uuid,
     dest: Uuid,
 ) -> Uuid {
     let id = Uuid::new_v4();
     sqlx::query(
         r#"INSERT INTO inventory.operation_types
-               (id, name, sequence_code, code, company_id,
+               (id, name, sequence_code, code,
                 default_location_src_id, default_location_dest_id)
-           VALUES ($1, $2, $3, 'incoming'::picking_code, $4, $5, $6)"#,
+           VALUES ($1, $2, $3, 'incoming'::picking_code, $4, $5)"#,
     )
     .bind(id)
     .bind(uq("PT"))
     .bind(uq("SEQ"))
-    .bind(company)
     .bind(src)
     .bind(dest)
     .execute(&mut *conn)
@@ -136,14 +138,13 @@ async fn raw_move(
     dest: Uuid,
     demand: Decimal,
     quantity: Decimal,
-    company: Uuid,
 ) -> Uuid {
     let id = Uuid::new_v4();
     sqlx::query(
         r#"INSERT INTO inventory.stock_moves
                (id, name, state, item_id, demand_qty, quantity, procure_method,
-                location_id, location_dest_id, company_id, move_orig_ids, move_dest_ids)
-           VALUES ($1, $2, $3::move_state, $4, $5, $6, 'make_to_stock', $7, $8, $9,
+                location_id, location_dest_id, move_orig_ids, move_dest_ids)
+           VALUES ($1, $2, $3::move_state, $4, $5, $6, 'make_to_stock', $7, $8,
                    '{}'::uuid[], '{}'::uuid[])"#,
     )
     .bind(id)
@@ -154,7 +155,6 @@ async fn raw_move(
     .bind(quantity)
     .bind(src)
     .bind(dest)
-    .bind(company)
     .execute(&mut *conn)
     .await
     .unwrap();
@@ -167,26 +167,24 @@ async fn quant(
     location: Uuid,
     quantity: Decimal,
     reserved: Decimal,
-    company: Uuid,
 ) -> Uuid {
     let id = Uuid::new_v4();
     sqlx::query(
-        r#"INSERT INTO inventory.stock_quants (id, item_id, location_id, quantity, reserved_quantity, company_id)
-           VALUES ($1, $2, $3, $4, $5, $6)"#,
+        r#"INSERT INTO inventory.stock_quants (id, item_id, location_id, quantity, reserved_quantity)
+           VALUES ($1, $2, $3, $4, $5)"#,
     )
     .bind(id)
     .bind(item)
     .bind(location)
     .bind(quantity)
     .bind(reserved)
-    .bind(company)
     .execute(&mut *conn)
     .await
     .unwrap();
     id
 }
 
-fn rule(name: &str, seq: i32, dest: Uuid, pt: Uuid, route: Uuid, company: Option<Uuid>, delay: i32) -> NewRouteRule {
+fn rule(name: &str, seq: i32, dest: Uuid, pt: Uuid, route: Uuid, delay: i32) -> NewRouteRule {
     NewRouteRule {
         name: name.into(),
         sequence: seq,
@@ -199,7 +197,6 @@ fn rule(name: &str, seq: i32, dest: Uuid, pt: Uuid, route: Uuid, company: Option
         picking_type_id: pt,
         route_id: route,
         warehouse_id: None,
-        company_id: company,
         propagate_cancel: false,
     }
 }
@@ -229,30 +226,26 @@ impl MovePipeline for StubPipeline {
     async fn confirm(
         &self,
         conn: &mut PgConnection,
-        company_id: Uuid,
         move_id: Uuid,
     ) -> Result<MoveState, MovePipelineError> {
-        self.drive(conn, company_id, move_id).await
+        self.drive(conn, move_id).await
     }
     async fn assign(
         &self,
         conn: &mut PgConnection,
-        company_id: Uuid,
         move_id: Uuid,
     ) -> Result<MoveState, MovePipelineError> {
-        self.drive(conn, company_id, move_id).await
+        self.drive(conn, move_id).await
     }
 }
 impl StubPipeline {
     async fn drive(
         &self,
         conn: &mut PgConnection,
-        company_id: Uuid,
         move_id: Uuid,
     ) -> Result<MoveState, MovePipelineError> {
-        sqlx::query("UPDATE inventory.stock_moves SET state = 'assigned' WHERE id = $1 AND company_id = $2")
+        sqlx::query("UPDATE inventory.stock_moves SET state = 'assigned' WHERE id = $1")
             .bind(move_id)
-            .bind(company_id)
             .execute(&mut *conn)
             .await
             .map_err(|e| MovePipelineError { code: "stub_db".into(), message: e.to_string() })?;
@@ -260,33 +253,35 @@ impl StubPipeline {
     }
 }
 
-// --- R11 / R13-rule: enforcement both --------------------------------------------
+// --- R13-rule: destination-is-view refusal, both halves ----------------------------
 
 // The service half returns the typed error; the DB half (trigger) catches a raw writer. Both are
 // exercised against the same fixture so the pair cannot drift.
 #[tokio::test]
-async fn r11_rule_company_consistency_service_and_trigger() {
+async fn r13_rule_dest_is_view_service_and_trigger() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let pool = pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let (co_a, co_b) = (Uuid::new_v4(), Uuid::new_v4());
-    let src = loc(&mut conn, "SUP", "supplier", None, co_a).await;
-    let dst = loc(&mut conn, "STK", "internal", None, co_a).await;
-    let _wh_a = warehouse(&mut conn, co_a).await;
-    let pt = op_type(&mut conn, co_a, src, dst).await;
+    let src = loc(&mut conn, "SUP", "supplier", None).await;
+    let dst = loc(&mut conn, "STK", "internal", None).await;
+    warehouse(&mut conn).await;
+    let pt = op_type(&mut conn, src, dst).await;
     drop(conn);
 
     let svc = ProcurementService::new(pool.clone());
     let route = svc
-        .create_route(NewRoute { name: uq("RT"), active: true, sequence: 10, company_id: Some(co_a) })
+        .create_route(NewRoute { name: uq("RT"), active: true, sequence: 10 })
         .await
         .unwrap();
 
-    // Service half: a rule whose company differs from the operation type's → typed error.
-    let mut bad = rule("r11-bad", 10, dst, pt, route, Some(co_b), 0);
-    let err = svc.create_rule(bad.clone()).await.unwrap_err();
-    assert_eq!(err.code(), "rule_company_mismatch", "service pre-check (R11)");
+    // Service half: a rule whose destination is a view location → typed error.
+    let mut conn = pool.acquire().await.unwrap();
+    let view = loc(&mut conn, "VIE", "view", None).await;
+    drop(conn);
+    let err = svc.create_rule(rule("r13-view", 10, view, pt, route, 0)).await.unwrap_err();
+    assert_eq!(err.code(), "rule_dest_is_view", "service pre-check (R13-rule)");
     // The rejected rule must not exist.
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM inventory.route_rules WHERE name = 'r11-bad'")
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM inventory.route_rules WHERE name = 'r13-view'")
         .fetch_one(&pool).await.unwrap();
     assert_eq!(count, 0);
 
@@ -294,72 +289,13 @@ async fn r11_rule_company_consistency_service_and_trigger() {
     let raw = sqlx::query(
         r#"INSERT INTO inventory.route_rules
                (name, sequence, action, auto, procure_method, delay,
-                location_dest_id, picking_type_id, route_id, company_id)
-           VALUES ('r11-raw', 10, 'pull'::rule_action, 'manual'::rule_auto,
-                   'make_to_stock'::procure_method, 0, $1, $2, $3, $4)"#,
-    )
-    .bind(dst)
-    .bind(pt)
-    .bind(route)
-    .bind(co_b)
-    .execute(&pool)
-    .await;
-    match raw {
-        Err(e) => assert!(
-            e.to_string().contains("rule_company_mismatch"),
-            "DB trigger must raise rule_company_mismatch, got: {e}"
-        ),
-        Ok(_) => panic!("raw insert of a company-mismatched rule must hit the R11 trigger"),
-    }
-
-    // Positive: rule company == operation type company == warehouse company passes.
-    bad.company_id = Some(co_a);
-    bad.name = "r11-good".into();
-    svc.create_rule(bad).await.expect("company-consistent rule is accepted");
-
-    // A company-less (shared) rule may not bridge two companies: operation type of company B
-    // against a warehouse of company A is still a mismatch.
-    let wh_b_of_a = Uuid::new_v4();
-    sqlx::query("INSERT INTO inventory.warehouses (id, company_id, code, name) VALUES ($1, $2, $3, $4)")
-        .bind(wh_b_of_a)
-        .bind(co_a) // warehouse belongs to A
-        .bind(uq("WHX"))
-        .bind(uq("Warehouse X"))
-        .execute(&pool)
-        .await
-        .unwrap();
-    let pt_b = {
-        let mut c = pool.acquire().await.unwrap();
-        op_type(&mut c, co_b, src, dst).await
-    };
-    let bridging = NewRouteRule {
-        name: "r11-bridge".into(),
-        company_id: None, // shared posture — but its references disagree with each other
-        warehouse_id: Some(wh_b_of_a),
-        picking_type_id: pt_b,
-        ..rule("r11-bridge", 10, dst, pt_b, route, None, 0)
-    };
-    let err = svc.create_rule(bridging).await.unwrap_err();
-    assert_eq!(err.code(), "rule_company_mismatch", "a shared rule cannot bridge two companies");
-
-    // R13-rule: destination must not be a view location (service half).
-    let mut conn = pool.acquire().await.unwrap();
-    let view = loc(&mut conn, "VIE", "view", None, co_a).await;
-    drop(conn);
-    let err = svc.create_rule(rule("r13-view", 10, view, pt, route, Some(co_a), 0)).await.unwrap_err();
-    assert_eq!(err.code(), "rule_dest_is_view", "service pre-check (R13-rule)");
-    // R13-rule: DB half.
-    let raw = sqlx::query(
-        r#"INSERT INTO inventory.route_rules
-               (name, sequence, action, auto, procure_method, delay,
-                location_dest_id, picking_type_id, route_id, company_id)
+                location_dest_id, picking_type_id, route_id)
            VALUES ('r13-raw', 10, 'pull'::rule_action, 'manual'::rule_auto,
-                   'make_to_stock'::procure_method, 0, $1, $2, $3, $4)"#,
+                   'make_to_stock'::procure_method, 0, $1, $2, $3)"#,
     )
     .bind(view)
     .bind(pt)
     .bind(route)
-    .bind(co_a)
     .execute(&pool)
     .await;
     match raw {
@@ -374,114 +310,100 @@ async fn r11_rule_company_consistency_service_and_trigger() {
 // --- R6: orderpoint uniqueness, both halves ---------------------------------------
 
 #[tokio::test]
-async fn r6_orderpoint_unique_per_item_location_company() {
+async fn r6_orderpoint_unique_per_item_location() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let pool = pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let (co_a, co_b) = (Uuid::new_v4(), Uuid::new_v4());
-    let stock = loc(&mut conn, "STK", "internal", None, co_a).await;
-    let wh_a = warehouse(&mut conn, co_a).await;
-    let wh_b = warehouse(&mut conn, co_b).await;
+    let stock = loc(&mut conn, "STK", "internal", None).await;
+    let wh = warehouse(&mut conn).await;
     drop(conn);
     let (item, item2) = (Uuid::new_v4(), Uuid::new_v4());
 
     let svc = ProcurementService::new(pool.clone());
-    let new_op = |item: Uuid, location: Uuid, company: Uuid, wh: Uuid| NewOrderpoint {
+    let new_op = |item: Uuid, location: Uuid, wh: Uuid| NewOrderpoint {
         name: uq("OP"),
         trigger: "auto".into(),
         item_id: item,
         location_id: location,
         warehouse_id: wh,
-        company_id: company,
         item_min_qty: d("5"),
         item_max_qty: d("12"),
         route_id: None,
     };
-    svc.create_orderpoint(new_op(item, stock, co_a, wh_a)).await.unwrap();
+    svc.create_orderpoint(new_op(item, stock, wh)).await.unwrap();
 
-    // Service half: same (item, location, company) → typed error.
-    let err = svc.create_orderpoint(new_op(item, stock, co_a, wh_a)).await.unwrap_err();
+    // Service half: same (item, location) → typed error.
+    let err = svc.create_orderpoint(new_op(item, stock, wh)).await.unwrap_err();
     assert_eq!(err.code(), "orderpoint_exists", "service pre-check (R6)");
 
-    // The unique key is the triple: a different company or item may open its own orderpoint.
-    svc.create_orderpoint(new_op(item, stock, co_b, wh_b)).await.expect("another company may cover the same item/location");
-    svc.create_orderpoint(new_op(item2, stock, co_a, wh_a)).await.expect("another item may share the location");
+    // The unique key is the pair: another item may share the location.
+    svc.create_orderpoint(new_op(item2, stock, wh)).await.expect("another item may share the location");
 
-    // DB half: a raw duplicate insert hits the partial unique index.
-    let raw = sqlx::query(
+    // DB half: the (item, location) unique moved to the composing decorator's
+    // org-leading re-declaration — the module ships no unique of its own, so an
+    // undecorated database admits a raw duplicate. Pin that posture: the old
+    // company-leading unique is gone and nothing else holds the slot.
+    sqlx::query(
         r#"INSERT INTO inventory.reordering_rules
-               (name, trigger, item_id, location_id, warehouse_id, company_id,
+               (name, trigger, item_id, location_id, warehouse_id,
                 item_min_qty, item_max_qty)
-           VALUES ('r6-raw', 'auto'::orderpoint_trigger, $1, $2, $3, $4, 1, 2)"#,
+           VALUES ('r6-raw', 'auto'::orderpoint_trigger, $1, $2, $3, 1, 2)"#,
     )
     .bind(item)
     .bind(stock)
-    .bind(wh_a)
-    .bind(co_a)
+    .bind(wh)
     .execute(&pool)
-    .await;
-    match raw {
-        Err(e) => assert!(
-            e.as_database_error().map(|db| db.is_unique_violation()).unwrap_or(false),
-            "raw duplicate must hit the R6 unique index, got: {e}"
-        ),
-        Ok(_) => panic!("raw duplicate orderpoint must hit the R6 unique index"),
-    }
+    .await
+    .expect("undecorated, the module admits the duplicate");
+    let uniques: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM pg_indexes WHERE schemaname = 'inventory'           AND tablename = 'reordering_rules' AND indexdef ILIKE 'CREATE UNIQUE%'           AND indexname NOT LIKE '%\\_pkey'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        uniques, 0,
+        "the module ships no reordering_rules unique — the decorator owns the (org unit, item, location) slot"
+    );
 }
 
 // --- SS6: _search_rule ordering + visibility ---------------------------------------
 
 #[tokio::test]
 async fn ss6_search_rule_highest_sequence_and_visibility() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let pool = pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let (co_a, co_b) = (Uuid::new_v4(), Uuid::new_v4());
-    let parent = loc(&mut conn, "PAR", "internal", None, co_a).await;
-    let demand = loc(&mut conn, "DEM", "internal", Some(format!("{parent}/")), co_a).await;
-    let other = loc(&mut conn, "OTH", "internal", None, co_a).await;
-    let pt = op_type(&mut conn, co_a, other, parent).await;
-    let pt_b = op_type(&mut conn, co_b, other, parent).await;
+    let parent = loc(&mut conn, "PAR", "internal", None).await;
+    let demand = loc(&mut conn, "DEM", "internal", Some(format!("{parent}/"))).await;
+    let other = loc(&mut conn, "OTH", "internal", None).await;
+    let pt = op_type(&mut conn, other, parent).await;
     drop(conn);
 
     let svc = ProcurementService::new(pool.clone());
-    let r_route = |active: bool, company: Option<Uuid>| NewRoute {
-        name: uq("RT"), active, sequence: 10, company_id: company,
+    let r_route = |active: bool| NewRoute {
+        name: uq("RT"), active, sequence: 10,
     };
-    let route1 = svc.create_route(r_route(true, Some(co_a))).await.unwrap();
-    let route2 = svc.create_route(r_route(true, Some(co_a))).await.unwrap();
-    let dead_route = svc.create_route(r_route(false, Some(co_a))).await.unwrap();
-    let shared_route = svc.create_route(r_route(true, None)).await.unwrap();
-    let foreign_route = svc.create_route(r_route(true, Some(co_b))).await.unwrap();
+    let route1 = svc.create_route(r_route(true)).await.unwrap();
+    let route2 = svc.create_route(r_route(true)).await.unwrap();
+    let dead_route = svc.create_route(r_route(false)).await.unwrap();
 
     // seq 10 → demand location itself; seq 20 → an ANCESTOR of the demand (still covers it).
-    let r10 = svc.create_rule(rule("seq10", 10, demand, pt, route1, Some(co_a), 0)).await.unwrap();
-    let r20 = svc.create_rule(rule("seq20", 20, parent, pt, route2, Some(co_a), 0)).await.unwrap();
+    let r10 = svc.create_rule(rule("seq10", 10, demand, pt, route1, 0)).await.unwrap();
+    let r20 = svc.create_rule(rule("seq20", 20, parent, pt, route2, 0)).await.unwrap();
     // Highest sequence of all, but its route is inactive → never selected.
-    svc.create_rule(rule("seq99", 99, parent, pt, dead_route, Some(co_a), 0)).await.unwrap();
-    // A NULL-company rule on a shared route → visible to every company.
-    let r05 = svc.create_rule(rule("seq05", 5, parent, pt, shared_route, None, 0)).await.unwrap();
-    // A rule of another company → invisible to A (its own company sees it).
-    let r30 = svc.create_rule(rule("seq30", 30, parent, pt_b, foreign_route, Some(co_b), 0)).await.unwrap();
+    svc.create_rule(rule("seq99", 99, parent, pt, dead_route, 0)).await.unwrap();
     // A rule whose destination does not cover the demand location → never selected.
-    svc.create_rule(rule("seq40-unrelated", 40, other, pt, route1, Some(co_a), 0)).await.unwrap();
+    svc.create_rule(rule("seq40-unrelated", 40, other, pt, route1, 0)).await.unwrap();
 
-    // Company A: seq 20 wins over seq 10 and the shared seq 5 (99 is on an inactive route, 30
-    // and 40 are invisible/irrelevant).
-    let found = svc.search_rule(co_a, demand, None).await.unwrap().expect("a rule covers the demand");
+    // Seq 20 wins over seq 10 (99 is on an inactive route, 40 does not cover the demand).
+    let found = svc.search_rule(demand, None).await.unwrap().expect("a rule covers the demand");
     assert_eq!(found.id, r20, "highest-sequence covering rule wins");
     assert_eq!(found.sequence, 20);
 
     // Explicit route filter restricts the candidate set.
-    let found = svc.search_rule(co_a, demand, Some(vec![route1])).await.unwrap().expect("route1 has a covering rule");
+    let found = svc.search_rule(demand, Some(vec![route1])).await.unwrap().expect("route1 has a covering rule");
     assert_eq!(found.id, r10, "route filter pins the selection to that route's rules");
-
-    // Company B: its own seq 30 beats the shared seq 5; company A's rules are invisible.
-    let found = svc.search_rule(co_b, demand, None).await.unwrap().expect("shared + own rules cover the demand");
-    assert_eq!(found.id, r30, "own-company rule outranks the shared one");
-
-    // A company with only company-A rules around still sees the shared NULL-company rule.
-    let co_c = Uuid::new_v4();
-    let found = svc.search_rule(co_c, demand, None).await.unwrap().expect("shared rule is visible to any company");
-    assert_eq!(found.id, r05, "the NULL-company shared rule is the shared fallback");
 }
 
 // --- T11: forecast / to-order computes ---------------------------------------------
@@ -490,34 +412,34 @@ async fn ss6_search_rule_highest_sequence_and_visibility() {
 // = forecast 10; to_order = max(20, 10) − 10 = 10; lead days 3 from the matched rule's delay.
 #[tokio::test]
 async fn t11_forecast_and_to_order_computes() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let pool = pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let co = Uuid::new_v4();
-    let stock = loc(&mut conn, "STK", "internal", None, co).await;
-    let child = loc(&mut conn, "SUB", "internal", Some(format!("{stock}/")), co).await;
-    let sup = loc(&mut conn, "SUP", "supplier", None, co).await;
-    let cust = loc(&mut conn, "CUS", "customer", None, co).await;
-    let wh = warehouse(&mut conn, co).await;
-    let pt = op_type(&mut conn, co, sup, stock).await;
+    let stock = loc(&mut conn, "STK", "internal", None).await;
+    let child = loc(&mut conn, "SUB", "internal", Some(format!("{stock}/"))).await;
+    let sup = loc(&mut conn, "SUP", "supplier", None).await;
+    let cust = loc(&mut conn, "CUS", "customer", None).await;
+    let wh = warehouse(&mut conn).await;
+    let pt = op_type(&mut conn, sup, stock).await;
     let item = Uuid::new_v4();
 
     // On hand 5: quantity 7, reserved 2 — parked at the CHILD so the subtree aggregation is what
     // sees it from the orderpoint's monitored location.
-    quant(&mut conn, item, child, d("7"), d("2"), co).await;
+    quant(&mut conn, item, child, d("7"), d("2")).await;
     // Incoming 8: confirmed move supplying stock (demand 10, done-so-far 2).
-    raw_move(&mut conn, "confirmed", item, sup, stock, d("10"), d("2"), co).await;
+    raw_move(&mut conn, "confirmed", item, sup, stock, d("10"), d("2")).await;
     // Outgoing 3: confirmed move shipping out of stock (demand 4, done-so-far 1).
-    raw_move(&mut conn, "confirmed", item, stock, cust, d("4"), d("1"), co).await;
+    raw_move(&mut conn, "confirmed", item, stock, cust, d("4"), d("1")).await;
     // A draft outgoing of 100 must NOT enter the forecast.
-    raw_move(&mut conn, "draft", item, stock, cust, d("100"), d("0"), co).await;
+    raw_move(&mut conn, "draft", item, stock, cust, d("100"), d("0")).await;
     drop(conn);
 
     let svc = ProcurementService::new(pool.clone());
     let route = svc
-        .create_route(NewRoute { name: uq("RT"), active: true, sequence: 10, company_id: Some(co) })
+        .create_route(NewRoute { name: uq("RT"), active: true, sequence: 10 })
         .await
         .unwrap();
-    svc.create_rule(rule("t11", 10, stock, pt, route, Some(co), 3)).await.unwrap(); // delay 3
+    svc.create_rule(rule("t11", 10, stock, pt, route, 3)).await.unwrap(); // delay 3
 
     let op = svc
         .create_orderpoint(NewOrderpoint {
@@ -526,7 +448,6 @@ async fn t11_forecast_and_to_order_computes() {
             item_id: item,
             location_id: stock,
             warehouse_id: wh,
-            company_id: co,
             item_min_qty: d("12"), // forecast 10 < 12 → the reorder rung would fire
             item_max_qty: d("20"),
             route_id: Some(route),
@@ -534,7 +455,7 @@ async fn t11_forecast_and_to_order_computes() {
         .await
         .unwrap();
 
-    let computes = svc.recompute_orderpoint(co, op).await.unwrap();
+    let computes = svc.recompute_orderpoint(op).await.unwrap();
     assert_eq!(computes.qty_on_hand, d("5"), "on hand nets out reservations, over the subtree");
     assert_eq!(computes.qty_forecast, d("10"), "on hand 5 + incoming 8 - outgoing 3");
     assert_eq!(computes.qty_to_order, d("10"), "to order = max(20, forecast 10) - 10, floored at zero");
@@ -562,24 +483,29 @@ async fn t11_forecast_and_to_order_computes() {
 // removes only zero/unreserved/count-free rows.
 #[tokio::test]
 async fn ss7_scheduler_reorder_assign_housekeep() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let pool = pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let co = Uuid::new_v4();
-    let stock = loc(&mut conn, "STK", "internal", None, co).await;
-    let sup = loc(&mut conn, "SUP", "supplier", None, co).await;
-    let wh = warehouse(&mut conn, co).await;
-    let pt = op_type(&mut conn, co, sup, stock).await;
+    let stock = loc(&mut conn, "STK", "internal", None).await;
+    let sup = loc(&mut conn, "SUP", "supplier", None).await;
+    let wh = warehouse(&mut conn).await;
+    let pt = op_type(&mut conn, sup, stock).await;
     drop(conn);
+    // The claim and vacuum sweeps read whole undecorated tables (the org fence that
+    // used to partition them lives in the composing decorator) — clear the other
+    // parties' rows so the exact counts are exactly this test's orderpoints and quants.
+    sqlx::query("DELETE FROM inventory.reordering_rules").execute(&pool).await.unwrap();
+    sqlx::query("DELETE FROM inventory.stock_quants").execute(&pool).await.unwrap();
 
     let svc = ProcurementService::new(pool.clone());
     let route = svc
-        .create_route(NewRoute { name: uq("RT"), active: true, sequence: 10, company_id: Some(co) })
+        .create_route(NewRoute { name: uq("RT"), active: true, sequence: 10 })
         .await
         .unwrap();
     svc.create_rule(NewRouteRule {
         location_src_id: Some(sup),
         delay: 2,
-        ..rule("sched", 10, stock, pt, route, Some(co), 0)
+        ..rule("sched", 10, stock, pt, route, 0)
     })
     .await
     .unwrap();
@@ -590,7 +516,6 @@ async fn ss7_scheduler_reorder_assign_housekeep() {
         item_id: item,
         location_id: stock,
         warehouse_id: wh,
-        company_id: co,
         item_min_qty: d("5"),
         item_max_qty: d("12"),
         route_id: Some(route),
@@ -609,18 +534,18 @@ async fn ss7_scheduler_reorder_assign_housekeep() {
 
     let mut conn = pool.acquire().await.unwrap();
     // item3 sits above its minimum (6 on hand >= min 5).
-    let keep3 = quant(&mut conn, item3, stock, d("6"), d("0"), co).await;
+    let keep3 = quant(&mut conn, item3, stock, d("6"), d("0")).await;
     // Assign sweep intake: a confirmed move nothing else will touch.
-    let confirmed_move = raw_move(&mut conn, "confirmed", Uuid::new_v4(), sup, stock, d("3"), d("0"), co).await;
+    let confirmed_move = raw_move(&mut conn, "confirmed", Uuid::new_v4(), sup, stock, d("3"), d("0")).await;
     // Housekeep candidates: exactly one removable (zero, unreserved, no staged count).
-    let removable = quant(&mut conn, Uuid::new_v4(), stock, d("0"), d("0"), co).await;
-    let staged = quant(&mut conn, Uuid::new_v4(), stock, d("0"), d("0"), co).await; // pinned by a count
+    let removable = quant(&mut conn, Uuid::new_v4(), stock, d("0"), d("0")).await;
+    let staged = quant(&mut conn, Uuid::new_v4(), stock, d("0"), d("0")).await; // pinned by a count
     sqlx::query("UPDATE inventory.stock_quants SET inventory_quantity_set = TRUE WHERE id = $1")
         .bind(staged)
         .execute(&mut *conn)
         .await
         .unwrap();
-    let reserved_zero = quant(&mut conn, Uuid::new_v4(), stock, d("0"), d("1"), co).await; // reserved pins it
+    let reserved_zero = quant(&mut conn, Uuid::new_v4(), stock, d("0"), d("1")).await; // reserved pins it
     drop(conn);
 
     let sink = Arc::new(CapturingSink::default());
@@ -629,7 +554,6 @@ async fn ss7_scheduler_reorder_assign_housekeep() {
         &pool,
         &svc,
         Arc::new(StubPipeline),
-        co,
         SchedulerBatching { batch_size: 50, max_batches: 10 },
     )
     .await
@@ -704,7 +628,6 @@ async fn ss7_scheduler_reorder_assign_housekeep() {
         &pool,
         &svc2,
         Arc::new(StubPipeline),
-        co,
         SchedulerBatching { batch_size: 50, max_batches: 10 },
     )
     .await
@@ -720,22 +643,22 @@ async fn ss7_scheduler_reorder_assign_housekeep() {
 // the typed no_rule_for_demand error.
 #[tokio::test]
 async fn run_procurement_selects_rule_and_mints_pull() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let pool = pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let co = Uuid::new_v4();
-    let stock = loc(&mut conn, "STK", "internal", None, co).await;
-    let sup = loc(&mut conn, "SUP", "supplier", None, co).await;
-    let nowhere = loc(&mut conn, "NOW", "internal", None, co).await;
-    let pt = op_type(&mut conn, co, sup, stock).await;
+    let stock = loc(&mut conn, "STK", "internal", None).await;
+    let sup = loc(&mut conn, "SUP", "supplier", None).await;
+    let nowhere = loc(&mut conn, "NOW", "internal", None).await;
+    let pt = op_type(&mut conn, sup, stock).await;
     drop(conn);
 
     let svc = ProcurementService::new(pool.clone());
     let route = svc
-        .create_route(NewRoute { name: uq("RT"), active: true, sequence: 10, company_id: Some(co) })
+        .create_route(NewRoute { name: uq("RT"), active: true, sequence: 10 })
         .await
         .unwrap();
     let rule_id = svc
-        .create_rule(NewRouteRule { location_src_id: Some(sup), ..rule("hook", 10, stock, pt, route, Some(co), 0) })
+        .create_rule(NewRouteRule { location_src_id: Some(sup), ..rule("hook", 10, stock, pt, route, 0) })
         .await
         .unwrap();
     let item = Uuid::new_v4();
@@ -746,7 +669,6 @@ async fn run_procurement_selects_rule_and_mints_pull() {
         quantity: d("6"),
         location_id: stock,
         warehouse_id: None,
-        company_id: co,
         route_ids: None,
         origin: "sale-stock confirm".into(),
         orderpoint_id: None,
@@ -776,7 +698,6 @@ async fn run_procurement_selects_rule_and_mints_pull() {
             quantity: d("1"),
             location_id: nowhere,
             warehouse_id: None,
-            company_id: co,
             route_ids: None,
             origin: "test".into(),
             orderpoint_id: None,
@@ -790,24 +711,24 @@ async fn run_procurement_selects_rule_and_mints_pull() {
 // pair through move_orig_ids / move_dest_ids.
 #[tokio::test]
 async fn run_push_mints_and_links_the_chain() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let pool = pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let co = Uuid::new_v4();
-    let stock = loc(&mut conn, "STK", "internal", None, co).await;
-    let shelf = loc(&mut conn, "SHF", "internal", Some(format!("{stock}/")), co).await;
-    let sup = loc(&mut conn, "SUP", "supplier", None, co).await;
-    let pt = op_type(&mut conn, co, sup, stock).await;
+    let stock = loc(&mut conn, "STK", "internal", None).await;
+    let shelf = loc(&mut conn, "SHF", "internal", Some(format!("{stock}/"))).await;
+    let sup = loc(&mut conn, "SUP", "supplier", None).await;
+    let pt = op_type(&mut conn, sup, stock).await;
     drop(conn);
 
     let svc = ProcurementService::new(pool.clone());
     let route = svc
-        .create_route(NewRoute { name: uq("RT"), active: true, sequence: 10, company_id: Some(co) })
+        .create_route(NewRoute { name: uq("RT"), active: true, sequence: 10 })
         .await
         .unwrap();
     svc.create_rule(NewRouteRule {
         action: "pull_push".into(),
         location_src_id: Some(sup),
-        ..rule("push", 20, stock, pt, route, Some(co), 0)
+        ..rule("push", 20, stock, pt, route, 0)
     })
     .await
     .unwrap();
@@ -820,7 +741,6 @@ async fn run_push_mints_and_links_the_chain() {
         quantity: d("10"),
         location_id: stock,
         warehouse_id: None,
-        company_id: co,
         route_ids: None,
         origin: "chain test".into(),
         orderpoint_id: None,
@@ -837,11 +757,11 @@ async fn run_push_mints_and_links_the_chain() {
         uq("MV"), MoveState::Confirmed, GlPostingState::NotApplicable, Priority::Normal,
         chrono::Utc::now(), chrono::Utc::now(),
         item, d("10"), d("3"), d("0"), ProcureMethod::MakeToStock,
-        sup, shelf, co, vec![], vec![], false, false, true,
+        sup, shelf, vec![], vec![], false, false, true,
     );
     let upstream = StockMove { id: upstream_id, ..upstream };
     let rule_row = backbone_inventory::infrastructure::persistence::ProcurementRepository::search_rule(
-        &mut *conn, co, stock, Some(vec![route]),
+        &mut *conn, stock, Some(vec![route]),
     )
     .await
     .unwrap()
@@ -878,12 +798,15 @@ async fn run_push_mints_and_links_the_chain() {
 // are the read-only replenishment view for humans), and snoozed orderpoints wait.
 #[tokio::test]
 async fn scheduler_claim_excludes_manual_and_snoozed_orderpoints() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let pool = pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let co = Uuid::new_v4();
-    let stock = loc(&mut conn, "STK", "internal", None, co).await;
-    let wh = warehouse(&mut conn, co).await;
+    let stock = loc(&mut conn, "STK", "internal", None).await;
+    let wh = warehouse(&mut conn).await;
     drop(conn);
+    // Same sweep-isolation cleanup as the reorder sweep: the claim predicates read
+    // the whole undecorated table.
+    sqlx::query("DELETE FROM inventory.reordering_rules").execute(&pool).await.unwrap();
 
     let svc = ProcurementService::new(pool.clone());
     let base = |item: Uuid, trigger: &str| NewOrderpoint {
@@ -892,7 +815,6 @@ async fn scheduler_claim_excludes_manual_and_snoozed_orderpoints() {
         item_id: item,
         location_id: stock,
         warehouse_id: wh,
-        company_id: co,
         item_min_qty: d("5"),
         item_max_qty: d("12"),
         route_id: None,
@@ -908,7 +830,7 @@ async fn scheduler_claim_excludes_manual_and_snoozed_orderpoints() {
 
     let mut conn = pool.acquire().await.unwrap();
     let claimed = backbone_inventory::infrastructure::persistence::ProcurementRepository::claim_orderpoints(
-        &mut *conn, co, 50,
+        &mut *conn, 50,
     )
     .await
     .unwrap();
@@ -931,28 +853,27 @@ impl GlPostSink for NullGlSink {
 /// The sale-shape fixture: an internal stock location, the Customers-root-style demand
 /// location, an operation type over the pair, and one active pull rule sourcing from stock
 /// into the demand location (the make-to-stock delivery leg). Returns
-/// `(company, stock location, demand location, operation type, rule, procurement service)`.
-async fn sale_shape(pool: &PgPool) -> (Uuid, Uuid, Uuid, Uuid, Uuid, ProcurementService) {
+/// `(stock location, demand location, operation type, rule, procurement service)`.
+async fn sale_shape(pool: &PgPool) -> (Uuid, Uuid, Uuid, Uuid, ProcurementService) {
     let mut conn = pool.acquire().await.unwrap();
-    let co = Uuid::new_v4();
-    let stock = loc(&mut conn, "STK", "internal", None, co).await;
-    let cust = loc(&mut conn, "CUST", "customer", None, co).await;
-    let pt = op_type(&mut conn, co, stock, cust).await;
+    let stock = loc(&mut conn, "STK", "internal", None).await;
+    let cust = loc(&mut conn, "CUST", "customer", None).await;
+    let pt = op_type(&mut conn, stock, cust).await;
     drop(conn);
 
     let svc = ProcurementService::new(pool.clone());
     let route = svc
-        .create_route(NewRoute { name: uq("RT"), active: true, sequence: 10, company_id: Some(co) })
+        .create_route(NewRoute { name: uq("RT"), active: true, sequence: 10 })
         .await
         .unwrap();
     let rule_id = svc
         .create_rule(NewRouteRule {
             location_src_id: Some(stock),
-            ..rule("deliver", 10, cust, pt, route, Some(co), 0)
+            ..rule("deliver", 10, cust, pt, route, 0)
         })
         .await
         .unwrap();
-    (co, stock, cust, pt, rule_id, svc)
+    (stock, cust, pt, rule_id, svc)
 }
 
 // Moves launched for ONE source document (the origin is the procurement-group stand-in) join
@@ -960,8 +881,9 @@ async fn sale_shape(pool: &PgPool) -> (Uuid, Uuid, Uuid, Uuid, Uuid, Procurement
 // rule-launched demand onto the picking surface an operator validates.
 #[tokio::test]
 async fn assign_picking_groups_rule_launched_moves_by_origin() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let pool = pool().await;
-    let (co, _stock, cust, pt, _rule, svc) = sale_shape(&pool).await;
+    let (_stock, cust, pt, _rule, svc) = sale_shape(&pool).await;
     let w = InventoryWriteService::new(pool.clone());
 
     let order_a = uq("SO");
@@ -971,7 +893,6 @@ async fn assign_picking_groups_rule_launched_moves_by_origin() {
         quantity: d("4"),
         location_id: cust,
         warehouse_id: None,
-        company_id: co,
         route_ids: None,
         origin,
         orderpoint_id: None,
@@ -982,22 +903,22 @@ async fn assign_picking_groups_rule_launched_moves_by_origin() {
     let b1 = svc.run_procurement(&mut c, &req(Uuid::new_v4(), order_b.clone())).await.unwrap();
     drop(c);
 
-    let first = w.assign_picking(co, a1).await.unwrap();
+    let first = w.assign_picking(a1).await.unwrap();
     assert!(first.minted, "the first move of a document mints the transfer");
-    let second = w.assign_picking(co, a2).await.unwrap();
+    let second = w.assign_picking(a2).await.unwrap();
     assert_eq!(second.transfer_id, first.transfer_id);
     assert!(!second.minted, "a sibling line of the same document JOINS the open transfer");
-    let other = w.assign_picking(co, b1).await.unwrap();
+    let other = w.assign_picking(b1).await.unwrap();
     assert!(other.minted, "a different document gets its own transfer");
     assert_ne!(other.transfer_id, first.transfer_id);
 
-    let (header, moves) = w.fetch_picking(co, first.transfer_id).await.unwrap();
+    let (header, moves) = w.fetch_picking(first.transfer_id).await.unwrap();
     assert_eq!(header.origin.as_deref(), Some(order_a.as_str()));
     assert_eq!(header.picking_type_id, pt);
     assert_eq!(moves.len(), 2, "both lines of the document sit on its transfer");
     assert_eq!(header.state, "draft", "the projection derives from the draft member moves");
 
-    let (other_header, other_moves) = w.fetch_picking(co, other.transfer_id).await.unwrap();
+    let (other_header, other_moves) = w.fetch_picking(other.transfer_id).await.unwrap();
     assert_eq!(other_header.origin.as_deref(), Some(order_b.as_str()));
     assert_eq!(other_moves.len(), 1);
 }
@@ -1007,8 +928,9 @@ async fn assign_picking_groups_rule_launched_moves_by_origin() {
 // terminal states.
 #[tokio::test]
 async fn assign_picking_is_idempotent_and_fails_closed() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let pool = pool().await;
-    let (co, stock, cust, _pt, _rule, svc) = sale_shape(&pool).await;
+    let (stock, cust, _pt, _rule, svc) = sale_shape(&pool).await;
     let item = Uuid::new_v4();
     let mut c = pool.acquire().await.unwrap();
     let mv = svc
@@ -1017,7 +939,6 @@ async fn assign_picking_is_idempotent_and_fails_closed() {
             quantity: d("2"),
             location_id: cust,
             warehouse_id: None,
-            company_id: co,
             route_ids: None,
             origin: uq("SO"),
             orderpoint_id: None,
@@ -1027,19 +948,19 @@ async fn assign_picking_is_idempotent_and_fails_closed() {
     drop(c);
     // A hand-minted move with NO rule and a DONE move, for the fail-closed arms.
     let mut conn = pool.acquire().await.unwrap();
-    let ruleless = raw_move(&mut conn, "confirmed", item, stock, cust, d("1"), d("0"), co).await;
-    let finished = raw_move(&mut conn, "done", item, stock, cust, d("1"), d("1"), co).await;
+    let ruleless = raw_move(&mut conn, "confirmed", item, stock, cust, d("1"), d("0")).await;
+    let finished = raw_move(&mut conn, "done", item, stock, cust, d("1"), d("1")).await;
     drop(conn);
 
     let w = InventoryWriteService::new(pool.clone());
-    let first = w.assign_picking(co, mv).await.unwrap();
-    let again = w.assign_picking(co, mv).await.unwrap();
+    let first = w.assign_picking(mv).await.unwrap();
+    let again = w.assign_picking(mv).await.unwrap();
     assert_eq!(again.transfer_id, first.transfer_id);
     assert!(!again.minted, "the second call joins the transfer the first minted");
 
-    let err = w.assign_picking(co, ruleless).await.unwrap_err();
+    let err = w.assign_picking(ruleless).await.unwrap_err();
     assert_eq!(err.code(), "move_has_no_rule");
-    let err = w.assign_picking(co, finished).await.unwrap_err();
+    let err = w.assign_picking(finished).await.unwrap_err();
     assert_eq!(err.code(), "wrong_move_state");
 }
 
@@ -1048,11 +969,12 @@ async fn assign_picking_is_idempotent_and_fails_closed() {
 // and that the moves-by-origin read reconstructs the delivered quantity afterwards.
 #[tokio::test]
 async fn validate_picking_drives_rule_launched_demand() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let pool = pool().await;
-    let (co, stock, cust, _pt, _rule, svc) = sale_shape(&pool).await;
+    let (stock, cust, _pt, _rule, svc) = sale_shape(&pool).await;
     let item = Uuid::new_v4();
     let mut conn = pool.acquire().await.unwrap();
-    quant(&mut conn, item, stock, d("10"), d("0"), co).await;
+    quant(&mut conn, item, stock, d("10"), d("0")).await;
     drop(conn);
 
     let origin = uq("SO");
@@ -1063,7 +985,6 @@ async fn validate_picking_drives_rule_launched_demand() {
             quantity: d("6"),
             location_id: cust,
             warehouse_id: None,
-            company_id: co,
             route_ids: None,
             origin: origin.clone(),
             orderpoint_id: None,
@@ -1073,13 +994,13 @@ async fn validate_picking_drives_rule_launched_demand() {
     drop(c);
 
     let w = InventoryWriteService::new(pool.clone());
-    let assignment = w.assign_picking(co, mv).await.unwrap();
+    let assignment = w.assign_picking(mv).await.unwrap();
     assert!(assignment.minted);
-    let state = w.action_confirm(co, mv).await.unwrap();
+    let state = w.action_confirm(mv).await.unwrap();
     assert_eq!(state, "confirmed");
 
     let validated = w
-        .validate_picking(co, assignment.transfer_id, &MoveGlDirective::default(), &NullGlSink)
+        .validate_picking(assignment.transfer_id, &MoveGlDirective::default(), &NullGlSink)
         .await
         .unwrap();
     assert_eq!(validated.projected_state, "done", "the projection derives from the done move");
@@ -1087,16 +1008,15 @@ async fn validate_picking_drives_rule_launched_demand() {
     // The delivered-quantity reconstruction read: moves by origin, done state, done qty.
     let moves_repo = backbone_inventory::infrastructure::persistence::StockMoveRepository::new(pool.clone());
     let mut c = pool.acquire().await.unwrap();
-    let done = moves_repo.fetch_moves_by_origin(&mut c, co, &origin).await.unwrap();
+    let done = moves_repo.fetch_moves_by_origin(&mut c, &origin).await.unwrap();
     drop(c);
     assert_eq!(done.len(), 1);
     assert_eq!(done[0].state, "done");
     assert_eq!(done[0].quantity, d("6"));
 
     let on_hand: Decimal = sqlx::query_scalar(
-        "SELECT quantity FROM inventory.stock_quants WHERE company_id = $1 AND item_id = $2 AND location_id = $3",
+        "SELECT quantity FROM inventory.stock_quants WHERE item_id = $1 AND location_id = $2",
     )
-    .bind(co)
     .bind(item)
     .bind(stock)
     .fetch_one(&pool)

@@ -25,7 +25,6 @@ impl TestDataGenerator for StockReconciliationTestData {
         json!({
             "id": Uuid::new_v4().to_string(),
             "recon_number": format!("Test {}", Uuid::new_v4().to_string().split('-').next().unwrap()),
-            "company_id": Uuid::new_v4().to_string(),
             "warehouse_id": Uuid::new_v4().to_string(),
             "posting_date": Utc::now().format("%Y-%m-%d").to_string(),
             "net_difference": 0,
@@ -45,7 +44,6 @@ impl TestDataGenerator for StockReconciliationTestData {
         json!({
             "id": id,
             "recon_number": format!("Test {}", Uuid::new_v4().to_string().split('-').next().unwrap()),
-            "company_id": Uuid::new_v4().to_string(),
             "warehouse_id": Uuid::new_v4().to_string(),
             "posting_date": Utc::now().format("%Y-%m-%d").to_string(),
             "net_difference": 0,

@@ -38,9 +38,6 @@ pub struct CreateStockItemDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "validation", validate(length(max = 20)))]
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "stock_uom")]
@@ -81,9 +78,6 @@ pub struct UpdateStockItemDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "validation", validate(length(max = 20)))]
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "stock_uom")]
@@ -124,9 +118,6 @@ pub struct PatchStockItemDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "item_id")]
     pub item_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[cfg_attr(feature = "validation", validate(length(max = 20)))]
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "stock_uom")]
@@ -154,7 +145,7 @@ pub struct PatchStockItemDto {
 impl PatchStockItemDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.item_id.is_some() || self.company_id.is_some() || self.stock_uom.is_some() || self.is_stock_item.is_some() || self.has_batch.is_some() || self.valuation_method.is_some() || self.reorder_level.is_some() || self.weight_per_unit.is_some() || self.service_tracking.is_some() || self.service_project_id.is_some() || self.service_project_template_id.is_some()
+        self.item_id.is_some() || self.stock_uom.is_some() || self.is_stock_item.is_some() || self.has_batch.is_some() || self.valuation_method.is_some() || self.reorder_level.is_some() || self.weight_per_unit.is_some() || self.service_tracking.is_some() || self.service_project_id.is_some() || self.service_project_template_id.is_some()
     }
 }
 
@@ -174,8 +165,6 @@ pub struct StockItemResponseDto {
     pub id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub item_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub stock_uom: String,
     #[cfg_attr(feature = "openapi", schema(example = true))]
@@ -246,8 +235,8 @@ impl StockItemListResponseDto {
 pub struct StockItemSummaryDto {
     pub id: Uuid,
     pub item_id: Uuid,
-    pub company_id: Uuid,
     pub stock_uom: String,
+    pub is_stock_item: bool,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -260,7 +249,6 @@ impl From<StockItem> for StockItemResponseDto {
         Self {
             id: entity.id,
             item_id: entity.item_id,
-            company_id: entity.company_id,
             stock_uom: entity.stock_uom,
             is_stock_item: entity.is_stock_item,
             has_batch: entity.has_batch,
@@ -281,8 +269,8 @@ impl From<StockItem> for StockItemSummaryDto {
         Self {
             id: entity.id,
             item_id: entity.item_id,
-            company_id: entity.company_id,
             stock_uom: entity.stock_uom,
+            is_stock_item: entity.is_stock_item,
             created_at,
         }
     }
@@ -293,7 +281,6 @@ impl From<CreateStockItemDto> for StockItem {
         Self {
             id: Uuid::new_v4(),
             item_id: dto.item_id,
-            company_id: dto.company_id,
             stock_uom: dto.stock_uom,
             is_stock_item: dto.is_stock_item,
             has_batch: dto.has_batch,
@@ -313,7 +300,6 @@ impl From<&StockItem> for StockItemResponseDto {
         Self {
             id: entity.id.clone(),
             item_id: entity.item_id.clone(),
-            company_id: entity.company_id.clone(),
             stock_uom: entity.stock_uom.clone(),
             is_stock_item: entity.is_stock_item.clone(),
             has_batch: entity.has_batch.clone(),
@@ -337,7 +323,6 @@ impl backbone_core::FromCreateDto<CreateStockItemDto> for StockItem {
 impl backbone_core::ApplyUpdateDto<UpdateStockItemDto> for StockItem {
     fn apply_update(mut self, dto: UpdateStockItemDto) -> backbone_core::ServiceResult<Self> {
         self.item_id = dto.item_id;
-        self.company_id = dto.company_id;
         self.stock_uom = dto.stock_uom;
         self.is_stock_item = dto.is_stock_item;
         self.has_batch = dto.has_batch;

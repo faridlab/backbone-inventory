@@ -44,7 +44,6 @@ pub struct BinPaginatedResult {
 /// Filter parameters for list queries
 #[derive(Debug, Clone, Default)]
 pub struct BinFilter {
-    pub company_id: Option<Uuid>,
     pub item_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
 }
@@ -52,7 +51,7 @@ pub struct BinFilter {
 impl BinFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.company_id.is_some() || self.item_id.is_some() || self.warehouse_id.is_some()
+        self.item_id.is_some() || self.warehouse_id.is_some()
     }
 }
 

@@ -41,8 +41,6 @@ pub struct CreatePackageDto {
     pub complete_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "location_id")]
     pub location_id: Option<Uuid>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "parent_package_id")]
     pub parent_package_id: Option<Uuid>,
     #[cfg_attr(feature = "validation", validate(length(max = 1000)))]
@@ -77,8 +75,6 @@ pub struct UpdatePackageDto {
     pub complete_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "location_id")]
     pub location_id: Option<Uuid>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "parent_package_id")]
     pub parent_package_id: Option<Uuid>,
     #[cfg_attr(feature = "validation", validate(length(max = 1000)))]
@@ -114,8 +110,6 @@ pub struct PatchPackageDto {
     pub complete_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "location_id")]
     pub location_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "parent_package_id")]
     pub parent_package_id: Option<Uuid>,
     #[cfg_attr(feature = "validation", validate(length(max = 1000)))]
@@ -131,7 +125,7 @@ pub struct PatchPackageDto {
 impl PatchPackageDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.name.is_some() || self.complete_name.is_some() || self.location_id.is_some() || self.company_id.is_some() || self.parent_package_id.is_some() || self.parent_path.is_some() || self.pack_date.is_some() || self.package_type_id.is_some()
+        self.name.is_some() || self.complete_name.is_some() || self.location_id.is_some() || self.parent_package_id.is_some() || self.parent_path.is_some() || self.pack_date.is_some() || self.package_type_id.is_some()
     }
 }
 
@@ -154,7 +148,6 @@ pub struct PackageResponseDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub complete_name: String,
     pub location_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
     pub parent_package_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub parent_path: String,
@@ -234,7 +227,6 @@ impl From<Package> for PackageResponseDto {
             name: entity.name,
             complete_name: entity.complete_name,
             location_id: entity.location_id,
-            company_id: entity.company_id,
             parent_package_id: entity.parent_package_id,
             parent_path: entity.parent_path,
             pack_date: entity.pack_date,
@@ -264,7 +256,6 @@ impl From<CreatePackageDto> for Package {
             name: dto.name,
             complete_name: dto.complete_name,
             location_id: dto.location_id,
-            company_id: dto.company_id,
             parent_package_id: dto.parent_package_id,
             parent_path: dto.parent_path,
             pack_date: dto.pack_date,
@@ -281,7 +272,6 @@ impl From<&Package> for PackageResponseDto {
             name: entity.name.clone(),
             complete_name: entity.complete_name.clone(),
             location_id: entity.location_id.clone(),
-            company_id: entity.company_id.clone(),
             parent_package_id: entity.parent_package_id.clone(),
             parent_path: entity.parent_path.clone(),
             pack_date: entity.pack_date.clone(),
@@ -302,7 +292,6 @@ impl backbone_core::ApplyUpdateDto<UpdatePackageDto> for Package {
         self.name = dto.name;
         self.complete_name = dto.complete_name;
         self.location_id = dto.location_id;
-        self.company_id = dto.company_id;
         self.parent_package_id = dto.parent_package_id;
         self.parent_path = dto.parent_path;
         self.pack_date = dto.pack_date;

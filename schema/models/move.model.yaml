@@ -23,8 +23,9 @@
 # the existing AccountingPost seam and flips quants — a SERVICE METHOD, not
 # CRUD; this file declares only its data shapes.
 #
-# Company fence (ADR-0014): TRANSACTIONS, strict. company_id is required
-# (NOT NULL) on both rows.
+# Tenancy: none, by design (ADR-0029). The module is tenant-agnostic; the
+# composing service's decorator owns org scoping — both rows anchor at the
+# acting unit.
 # =============================================================================
 
 models:
@@ -129,10 +130,6 @@ models:
         attributes: ["@exclude_from_foreign_key_check"]
         description: "Contact (supplier on receipts, customer on deliveries) # logical FK to party.Party.id"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "STRICT transaction fence # logical FK to organization.Company.id"
 
       rule_id:
         type: uuid?
@@ -191,10 +188,6 @@ models:
 
     indexes:
       - type: index
-        name: _product_location_index
-        fields: [item_id, location_id, location_dest_id, company_id, state]
-        description: "Verbatim _product_location_index — the hot reservation/forecast scan (spec: product_id -> item_id vocabulary mapping; column list preserved in spirit, name preserved verbatim)"
-      - type: index
         fields: [state]
         description: "State worklist filtering"
       - type: index
@@ -216,8 +209,6 @@ models:
         description: "Orderpoint traceability (T11)"
       - type: index
         fields: [warehouse_id]
-      - type: index
-        fields: [company_id]
       - type: index
         fields: [posting_state]
         description: "Pending/failed GL sweep — the repost worklist (finds moves whose physical leg landed without a settled GL leg)"
@@ -306,10 +297,6 @@ models:
         attributes: ["@required", "@exclude_from_foreign_key_check"]
         description: "The moved item (denormalized from the move for quant gathering) # logical FK to catalog.Item.id"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "STRICT transaction fence (denormalized from the move) # logical FK to organization.Company.id"
 
       metadata:
         type: Metadata
@@ -349,8 +336,6 @@ models:
         fields: [location_id]
       - type: index
         fields: [location_dest_id]
-      - type: index
-        fields: [company_id]
 
 # =============================================================================
 # Enums

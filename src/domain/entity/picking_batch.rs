@@ -57,7 +57,6 @@ pub struct PickingBatch {
     pub user_id: Option<Uuid>,
     pub scheduled_date: DateTime<Utc>,
     pub had_members: bool,
-    pub company_id: Uuid,
     #[serde(default)]
     #[sqlx(json)]
     pub metadata: AuditMetadata,
@@ -70,7 +69,7 @@ impl PickingBatch {
     }
 
     /// Create a new PickingBatch with required fields
-    pub fn new(name: String, state: PickingBatchState, is_wave: bool, scheduled_date: DateTime<Utc>, had_members: bool, company_id: Uuid) -> Self {
+    pub fn new(name: String, state: PickingBatchState, is_wave: bool, scheduled_date: DateTime<Utc>, had_members: bool) -> Self {
         Self {
             id: Uuid::new_v4(),
             name,
@@ -80,7 +79,6 @@ impl PickingBatch {
             user_id: None,
             scheduled_date,
             had_members,
-            company_id,
             metadata: AuditMetadata::default(),
         }
     }
@@ -181,9 +179,6 @@ impl PickingBatch {
                 "had_members" => {
                     if let Ok(v) = serde_json::from_value(value) { self.had_members = v; }
                 }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 _ => {} // ignore unknown fields
             }
         }
@@ -239,15 +234,11 @@ impl backbone_orm::EntityRepoMeta for PickingBatch {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
         m.insert("user_id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("state".to_string(), "picking_batch_state".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
         &["name"]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -264,7 +255,6 @@ pub struct PickingBatchBuilder {
     user_id: Option<Uuid>,
     scheduled_date: Option<DateTime<Utc>>,
     had_members: Option<bool>,
-    company_id: Option<Uuid>,
 }
 
 impl PickingBatchBuilder {
@@ -310,17 +300,10 @@ impl PickingBatchBuilder {
         self
     }
 
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Build the PickingBatch entity
     ///
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<PickingBatch, String> {
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
 
         Ok(PickingBatch {
             id: Uuid::new_v4(),
@@ -331,7 +314,6 @@ impl PickingBatchBuilder {
             user_id: self.user_id,
             scheduled_date: self.scheduled_date.unwrap_or(Utc::now()),
             had_members: self.had_members.unwrap_or(false),
-            company_id,
             metadata: AuditMetadata::default(),
         })
     }

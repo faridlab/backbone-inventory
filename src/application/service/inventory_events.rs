@@ -3,6 +3,10 @@
 //! Semantic events a consumer subscribes to (per the module brief), distinct from generated CRUD
 //! events. Published through an `InventoryEventSink`. Notably `StockDelivered` lets `backbone-selling`
 //! advance its `delivered_qty` watermark, and `StockReceived` lets buying reconcile a PO.
+//!
+//! Every payload's `company_id` is a legacy twin (ADR-0029): filled from the ambient org scope's
+//! company echo for consumers that still read a tenant off the wire. No module statement keys on
+//! it.
 
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};

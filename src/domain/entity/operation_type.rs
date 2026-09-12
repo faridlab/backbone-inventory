@@ -58,7 +58,6 @@ pub struct OperationType {
     pub code: PickingCode,
     pub active: bool,
     pub sequence: i32,
-    pub company_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
     pub default_location_src_id: Uuid,
     pub default_location_dest_id: Uuid,
@@ -88,7 +87,6 @@ impl OperationType {
             code,
             active,
             sequence,
-            company_id: None,
             warehouse_id: None,
             default_location_src_id,
             default_location_dest_id,
@@ -157,12 +155,6 @@ impl OperationType {
     // Fluent Setters (with_* for optional fields)
     // ==========================================================
 
-    /// Set the company_id field (chainable)
-    pub fn with_company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Set the warehouse_id field (chainable)
     pub fn with_warehouse_id(mut self, value: Uuid) -> Self {
         self.warehouse_id = Some(value);
@@ -197,9 +189,6 @@ impl OperationType {
                 }
                 "sequence" => {
                     if let Ok(v) = serde_json::from_value(value) { self.sequence = v; }
-                }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
                 }
                 "warehouse_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.warehouse_id = v; }
@@ -282,7 +271,6 @@ impl backbone_orm::EntityRepoMeta for OperationType {
     fn column_types() -> std::collections::HashMap<String, String> {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("warehouse_id".to_string(), "uuid".to_string());
         m.insert("default_location_src_id".to_string(), "uuid".to_string());
         m.insert("default_location_dest_id".to_string(), "uuid".to_string());
@@ -294,9 +282,6 @@ impl backbone_orm::EntityRepoMeta for OperationType {
     }
     fn search_fields() -> &'static [&'static str] {
         &["name", "sequence_code"]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -311,7 +296,6 @@ pub struct OperationTypeBuilder {
     code: Option<PickingCode>,
     active: Option<bool>,
     sequence: Option<i32>,
-    company_id: Option<Uuid>,
     warehouse_id: Option<Uuid>,
     default_location_src_id: Option<Uuid>,
     default_location_dest_id: Option<Uuid>,
@@ -351,12 +335,6 @@ impl OperationTypeBuilder {
     /// Set the sequence field (default: `10`)
     pub fn sequence(mut self, value: i32) -> Self {
         self.sequence = Some(value);
-        self
-    }
-
-    /// Set the company_id field (optional)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
         self
     }
 
@@ -430,7 +408,6 @@ impl OperationTypeBuilder {
             code: self.code.unwrap_or_default(),
             active: self.active.unwrap_or(true),
             sequence: self.sequence.unwrap_or(10),
-            company_id: self.company_id,
             warehouse_id: self.warehouse_id,
             default_location_src_id,
             default_location_dest_id,

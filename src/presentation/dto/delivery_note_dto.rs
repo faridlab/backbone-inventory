@@ -39,9 +39,6 @@ pub struct CreateDeliveryNoteDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "delivery_number")]
     pub delivery_number: String,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "branch_id")]
     pub branch_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -96,9 +93,6 @@ pub struct UpdateDeliveryNoteDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "delivery_number")]
     pub delivery_number: String,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "branch_id")]
     pub branch_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -153,9 +147,6 @@ pub struct PatchDeliveryNoteDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "delivery_number")]
     pub delivery_number: Option<String>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "branch_id")]
     pub branch_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -197,7 +188,7 @@ pub struct PatchDeliveryNoteDto {
 impl PatchDeliveryNoteDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.delivery_number.is_some() || self.company_id.is_some() || self.branch_id.is_some() || self.customer_id.is_some() || self.source_so_id.is_some() || self.warehouse_id.is_some() || self.posting_date.is_some() || self.total_cogs.is_some() || self.cogs_account_id.is_some() || self.inventory_account_id.is_some() || self.transfer_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some() || self.posted_at.is_some() || self.notes.is_some()
+        self.delivery_number.is_some() || self.branch_id.is_some() || self.customer_id.is_some() || self.source_so_id.is_some() || self.warehouse_id.is_some() || self.posting_date.is_some() || self.total_cogs.is_some() || self.cogs_account_id.is_some() || self.inventory_account_id.is_some() || self.transfer_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some() || self.posted_at.is_some() || self.notes.is_some()
     }
 }
 
@@ -217,8 +208,6 @@ pub struct DeliveryNoteResponseDto {
     pub id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub delivery_number: String,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub customer_id: Uuid,
@@ -297,8 +286,8 @@ impl DeliveryNoteListResponseDto {
 pub struct DeliveryNoteSummaryDto {
     pub id: Uuid,
     pub delivery_number: String,
-    pub company_id: Uuid,
     pub branch_id: Option<Uuid>,
+    pub customer_id: Uuid,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -311,7 +300,6 @@ impl From<DeliveryNote> for DeliveryNoteResponseDto {
         Self {
             id: entity.id,
             delivery_number: entity.delivery_number,
-            company_id: entity.company_id,
             branch_id: entity.branch_id,
             customer_id: entity.customer_id,
             source_so_id: entity.source_so_id,
@@ -338,8 +326,8 @@ impl From<DeliveryNote> for DeliveryNoteSummaryDto {
         Self {
             id: entity.id,
             delivery_number: entity.delivery_number,
-            company_id: entity.company_id,
             branch_id: entity.branch_id,
+            customer_id: entity.customer_id,
             created_at,
         }
     }
@@ -350,7 +338,6 @@ impl From<CreateDeliveryNoteDto> for DeliveryNote {
         Self {
             id: Uuid::new_v4(),
             delivery_number: dto.delivery_number,
-            company_id: dto.company_id,
             branch_id: dto.branch_id,
             customer_id: dto.customer_id,
             source_so_id: dto.source_so_id,
@@ -376,7 +363,6 @@ impl From<&DeliveryNote> for DeliveryNoteResponseDto {
         Self {
             id: entity.id.clone(),
             delivery_number: entity.delivery_number.clone(),
-            company_id: entity.company_id.clone(),
             branch_id: entity.branch_id.clone(),
             customer_id: entity.customer_id.clone(),
             source_so_id: entity.source_so_id.clone(),
@@ -406,7 +392,6 @@ impl backbone_core::FromCreateDto<CreateDeliveryNoteDto> for DeliveryNote {
 impl backbone_core::ApplyUpdateDto<UpdateDeliveryNoteDto> for DeliveryNote {
     fn apply_update(mut self, dto: UpdateDeliveryNoteDto) -> backbone_core::ServiceResult<Self> {
         self.delivery_number = dto.delivery_number;
-        self.company_id = dto.company_id;
         self.branch_id = dto.branch_id;
         self.customer_id = dto.customer_id;
         self.source_so_id = dto.source_so_id;

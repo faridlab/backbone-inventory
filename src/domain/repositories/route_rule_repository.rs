@@ -54,14 +54,13 @@ pub struct RouteRuleFilter {
     pub picking_type_id: Option<Uuid>,
     pub route_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
-    pub company_id: Option<Uuid>,
     pub propagate_cancel: Option<bool>,
 }
 
 impl RouteRuleFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.name.is_some() || self.active.is_some() || self.action.is_some() || self.auto.is_some() || self.procure_method.is_some() || self.location_src_id.is_some() || self.location_dest_id.is_some() || self.picking_type_id.is_some() || self.route_id.is_some() || self.warehouse_id.is_some() || self.company_id.is_some() || self.propagate_cancel.is_some()
+        self.name.is_some() || self.active.is_some() || self.action.is_some() || self.auto.is_some() || self.procure_method.is_some() || self.location_src_id.is_some() || self.location_dest_id.is_some() || self.picking_type_id.is_some() || self.route_id.is_some() || self.warehouse_id.is_some() || self.propagate_cancel.is_some()
     }
 }
 

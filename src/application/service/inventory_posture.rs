@@ -1,10 +1,13 @@
-//! The per-company valuation posting posture (hand-authored, user-owned).
+//! The tenant's valuation posting posture (hand-authored, user-owned).
 //!
-//! An `impl InventoryWriteService` chunk: the single resolution of the company's valuation
-//! settings row ([`Posture`]) that every GL-posting surface consults — the four voucher-door
-//! envelope builders (receipt + delivery, submit + repost), the cancellation compensations,
-//! and the move engine's envelope builder. One helper, consulted everywhere, so the posture
-//! cannot drift between a door's submit and its repost/cancel legs.
+//! An `impl InventoryWriteService` chunk: the single resolution of the valuation settings row
+//! ([`Posture`]) that every GL-posting surface consults — the four voucher-door envelope
+//! builders (receipt + delivery, submit + repost), the cancellation compensations, and the move
+//! engine's envelope builder. One helper, consulted everywhere, so the posture cannot drift
+//! between a door's submit and its repost/cancel legs.
+//!
+//! Tenancy (ADR-0029): the module is tenant-agnostic. The settings read rides the ambient org
+//! scope the composing service set per request — the module never names a tenant itself.
 //!
 //! What the posture switches:
 //!
@@ -23,7 +26,7 @@
 //!
 //! An ABSENT settings row means the runtime defaults (`average` / perpetual / anglo off) —
 //! exactly the pre-overlay posting shapes — so rolling the module out is a no-op for
-//! companies that never configure it.
+//! tenants that never configure it.
 //!
 //! Per the module's 4-layer rule this file holds no SQL — the reads live on
 //! [`crate::infrastructure::persistence::ValuationOverlayRepository`].
@@ -33,14 +36,14 @@ use uuid::Uuid;
 
 use super::inventory_write_service::{InventoryError, InventoryWriteService};
 
-/// The resolved per-company posting posture. Built from the settings row, or the runtime
-/// defaults when the company has no row.
+/// The resolved posting posture. Built from the settings row, or the runtime defaults when
+/// the calling tenant has no row.
 #[derive(Debug, Clone)]
 pub struct Posture {
     /// `average` | `fifo` | `standard` — settings vocabulary. `average` (the moving-average
     /// SLE engine) is the only costing engine shipped; nothing in the posting path branches
-    /// on this yet (a `standard` company is refused loudly at landed-cost validation, which
-    /// owns that seam).
+    /// on this yet (a `standard` costing tenant is refused loudly at landed-cost validation,
+    /// which owns that seam).
     pub cost_method: String,
     /// `valuation_policy = 'periodic'`: real-time stock posts suppressed (doors + engine legs
     /// `not_applicable`); the closing flow that books them is a later increment.
@@ -66,18 +69,13 @@ impl Default for Posture {
 }
 
 impl InventoryWriteService {
-    /// Read the company's valuation settings row and resolve it into a [`Posture`]. `None`
-    /// from the repository (no row for the company) resolves to [`Posture::default`] — the
-    /// rollout no-op contract.
+    /// Read the valuation settings row and resolve it into a [`Posture`]. `None` from the
+    /// repository (no row for the calling tenant) resolves to [`Posture::default`] — the
+    /// rollout no-op contract. The read rides the ambient org scope (ADR-0029).
     pub(super) async fn posting_posture(
         &self,
-        company_id: Uuid,
     ) -> Result<Posture, InventoryError> {
-        let row = backbone_orm::company_scope::with_company_scope(
-            Some(company_id),
-            self.valuation_overlay.fetch_posture(&self.db_pool, company_id),
-        )
-        .await?;
+        let row = self.valuation_overlay.fetch_posture(&self.db_pool).await?;
         Ok(match row {
             None => Posture::default(),
             Some(r) => Posture {
@@ -90,15 +88,13 @@ impl InventoryWriteService {
     }
 
     /// The same posture resolution on the CALLER'S connection — the variant the move engine
-    /// uses inside its open movement transaction (the company is already bound on the
-    /// connection, so the strict-fenced settings read is RLS-correct without a second
-    /// transaction).
+    /// uses inside its open movement transaction (the ambient org scope is already bound on
+    /// the connection, so the fenced settings read is correct without a second transaction).
     pub(super) async fn posting_posture_on(
         &self,
         conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
     ) -> Result<Posture, InventoryError> {
-        let row = self.valuation_overlay.fetch_posture_on(conn, company_id).await?;
+        let row = self.valuation_overlay.fetch_posture_on(conn).await?;
         Ok(match row {
             None => Posture::default(),
             Some(r) => Posture {
@@ -120,7 +116,6 @@ impl InventoryWriteService {
     /// symmetric.
     pub(super) fn delivery_debit_account(
         &self,
-        company_id: Uuid,
         posture: &Posture,
         cogs_account_id: Uuid,
     ) -> Result<Uuid, InventoryError> {
@@ -129,30 +124,26 @@ impl InventoryWriteService {
         }
         posture
             .stock_interim_delivered_account_id
-            .ok_or(InventoryError::AngloPostureUnconfigured { company_id })
+            .ok_or(InventoryError::AngloPostureUnconfigured)
     }
 
     /// The account-resolution chain for one inventory leg: the location's
     /// `valuation_account_id` override when set, else the door-header account the leg would
     /// use today. The documented chain, smallest-first — a location beats the header.
     ///
-    /// The caller names its company and the override read is company-scoped: under an armed
-    /// row-level-security fence an unbound read cannot see a company-owned location's
-    /// override and would silently book the header account — the wrong ledger for a location
-    /// that carries its own valuation account.
+    /// The override read rides the ambient org scope (ADR-0029): locations are shared
+    /// masters under the composition's root-shared fence, so a scoped read resolves the
+    /// override for tenant-specific and shared locations alike.
     pub(super) async fn inventory_leg_account(
         &self,
-        company_id: Uuid,
         location_id: Uuid,
         header_account_id: Uuid,
     ) -> Result<Uuid, InventoryError> {
-        Ok(backbone_orm::company_scope::with_company_scope(
-            Some(company_id),
-            self.valuation_overlay
-                .fetch_location_valuation_override(&self.db_pool, location_id),
-        )
-        .await?
-        .unwrap_or(header_account_id))
+        Ok(self
+            .valuation_overlay
+            .fetch_location_valuation_override(&self.db_pool, location_id)
+            .await?
+            .unwrap_or(header_account_id))
     }
 
     /// The explicit account-move gate (the `_should_create_account_move` port): a posting

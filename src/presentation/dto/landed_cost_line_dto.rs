@@ -37,9 +37,6 @@ pub struct CreateLandedCostLineDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "lc_id")]
     pub lc_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "validation", validate(length(max = 150)))]
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub name: String,
@@ -67,9 +64,6 @@ pub struct UpdateLandedCostLineDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "lc_id")]
     pub lc_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "validation", validate(length(max = 150)))]
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub name: String,
@@ -97,9 +91,6 @@ pub struct PatchLandedCostLineDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "lc_id")]
     pub lc_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[cfg_attr(feature = "validation", validate(length(max = 150)))]
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -116,7 +107,7 @@ pub struct PatchLandedCostLineDto {
 impl PatchLandedCostLineDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.lc_id.is_some() || self.company_id.is_some() || self.name.is_some() || self.account_id.is_some() || self.split_method.is_some() || self.amount.is_some()
+        self.lc_id.is_some() || self.name.is_some() || self.account_id.is_some() || self.split_method.is_some() || self.amount.is_some()
     }
 }
 
@@ -136,8 +127,6 @@ pub struct LandedCostLineResponseDto {
     pub id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub lc_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub name: String,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -202,8 +191,8 @@ impl LandedCostLineListResponseDto {
 pub struct LandedCostLineSummaryDto {
     pub id: Uuid,
     pub lc_id: Uuid,
-    pub company_id: Uuid,
     pub name: String,
+    pub account_id: Uuid,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -216,7 +205,6 @@ impl From<LandedCostLine> for LandedCostLineResponseDto {
         Self {
             id: entity.id,
             lc_id: entity.lc_id,
-            company_id: entity.company_id,
             name: entity.name,
             account_id: entity.account_id,
             split_method: entity.split_method,
@@ -232,8 +220,8 @@ impl From<LandedCostLine> for LandedCostLineSummaryDto {
         Self {
             id: entity.id,
             lc_id: entity.lc_id,
-            company_id: entity.company_id,
             name: entity.name,
+            account_id: entity.account_id,
             created_at,
         }
     }
@@ -244,7 +232,6 @@ impl From<CreateLandedCostLineDto> for LandedCostLine {
         Self {
             id: Uuid::new_v4(),
             lc_id: dto.lc_id,
-            company_id: dto.company_id,
             name: dto.name,
             account_id: dto.account_id,
             split_method: dto.split_method,
@@ -259,7 +246,6 @@ impl From<&LandedCostLine> for LandedCostLineResponseDto {
         Self {
             id: entity.id.clone(),
             lc_id: entity.lc_id.clone(),
-            company_id: entity.company_id.clone(),
             name: entity.name.clone(),
             account_id: entity.account_id.clone(),
             split_method: entity.split_method.clone(),
@@ -278,7 +264,6 @@ impl backbone_core::FromCreateDto<CreateLandedCostLineDto> for LandedCostLine {
 impl backbone_core::ApplyUpdateDto<UpdateLandedCostLineDto> for LandedCostLine {
     fn apply_update(mut self, dto: UpdateLandedCostLineDto) -> backbone_core::ServiceResult<Self> {
         self.lc_id = dto.lc_id;
-        self.company_id = dto.company_id;
         self.name = dto.name;
         self.account_id = dto.account_id;
         self.split_method = dto.split_method;

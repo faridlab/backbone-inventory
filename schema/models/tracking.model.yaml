@@ -3,17 +3,18 @@
 # Entities: Lot (Odoo `stock.lot`), Package (Odoo `stock.package`)
 # =============================================================================
 # Tracking aggregates. Lot is the lot/serial registry, unique per
-# (name, item, company) — guard R5. Package is the physical container:
-# nested via parent_package_id + materialized parent_path, with company
-# derived recursively from the location chain (guard R27 — a write-time
+# (name, item, org unit) — guard R5. Package is the physical container:
+# nested via parent_package_id + materialized parent_path, org-scoped via
+# the acting unit (guard R27 — a write-time
 # derivation, not a free column).
 #
 # Naming fidelity (Odoo master): the lot model is `stock.lot` (not
 # production.lot) and the package is `stock.package` (not quant.package).
 #
-# Company fence (ADR-0014): MASTER DATA, `shared_blank`. Both carry a
-# nullable company_id — NULL rows are first-class shared rows (Odoo's
-# `[False]` escape), non-NULL rows stay fenced.
+# Tenancy: none, by design (ADR-0029). The module is tenant-agnostic; the
+# composing service's decorator owns org scoping. Shared lots/packages
+# anchor at the tenant ROOT under allow_root; a lot or package anchored at a
+# regular unit stays that unit's private row.
 # =============================================================================
 
 models:
@@ -22,7 +23,7 @@ models:
   # ===========================================================================
   - name: Lot
     collection: lots
-    description: "A lot / serial number for an item (unique per name x item x company — guard R5)"
+    description: "A lot / serial number for an item (unique per name x item x org unit — guard R5)"
 
     fields:
       id:
@@ -33,7 +34,7 @@ models:
       name:
         type: string
         attributes: ["@required", "@max(150)"]
-        description: "Lot / serial identifier (unique per item x company — guard R5)"
+        description: "Lot / serial identifier (unique per item x org unit — guard R5)"
 
       reference:
         type: string?
@@ -45,10 +46,6 @@ models:
         attributes: ["@required", "@exclude_from_foreign_key_check"]
         description: "The item # logical FK to catalog.Item.id (the spec's product.product)"
 
-      company_id:
-        type: uuid?
-        attributes: ["@exclude_from_foreign_key_check"]
-        description: "Owning company; NULL = shared lot visible to every company (shared_blank, ADR-0014) # logical FK to organization.Company.id"
 
       product_qty:
         type: decimal
@@ -71,21 +68,15 @@ models:
         description: "Audit metadata"
 
     indexes:
-      - type: unique
-        fields: [name, item_id, company_id]
-        where: "deleted_at IS NULL"
-        description: "R5 — one lot name per item x company (_check_unique_lot)"
       - type: index
         fields: [item_id]
-      - type: index
-        fields: [company_id]
 
   # ===========================================================================
   # Entity: Package — a physical container (nestable)
   # ===========================================================================
   - name: Package
     collection: packages
-    description: "A physical package containing quants; supports nesting (parent_package_id + parent_path); company derived from the location chain (guard R27)"
+    description: "A physical package containing quants; supports nesting (parent_package_id + parent_path); org unit derived from the location chain (guard R27)"
 
     fields:
       id:
@@ -108,10 +99,6 @@ models:
         attributes: ["@foreign_key(Location.id)"]
         description: "Current location (recursive stored compute; editable inverse moves the contained quants)"
 
-      company_id:
-        type: uuid?
-        attributes: ["@exclude_from_foreign_key_check"]
-        description: "DERIVED recursively from the location chain (guard R27 — write-time derivation, never a free write column); NULL when the location is shared # logical FK to organization.Company.id"
 
       parent_package_id:
         type: uuid?
@@ -148,5 +135,3 @@ models:
         description: "Package-type joins (the R9 capacity match key)"
       - type: index
         fields: [location_id]
-      - type: index
-        fields: [company_id]

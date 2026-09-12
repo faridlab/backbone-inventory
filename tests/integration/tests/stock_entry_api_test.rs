@@ -25,7 +25,6 @@ impl TestDataGenerator for StockEntryTestData {
         json!({
             "id": Uuid::new_v4().to_string(),
             "entry_number": format!("Test {}", Uuid::new_v4().to_string().split('-').next().unwrap()),
-            "company_id": Uuid::new_v4().to_string(),
             "stock_entry_type": "transfer",
             "from_warehouse_id": null,
             "to_warehouse_id": null,
@@ -42,7 +41,6 @@ impl TestDataGenerator for StockEntryTestData {
         json!({
             "id": id,
             "entry_number": format!("Test {}", Uuid::new_v4().to_string().split('-').next().unwrap()),
-            "company_id": Uuid::new_v4().to_string(),
             "stock_entry_type": "transfer",
             "from_warehouse_id": null,
             "to_warehouse_id": null,

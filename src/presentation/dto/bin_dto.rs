@@ -34,9 +34,6 @@ use crate::domain::entity::AuditMetadata;
 #[serde(rename_all = "camelCase")]
 pub struct CreateBinDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -66,9 +63,6 @@ pub struct CreateBinDto {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBinDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -90,9 +84,6 @@ pub struct UpdateBinDto {
 #[serde(rename_all = "camelCase")]
 pub struct PatchBinDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "item_id")]
     pub item_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -103,7 +94,7 @@ pub struct PatchBinDto {
 impl PatchBinDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.company_id.is_some() || self.item_id.is_some() || self.warehouse_id.is_some()
+        self.item_id.is_some() || self.warehouse_id.is_some()
     }
 }
 
@@ -121,8 +112,6 @@ impl PatchBinDto {
 pub struct BinResponseDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub item_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -188,9 +177,9 @@ impl BinListResponseDto {
 #[serde(rename_all = "camelCase")]
 pub struct BinSummaryDto {
     pub id: Uuid,
-    pub company_id: Uuid,
     pub item_id: Uuid,
     pub warehouse_id: Uuid,
+    pub actual_qty: Decimal,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -202,7 +191,6 @@ impl From<Bin> for BinResponseDto {
     fn from(entity: Bin) -> Self {
         Self {
             id: entity.id,
-            company_id: entity.company_id,
             item_id: entity.item_id,
             warehouse_id: entity.warehouse_id,
             actual_qty: entity.actual_qty,
@@ -219,9 +207,9 @@ impl From<Bin> for BinSummaryDto {
         let created_at = backbone_core::PersistentEntity::created_at(&entity);
         Self {
             id: entity.id,
-            company_id: entity.company_id,
             item_id: entity.item_id,
             warehouse_id: entity.warehouse_id,
+            actual_qty: entity.actual_qty,
             created_at,
         }
     }
@@ -231,7 +219,6 @@ impl From<CreateBinDto> for Bin {
     fn from(dto: CreateBinDto) -> Self {
         Self {
             id: Uuid::new_v4(),
-            company_id: dto.company_id,
             item_id: dto.item_id,
             warehouse_id: dto.warehouse_id,
             actual_qty: dto.actual_qty,
@@ -247,7 +234,6 @@ impl From<&Bin> for BinResponseDto {
     fn from(entity: &Bin) -> Self {
         Self {
             id: entity.id.clone(),
-            company_id: entity.company_id.clone(),
             item_id: entity.item_id.clone(),
             warehouse_id: entity.warehouse_id.clone(),
             actual_qty: entity.actual_qty.clone(),
@@ -267,7 +253,6 @@ impl backbone_core::FromCreateDto<CreateBinDto> for Bin {
 
 impl backbone_core::ApplyUpdateDto<UpdateBinDto> for Bin {
     fn apply_update(mut self, dto: UpdateBinDto) -> backbone_core::ServiceResult<Self> {
-        self.company_id = dto.company_id;
         self.item_id = dto.item_id;
         self.warehouse_id = dto.warehouse_id;
         Ok(self)

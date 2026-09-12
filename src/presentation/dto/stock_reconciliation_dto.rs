@@ -40,9 +40,6 @@ pub struct CreateStockReconciliationDto {
     #[serde(alias = "recon_number")]
     pub recon_number: String,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "warehouse_id")]
     pub warehouse_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01"))]
@@ -86,9 +83,6 @@ pub struct UpdateStockReconciliationDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "recon_number")]
     pub recon_number: String,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "warehouse_id")]
     pub warehouse_id: Uuid,
@@ -134,9 +128,6 @@ pub struct PatchStockReconciliationDto {
     #[serde(skip_serializing_if = "Option::is_none", alias = "recon_number")]
     pub recon_number: Option<String>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
     pub warehouse_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01"))]
@@ -167,7 +158,7 @@ pub struct PatchStockReconciliationDto {
 impl PatchStockReconciliationDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.recon_number.is_some() || self.company_id.is_some() || self.warehouse_id.is_some() || self.posting_date.is_some() || self.net_difference.is_some() || self.inventory_account_id.is_some() || self.adjustment_account_id.is_some() || self.transfer_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some() || self.posted_at.is_some()
+        self.recon_number.is_some() || self.warehouse_id.is_some() || self.posting_date.is_some() || self.net_difference.is_some() || self.inventory_account_id.is_some() || self.adjustment_account_id.is_some() || self.transfer_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some() || self.posted_at.is_some()
     }
 }
 
@@ -187,8 +178,6 @@ pub struct StockReconciliationResponseDto {
     pub id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub recon_number: String,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub warehouse_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01"))]
@@ -262,8 +251,8 @@ impl StockReconciliationListResponseDto {
 pub struct StockReconciliationSummaryDto {
     pub id: Uuid,
     pub recon_number: String,
-    pub company_id: Uuid,
     pub warehouse_id: Uuid,
+    pub posting_date: NaiveDate,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -276,7 +265,6 @@ impl From<StockReconciliation> for StockReconciliationResponseDto {
         Self {
             id: entity.id,
             recon_number: entity.recon_number,
-            company_id: entity.company_id,
             warehouse_id: entity.warehouse_id,
             posting_date: entity.posting_date,
             net_difference: entity.net_difference,
@@ -299,8 +287,8 @@ impl From<StockReconciliation> for StockReconciliationSummaryDto {
         Self {
             id: entity.id,
             recon_number: entity.recon_number,
-            company_id: entity.company_id,
             warehouse_id: entity.warehouse_id,
+            posting_date: entity.posting_date,
             created_at,
         }
     }
@@ -311,7 +299,6 @@ impl From<CreateStockReconciliationDto> for StockReconciliation {
         Self {
             id: Uuid::new_v4(),
             recon_number: dto.recon_number,
-            company_id: dto.company_id,
             warehouse_id: dto.warehouse_id,
             posting_date: dto.posting_date,
             net_difference: dto.net_difference,
@@ -333,7 +320,6 @@ impl From<&StockReconciliation> for StockReconciliationResponseDto {
         Self {
             id: entity.id.clone(),
             recon_number: entity.recon_number.clone(),
-            company_id: entity.company_id.clone(),
             warehouse_id: entity.warehouse_id.clone(),
             posting_date: entity.posting_date.clone(),
             net_difference: entity.net_difference.clone(),
@@ -359,7 +345,6 @@ impl backbone_core::FromCreateDto<CreateStockReconciliationDto> for StockReconci
 impl backbone_core::ApplyUpdateDto<UpdateStockReconciliationDto> for StockReconciliation {
     fn apply_update(mut self, dto: UpdateStockReconciliationDto) -> backbone_core::ServiceResult<Self> {
         self.recon_number = dto.recon_number;
-        self.company_id = dto.company_id;
         self.warehouse_id = dto.warehouse_id;
         self.posting_date = dto.posting_date;
         self.net_difference = dto.net_difference;

@@ -22,37 +22,38 @@
 //!
 //! Per the module's 4-layer rule this file holds no SQL — statements live on
 //! [`super::super::super::infrastructure::persistence::PickingBatchProjectionRepository`].
+//!
+//! Tenancy (ADR-0029): the module is tenant-agnostic. Every write transaction this file
+//! opens re-binds the caller's ambient org scope (`relay_ambient_scope`); the composing
+//! decorator owns isolation.
 
-use backbone_orm::company_scope;
 use uuid::Uuid;
 
 use crate::infrastructure::persistence::{BatchHeaderRow, BatchMemberRow, NewBatchRow};
 
-use super::inventory_write_service::{is_dup, InventoryError, InventoryWriteService};
+use super::inventory_write_service::{is_dup, relay_ambient_scope, InventoryError, InventoryWriteService};
 
 impl InventoryWriteService {
     // ---- picking-batch: mint / membership / probe --------------------------------
 
     /// Mint a batch: insert the header (a draft grouping point). `state` starts at
     /// `draft` and is from here on ONLY ever written by the projection recompute — this
-    /// method never touches it. Guards: R3-shaped name/company unique (the typed
+    /// method never touches it. Guards: R3-shaped org-scoped name unique (the typed
     /// duplicate error on collision).
     pub async fn create_batch(
         &self,
-        company_id: Uuid,
         name: String,
         is_wave: bool,
         user_id: Option<Uuid>,
     ) -> Result<BatchHeaderRow, InventoryError> {
         let id = Uuid::new_v4();
         let mut tx = self.db_pool.begin().await?;
-        // RLS scope (ADR-0008): bound before the insert — the fence's WITH CHECK would
-        // reject an out-of-scope write anyway; binding first keeps the failure typed.
-        company_scope::bind_company_on(&mut tx, company_id).await?;
+        // Re-bind the caller's ambient org scope before the write (ADR-0029) — the
+        // composing decorator's fence arbiter turns a collision into the typed duplicate.
+        relay_ambient_scope(&mut tx).await?;
         let ins = self.batches.insert_batch(&mut tx, &NewBatchRow {
             id,
             name: &name,
-            company_id,
             is_wave,
             user_id,
         }).await;
@@ -60,28 +61,21 @@ impl InventoryWriteService {
             return Err(if is_dup(&e) { InventoryError::DuplicateNumber(name) } else { e.into() });
         }
         tx.commit().await?;
-        let (header, _) = self.fetch_batch(company_id, id).await?;
+        let (header, _) = self.fetch_batch(id).await?;
         Ok(header)
     }
 
     /// The projection PROBE: read the batch header (with its projected state) and its
-    /// member pickings' states. Fenced — the caller names the company and the RLS scope
-    /// is bound on the reading transaction before any row is touched (a wrong-company
-    /// batch reads as absent).
+    /// member pickings' states, riding the caller's ambient org scope (ADR-0029) — an
+    /// out-of-scope batch reads as absent under the composition's fence.
     pub async fn fetch_batch(
         &self,
-        company_id: Uuid,
         batch_id: Uuid,
     ) -> Result<(BatchHeaderRow, Vec<BatchMemberRow>), InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, company_id).await?;
+        relay_ambient_scope(&mut tx).await?;
         let header = self.batches.fetch_batch(&mut tx, batch_id).await?
             .ok_or(InventoryError::NotFound(batch_id))?;
-        // Belt-and-braces: RLS fences the row, but the header read above is what tells
-        // us the batch is THIS company's — refuse rather than leak a cross-company view.
-        if header.company_id != company_id {
-            return Err(InventoryError::NotFound(batch_id));
-        }
         let members = self.batches.fetch_members(&mut tx, batch_id).await?;
         tx.commit().await?;
         Ok((header, members))
@@ -89,9 +83,9 @@ impl InventoryWriteService {
 
     /// Attach a picking to its batch. Guards (all typed, all service-side with the
     /// DB trigger as backstop — `enforcement: both`, ADR-0015):
-    ///   - the batch exists in THIS company (NotFound fencing, never a cross-company leak),
+    ///   - the batch exists (absent under the ambient scope reads as `NotFound`),
     ///   - the batch is non-terminal (`done`/`cancel` refuse — `BatchTerminal`),
-    ///   - the picking exists in THIS company and is non-terminal (`PickingTerminalForBatch`
+    ///   - the picking exists and is non-terminal (`PickingTerminalForBatch`
     ///     — a done or cancelled picking cannot join a work list),
     ///   - the picking belongs to no other batch (`PickingAlreadyBatched` — membership is
     ///     one batch per picking).
@@ -100,26 +94,19 @@ impl InventoryWriteService {
     /// the re-derived header (a READ of the projection).
     pub async fn add_picking_to_batch(
         &self,
-        company_id: Uuid,
         batch_id: Uuid,
         picking_id: Uuid,
     ) -> Result<BatchHeaderRow, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, company_id).await?;
+        relay_ambient_scope(&mut tx).await?;
         let batch = self.batches.fetch_batch(&mut tx, batch_id).await?
             .ok_or(InventoryError::NotFound(batch_id))?;
-        if batch.company_id != company_id {
-            return Err(InventoryError::NotFound(batch_id));
-        }
         match batch.state.as_str() {
             "draft" | "waiting" | "ready" => {}
             other => return Err(InventoryError::BatchTerminal { batch_id, state: other.into() }),
         }
         let picking = self.pickings.fetch_transfer(&mut tx, picking_id).await?
             .ok_or(InventoryError::NotFound(picking_id))?;
-        if picking.company_id != company_id {
-            return Err(InventoryError::NotFound(picking_id));
-        }
         match picking.state.as_str() {
             "draft" | "waiting" | "confirmed" | "partially_available" | "assigned" => {}
             other => return Err(InventoryError::PickingTerminalForBatch {
@@ -134,7 +121,7 @@ impl InventoryWriteService {
         self.batches.add_member(&mut tx, batch_id, picking_id).await?;
         self.batches.reproject_batch(&mut tx, batch_id).await?;
         tx.commit().await?;
-        let (header, _) = self.fetch_batch(company_id, batch_id).await?;
+        let (header, _) = self.fetch_batch(batch_id).await?;
         Ok(header)
     }
 
@@ -145,24 +132,20 @@ impl InventoryWriteService {
     /// item once emptied). Returns the re-derived header after the removal.
     pub async fn remove_picking_from_batch(
         &self,
-        company_id: Uuid,
         batch_id: Uuid,
         picking_id: Uuid,
     ) -> Result<BatchHeaderRow, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, company_id).await?;
-        let batch = self.batches.fetch_batch(&mut tx, batch_id).await?
+        relay_ambient_scope(&mut tx).await?;
+        self.batches.fetch_batch(&mut tx, batch_id).await?
             .ok_or(InventoryError::NotFound(batch_id))?;
-        if batch.company_id != company_id {
-            return Err(InventoryError::NotFound(batch_id));
-        }
         let removed = self.batches.remove_member(&mut tx, batch_id, picking_id).await?;
         if !removed {
             return Err(InventoryError::NotABatchMember { batch_id, picking_id });
         }
         self.batches.reproject_batch(&mut tx, batch_id).await?;
         tx.commit().await?;
-        let (header, _) = self.fetch_batch(company_id, batch_id).await?;
+        let (header, _) = self.fetch_batch(batch_id).await?;
         Ok(header)
     }
 }

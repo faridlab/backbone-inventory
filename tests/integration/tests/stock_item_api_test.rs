@@ -25,7 +25,6 @@ impl TestDataGenerator for StockItemTestData {
         json!({
             "id": Uuid::new_v4().to_string(),
             "item_id": Uuid::new_v4().to_string(),
-            "company_id": Uuid::new_v4().to_string(),
             "stock_uom": format!("Test {}", Uuid::new_v4().to_string().split('-').next().unwrap()),
             "is_stock_item": false,
             "has_batch": false,
@@ -40,7 +39,6 @@ impl TestDataGenerator for StockItemTestData {
         json!({
             "id": id,
             "item_id": Uuid::new_v4().to_string(),
-            "company_id": Uuid::new_v4().to_string(),
             "stock_uom": format!("Test {}", Uuid::new_v4().to_string().split('-').next().unwrap()),
             "is_stock_item": false,
             "has_batch": false,

@@ -12,9 +12,10 @@
 #
 # ScrapReasonTag is a flat unique-named tag set — guard R7 (name unique).
 #
-# Company fence (ADR-0014): Scrap is a TRANSACTION — strict (NOT NULL
-# company_id). ScrapReasonTag is MASTER DATA — shared_blank (nullable company;
-# NULL rows are first-class shared rows).
+# Tenancy: none, by design (ADR-0029). The module is tenant-agnostic; the
+# composing service's decorator owns org scoping. Scraps are plain
+# org-scoped rows; ScrapReasonTag is a shared master — root-anchored under
+# allow_root, visible to every entitled scope through the scope union.
 # =============================================================================
 
 models:
@@ -35,7 +36,7 @@ models:
       name:
         type: string
         attributes: ["@required", "@max(40)", "@default(\"/\")"]
-        description: "Reference (sequence-filled; unique per company)"
+        description: "Reference (sequence-filled; unique per org unit)"
 
       state:
         type: ScrapState
@@ -66,7 +67,7 @@ models:
       location_id:
         type: uuid
         attributes: ["@required", "@foreign_key(Location.id)"]
-        description: "Source location (usage ≠ view; same company — R9-location posture)"
+        description: "Source location (usage ≠ view; same org unit — R9-location posture)"
 
       scrap_location_id:
         type: uuid
@@ -102,10 +103,6 @@ models:
         type: uuid[]
         description: "Reason tags # logical m2m to ScrapReasonTag.id (R7 keeps the labels unique)"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "STRICT transaction fence # logical FK to organization.Company.id"
 
       metadata:
         type: Metadata
@@ -113,18 +110,12 @@ models:
         description: "Audit metadata"
 
     indexes:
-      - type: unique
-        fields: [name, company_id]
-        where: "deleted_at IS NULL"
-        description: "Scrap reference unique per company"
       - type: index
         fields: [state]
       - type: index
         fields: [item_id]
       - type: index
         fields: [picking_id]
-      - type: index
-        fields: [company_id]
 
   # ===========================================================================
   # Entity: ScrapReasonTag — a flat unique-named reason tag (guard R7)
@@ -149,27 +140,16 @@ models:
         attributes: ["@default(true)"]
         description: "Archive support"
 
-      company_id:
-        type: uuid?
-        attributes: ["@exclude_from_foreign_key_check"]
-        description: "Owning company; NULL = shared tag visible to every company (shared_blank, ADR-0014) # logical FK to organization.Company.id"
 
       metadata:
         type: Metadata
         attributes: ["@audit_metadata"]
         description: "Audit metadata"
 
-    indexes:
-      - type: unique
-        fields: [name]
-        where: "deleted_at IS NULL AND company_id IS NULL"
-        description: "R7 — shared tag labels stay unique (the _name_uniq band; company-owned tags scope their own namespace below)"
-      - type: unique
-        fields: [name, company_id]
-        where: "deleted_at IS NULL AND company_id IS NOT NULL"
-        description: "R7 — one tag label per owning company"
-      - type: index
-        fields: [company_id]
+    # No module-namespace indexes: the tag-label unique is org-scoped and lives in
+    # the composing service's decorator (ADR-0029) — a module-side unique on the
+    # bare name would be stricter than the (org unit, name) slot it owns.
+    indexes: []
 
 # =============================================================================
 # Enums

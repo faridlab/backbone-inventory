@@ -44,7 +44,6 @@ pub struct InventoryCompanySettingPaginatedResult {
 /// Filter parameters for list queries
 #[derive(Debug, Clone, Default)]
 pub struct InventoryCompanySettingFilter {
-    pub company_id: Option<Uuid>,
     pub cost_method: Option<InventoryCostMethod>,
     pub valuation_policy: Option<ValuationPolicy>,
     pub anglo_saxon_accounting: Option<bool>,
@@ -54,7 +53,7 @@ pub struct InventoryCompanySettingFilter {
 impl InventoryCompanySettingFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.company_id.is_some() || self.cost_method.is_some() || self.valuation_policy.is_some() || self.anglo_saxon_accounting.is_some() || self.stock_interim_delivered_account_id.is_some()
+        self.cost_method.is_some() || self.valuation_policy.is_some() || self.anglo_saxon_accounting.is_some() || self.stock_interim_delivered_account_id.is_some()
     }
 }
 

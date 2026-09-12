@@ -9,7 +9,7 @@
 //! state (projection shape, ADR-0016) — written only by [`Self::mirror_state`].
 //!
 //! 4-layer rule: services orchestrate, repositories hold SQL. Write methods take the CALLER'S
-//! connection; the caller has already bound the company scope (ADR-0008).
+//! connection; the caller has already relayed the ambient org scope onto it.
 
 use rust_decimal::Decimal;
 use sqlx::{PgPool, Row};
@@ -53,7 +53,6 @@ pub struct NewMoveLineRow<'a> {
     pub location_id: Uuid,
     pub location_dest_id: Uuid,
     pub item_id: Uuid,
-    pub company_id: Uuid,
     /// The mirrored state at mint time (matches the parent move's post-assign state).
     pub state: &'a str,
 }
@@ -83,12 +82,12 @@ impl StockMoveLineRepository {
         sqlx::query(
             r#"INSERT INTO inventory.stock_move_lines
                  (id, quantity, lot_id, package_id, result_package_id, owner_id, state, move_id,
-                  picking_id, location_id, location_dest_id, item_id, company_id)
-               VALUES ($1,$2,$3,$4,$5,$6,$7::move_state,$8,$9,$10,$11,$12,$13)"#,
+                  picking_id, location_id, location_dest_id, item_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7::move_state,$8,$9,$10,$11,$12)"#,
         )
         .bind(l.id).bind(l.quantity).bind(l.lot_id).bind(l.package_id).bind(l.result_package_id)
         .bind(l.owner_id).bind(l.state).bind(l.move_id).bind(l.picking_id)
-        .bind(l.location_id).bind(l.location_dest_id).bind(l.item_id).bind(l.company_id)
+        .bind(l.location_id).bind(l.location_dest_id).bind(l.item_id)
         .execute(conn)
         .await?;
         Ok(())

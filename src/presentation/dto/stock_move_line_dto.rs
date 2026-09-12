@@ -64,9 +64,6 @@ pub struct CreateStockMoveLineDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
 }
 
 // =============================================================================
@@ -112,9 +109,6 @@ pub struct UpdateStockMoveLineDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
 }
 
 // =============================================================================
@@ -164,15 +158,12 @@ pub struct PatchStockMoveLineDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "item_id")]
     pub item_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
 }
 
 impl PatchStockMoveLineDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.quantity.is_some() || self.quantity_product_uom_id.is_some() || self.picked.is_some() || self.lot_id.is_some() || self.package_id.is_some() || self.result_package_id.is_some() || self.owner_id.is_some() || self.state.is_some() || self.date.is_some() || self.move_id.is_some() || self.picking_id.is_some() || self.location_id.is_some() || self.location_dest_id.is_some() || self.item_id.is_some() || self.company_id.is_some()
+        self.quantity.is_some() || self.quantity_product_uom_id.is_some() || self.picked.is_some() || self.lot_id.is_some() || self.package_id.is_some() || self.result_package_id.is_some() || self.owner_id.is_some() || self.state.is_some() || self.date.is_some() || self.move_id.is_some() || self.picking_id.is_some() || self.location_id.is_some() || self.location_dest_id.is_some() || self.item_id.is_some()
     }
 }
 
@@ -210,8 +201,6 @@ pub struct StockMoveLineResponseDto {
     pub location_dest_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub item_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     pub metadata: AuditMetadata,
 }
 
@@ -297,7 +286,6 @@ impl From<StockMoveLine> for StockMoveLineResponseDto {
             location_id: entity.location_id,
             location_dest_id: entity.location_dest_id,
             item_id: entity.item_id,
-            company_id: entity.company_id,
             metadata: entity.metadata,
         }
     }
@@ -334,7 +322,6 @@ impl From<CreateStockMoveLineDto> for StockMoveLine {
             location_id: dto.location_id,
             location_dest_id: dto.location_dest_id,
             item_id: dto.item_id,
-            company_id: dto.company_id,
             metadata: AuditMetadata::default(),
         }
     }
@@ -358,7 +345,6 @@ impl From<&StockMoveLine> for StockMoveLineResponseDto {
             location_id: entity.location_id.clone(),
             location_dest_id: entity.location_dest_id.clone(),
             item_id: entity.item_id.clone(),
-            company_id: entity.company_id.clone(),
             metadata: entity.metadata.clone(),
         }
     }
@@ -386,7 +372,6 @@ impl backbone_core::ApplyUpdateDto<UpdateStockMoveLineDto> for StockMoveLine {
         self.location_id = dto.location_id;
         self.location_dest_id = dto.location_dest_id;
         self.item_id = dto.item_id;
-        self.company_id = dto.company_id;
         Ok(self)
     }
 }

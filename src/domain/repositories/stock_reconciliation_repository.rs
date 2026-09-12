@@ -45,7 +45,6 @@ pub struct StockReconciliationPaginatedResult {
 #[derive(Debug, Clone, Default)]
 pub struct StockReconciliationFilter {
     pub recon_number: Option<String>,
-    pub company_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
     pub inventory_account_id: Option<Uuid>,
     pub adjustment_account_id: Option<Uuid>,
@@ -59,7 +58,7 @@ pub struct StockReconciliationFilter {
 impl StockReconciliationFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.recon_number.is_some() || self.company_id.is_some() || self.warehouse_id.is_some() || self.inventory_account_id.is_some() || self.adjustment_account_id.is_some() || self.transfer_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some()
+        self.recon_number.is_some() || self.warehouse_id.is_some() || self.inventory_account_id.is_some() || self.adjustment_account_id.is_some() || self.transfer_id.is_some() || self.status.is_some() || self.posting_state.is_some() || self.journal_id.is_some() || self.accounting_post_id.is_some()
     }
 }
 

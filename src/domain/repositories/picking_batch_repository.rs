@@ -50,13 +50,12 @@ pub struct PickingBatchFilter {
     pub is_wave: Option<bool>,
     pub user_id: Option<Uuid>,
     pub had_members: Option<bool>,
-    pub company_id: Option<Uuid>,
 }
 
 impl PickingBatchFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.name.is_some() || self.note.is_some() || self.state.is_some() || self.is_wave.is_some() || self.user_id.is_some() || self.had_members.is_some() || self.company_id.is_some()
+        self.name.is_some() || self.note.is_some() || self.state.is_some() || self.is_wave.is_some() || self.user_id.is_some() || self.had_members.is_some()
     }
 }
 

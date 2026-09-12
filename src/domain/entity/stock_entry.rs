@@ -53,7 +53,6 @@ impl std::ops::Deref for StockEntryId {
 pub struct StockEntry {
     pub id: Uuid,
     pub entry_number: String,
-    pub company_id: Uuid,
     pub stock_entry_type: StockEntryType,
     pub from_warehouse_id: Option<Uuid>,
     pub to_warehouse_id: Option<Uuid>,
@@ -74,11 +73,10 @@ impl StockEntry {
     }
 
     /// Create a new StockEntry with required fields
-    pub fn new(entry_number: String, company_id: Uuid, stock_entry_type: StockEntryType, posting_date: NaiveDate, status: DocStatus, posting_state: GlPostingState) -> Self {
+    pub fn new(entry_number: String, stock_entry_type: StockEntryType, posting_date: NaiveDate, status: DocStatus, posting_state: GlPostingState) -> Self {
         Self {
             id: Uuid::new_v4(),
             entry_number,
-            company_id,
             stock_entry_type,
             from_warehouse_id: None,
             to_warehouse_id: None,
@@ -186,9 +184,6 @@ impl StockEntry {
                 "entry_number" => {
                     if let Ok(v) = serde_json::from_value(value) { self.entry_number = v; }
                 }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 "stock_entry_type" => {
                     if let Ok(v) = serde_json::from_value(value) { self.stock_entry_type = v; }
                 }
@@ -267,7 +262,6 @@ impl backbone_orm::EntityRepoMeta for StockEntry {
     fn column_types() -> std::collections::HashMap<String, String> {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("from_warehouse_id".to_string(), "uuid".to_string());
         m.insert("to_warehouse_id".to_string(), "uuid".to_string());
         m.insert("transfer_id".to_string(), "uuid".to_string());
@@ -279,9 +273,6 @@ impl backbone_orm::EntityRepoMeta for StockEntry {
     fn search_fields() -> &'static [&'static str] {
         &["entry_number"]
     }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
-    }
 }
 
 /// Builder for StockEntry entity
@@ -291,7 +282,6 @@ impl backbone_orm::EntityRepoMeta for StockEntry {
 #[derive(Debug, Clone, Default)]
 pub struct StockEntryBuilder {
     entry_number: Option<String>,
-    company_id: Option<Uuid>,
     stock_entry_type: Option<StockEntryType>,
     from_warehouse_id: Option<Uuid>,
     to_warehouse_id: Option<Uuid>,
@@ -306,12 +296,6 @@ impl StockEntryBuilder {
     /// Set the entry_number field (required)
     pub fn entry_number(mut self, value: String) -> Self {
         self.entry_number = Some(value);
-        self
-    }
-
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
         self
     }
 
@@ -368,13 +352,11 @@ impl StockEntryBuilder {
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<StockEntry, String> {
         let entry_number = self.entry_number.ok_or_else(|| "entry_number is required".to_string())?;
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
         let posting_date = self.posting_date.ok_or_else(|| "posting_date is required".to_string())?;
 
         Ok(StockEntry {
             id: Uuid::new_v4(),
             entry_number,
-            company_id,
             stock_entry_type: self.stock_entry_type.unwrap_or_default(),
             from_warehouse_id: self.from_warehouse_id,
             to_warehouse_id: self.to_warehouse_id,

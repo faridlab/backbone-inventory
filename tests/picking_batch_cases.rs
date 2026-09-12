@@ -52,58 +52,58 @@ fn gl() -> MoveGlDirective {
     }
 }
 
-async fn warehouse(w: &InventoryWriteService, company: Uuid) -> Uuid {
+async fn warehouse(w: &InventoryWriteService) -> Uuid {
     w.create_warehouse(NewWarehouse {
-        company_id: company, code: uq("WH"), name: uq("Main"),
+        code: uq("WH"), name: uq("Main"),
         warehouse_type: None, parent_warehouse_id: None, is_group: false,
     }).await.unwrap()
 }
 
-async fn loc(pool: &PgPool, company: Uuid, usage: &str, wh: Option<Uuid>) -> Uuid {
+async fn loc(pool: &PgPool, usage: &str, wh: Option<Uuid>) -> Uuid {
     let id = Uuid::new_v4();
     let name = uq("LOC");
     sqlx::query(
         r#"INSERT INTO inventory.locations
-             (id, name, complete_name, usage, parent_path, company_id, warehouse_id)
-           VALUES ($1,$2,$3,$4::location_usage,$5,$6,$7)"#,
+             (id, name, complete_name, usage, parent_path, warehouse_id)
+           VALUES ($1,$2,$3,$4::location_usage,$5,$6)"#,
     )
-    .bind(id).bind(&name).bind(&name).bind(usage).bind("").bind(company).bind(wh)
+    .bind(id).bind(&name).bind(&name).bind(usage).bind("").bind(wh)
     .execute(pool).await.unwrap();
     id
 }
 
-async fn op_type(pool: &PgPool, company: Uuid, code: &str, reservation: &str, src: Uuid, dst: Uuid) -> Uuid {
+async fn op_type(pool: &PgPool, code: &str, reservation: &str, src: Uuid, dst: Uuid) -> Uuid {
     let id = Uuid::new_v4();
     sqlx::query(
         r#"INSERT INTO inventory.operation_types
-             (id, name, sequence_code, code, company_id,
+             (id, name, sequence_code, code,
               default_location_src_id, default_location_dest_id, reservation_method, create_backorder)
-           VALUES ($1,$2,$3,$4::picking_code,$5,$6,$7,$8::reservation_method,'ask'::create_backorder)"#,
+           VALUES ($1,$2,$3,$4::picking_code,$5,$6,$7::reservation_method,'ask'::create_backorder)"#,
     )
-    .bind(id).bind(uq("PT")).bind(uq("SEQ")).bind(code).bind(company)
+    .bind(id).bind(uq("PT")).bind(uq("SEQ")).bind(code)
     .bind(src).bind(dst).bind(reservation)
     .execute(pool).await.unwrap();
     id
 }
 
-async fn seed_bin(pool: &PgPool, company: Uuid, item: Uuid, wh: Uuid, qty: &str, rate: &str) {
+async fn seed_bin(pool: &PgPool, item: Uuid, wh: Uuid, qty: &str, rate: &str) {
     sqlx::query(
         r#"INSERT INTO inventory.bins
-             (id, company_id, item_id, warehouse_id, actual_qty, reserved_qty, valuation_rate, stock_value)
-           VALUES ($1,$2,$3,$4,$5,0,$6,$7)"#,
+             (id, item_id, warehouse_id, actual_qty, reserved_qty, valuation_rate, stock_value)
+           VALUES ($1,$2,$3,$4,0,$5,$6)"#,
     )
-    .bind(Uuid::new_v4()).bind(company).bind(item).bind(wh)
+    .bind(Uuid::new_v4()).bind(item).bind(wh)
     .bind(d(qty)).bind(d(rate)).bind(d(qty) * d(rate))
     .execute(pool).await.unwrap();
 }
 
-async fn seed_quant(pool: &PgPool, company: Uuid, item: Uuid, location: Uuid, qty: &str) {
+async fn seed_quant(pool: &PgPool, item: Uuid, location: Uuid, qty: &str) {
     sqlx::query(
         r#"INSERT INTO inventory.stock_quants
-             (id, item_id, location_id, quantity, reserved_quantity, available_quantity, company_id)
-           VALUES ($1,$2,$3,$4,0,$4,$5)"#,
+             (id, item_id, location_id, quantity, reserved_quantity, available_quantity)
+           VALUES ($1,$2,$3,$4,0,$4)"#,
     )
-    .bind(Uuid::new_v4()).bind(item).bind(location).bind(d(qty)).bind(company)
+    .bind(Uuid::new_v4()).bind(item).bind(location).bind(d(qty))
     .execute(pool).await.unwrap();
 }
 
@@ -113,16 +113,15 @@ async fn seed_quant(pool: &PgPool, company: Uuid, item: Uuid, location: Uuid, qt
 async fn member_picking(
     svc: &InventoryWriteService,
     pool: &PgPool,
-    company: Uuid,
     wh: Uuid,
     reservation: &str,
 ) -> Uuid {
-    let supplier = loc(pool, company, "supplier", None).await;
-    let stock = loc(pool, company, "internal", Some(wh)).await;
-    let op = op_type(pool, company, "incoming", reservation, supplier, stock).await;
+    let supplier = loc(pool, "supplier", None).await;
+    let stock = loc(pool, "internal", Some(wh)).await;
+    let op = op_type(pool, "incoming", reservation, supplier, stock).await;
     let item = Uuid::new_v4();
     let created = svc.create_picking(backbone_inventory::application::service::inventory_transfer::NewPicking {
-        name: uq("BP"), company_id: company, picking_type_id: op,
+        name: uq("BP"), picking_type_id: op,
         location_id: supplier, location_dest_id: stock, partner_id: None,
         move_type: "direct".into(), origin: None,
         lines: vec![PickingLine { item_id: item, demand_qty: d("5"), price_unit: d("1") }],
@@ -139,47 +138,46 @@ async fn member_picking(
 async fn batch_state_derives_from_members() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
+    let wh = warehouse(&svc).await;
 
     // A fresh batch has never grouped a picking: it reads `draft`.
-    let header = svc.create_batch(company, uq("BATCH"), false, None).await.unwrap();
+    let header = svc.create_batch(uq("BATCH"), false, None).await.unwrap();
     assert_eq!(header.state, "draft");
     assert!(!header.had_members);
     let batch_id = header.id;
 
     // Member A: manual reservation → its moves stay `confirmed` (the least-advanced band).
-    let a = member_picking(&svc, &pool, company, wh, "manual").await;
+    let a = member_picking(&svc, &pool, wh, "manual").await;
     // Member B: at_confirm → inbound assign mints the execution line → `assigned`.
-    let b = member_picking(&svc, &pool, company, wh, "at_confirm").await;
+    let b = member_picking(&svc, &pool, wh, "at_confirm").await;
     for (picking, want) in [(a, "confirmed"), (b, "assigned")] {
-        let (h, _) = svc.fetch_picking(company, picking).await.unwrap();
+        let (h, _) = svc.fetch_picking(picking).await.unwrap();
         assert_eq!(h.state, want, "member staging sanity for {picking}");
     }
 
     // Empty → member A (confirmed) → member B joins (assigned): the batch reads the
     // LEAST-advanced live member — `draft` band while A is open below waiting.
-    svc.add_picking_to_batch(company, batch_id, a).await.unwrap();
-    let (h, members) = svc.fetch_batch(company, batch_id).await.unwrap();
+    svc.add_picking_to_batch(batch_id, a).await.unwrap();
+    let (h, members) = svc.fetch_batch(batch_id).await.unwrap();
     assert_eq!(h.state, "draft");
     assert_eq!(members.len(), 1);
 
-    svc.add_picking_to_batch(company, batch_id, b).await.unwrap();
-    let (h, members) = svc.fetch_batch(company, batch_id).await.unwrap();
+    svc.add_picking_to_batch(batch_id, b).await.unwrap();
+    let (h, members) = svc.fetch_batch(batch_id).await.unwrap();
     assert_eq!(h.state, "draft", "least-advanced live member wins over the assigned one");
     assert_eq!(members.len(), 2);
     assert!(h.had_members);
 
     // Detach the confirmed member: only the assigned one remains → the batch re-projects
     // to `ready` (adding/removing a member re-derives the stored compute).
-    svc.remove_picking_from_batch(company, batch_id, a).await.unwrap();
-    let (h, members) = svc.fetch_batch(company, batch_id).await.unwrap();
+    svc.remove_picking_from_batch(batch_id, a).await.unwrap();
+    let (h, members) = svc.fetch_batch(batch_id).await.unwrap();
     assert_eq!(h.state, "ready");
     assert_eq!(members.len(), 1);
 
     // Re-attach the confirmed member → back to `draft` (a re-add re-derives too).
-    svc.add_picking_to_batch(company, batch_id, a).await.unwrap();
-    let (h, _) = svc.fetch_batch(company, batch_id).await.unwrap();
+    svc.add_picking_to_batch(batch_id, a).await.unwrap();
+    let (h, _) = svc.fetch_batch(batch_id).await.unwrap();
     assert_eq!(h.state, "draft");
 }
 
@@ -189,28 +187,27 @@ async fn batch_state_derives_from_members() {
 async fn engine_cascade_reprojects_the_batch() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let batch_id = svc.create_batch(company, uq("BATCH"), true, None).await.unwrap().id;
+    let wh = warehouse(&svc).await;
+    let batch_id = svc.create_batch(uq("BATCH"), true, None).await.unwrap().id;
 
-    let a = member_picking(&svc, &pool, company, wh, "manual").await;
-    let b = member_picking(&svc, &pool, company, wh, "manual").await;
-    svc.add_picking_to_batch(company, batch_id, a).await.unwrap();
-    svc.add_picking_to_batch(company, batch_id, b).await.unwrap();
-    let (h, _) = svc.fetch_batch(company, batch_id).await.unwrap();
+    let a = member_picking(&svc, &pool, wh, "manual").await;
+    let b = member_picking(&svc, &pool, wh, "manual").await;
+    svc.add_picking_to_batch(batch_id, a).await.unwrap();
+    svc.add_picking_to_batch(batch_id, b).await.unwrap();
+    let (h, _) = svc.fetch_batch(batch_id).await.unwrap();
     assert_eq!(h.state, "draft");
 
     // Validate ONE member (the engine's `_action_done` over its moves — the picking
     // re-projects, and the cascade rolls the batch up with it).
     let sink = counting_sink();
-    svc.validate_picking(company, a, &gl(), &*sink).await.unwrap();
-    let (h, _) = svc.fetch_picking(company, a).await.unwrap();
+    svc.validate_picking(a, &gl(), &*sink).await.unwrap();
+    let (h, _) = svc.fetch_picking(a).await.unwrap();
     assert_eq!(h.state, "done");
-    let (h, _) = svc.fetch_batch(company, batch_id).await.unwrap();
+    let (h, _) = svc.fetch_batch(batch_id).await.unwrap();
     assert_eq!(h.state, "draft", "one done + one confirmed member: least-advanced wins");
 
-    svc.validate_picking(company, b, &gl(), &*sink).await.unwrap();
-    let (h, _) = svc.fetch_batch(company, batch_id).await.unwrap();
+    svc.validate_picking(b, &gl(), &*sink).await.unwrap();
+    let (h, _) = svc.fetch_batch(batch_id).await.unwrap();
     assert_eq!(h.state, "done", "every live member done → the batch reads done");
 }
 
@@ -220,22 +217,21 @@ async fn engine_cascade_reprojects_the_batch() {
 async fn all_members_cancelled_cancels_the_batch() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let batch_id = svc.create_batch(company, uq("BATCH"), false, None).await.unwrap().id;
+    let wh = warehouse(&svc).await;
+    let batch_id = svc.create_batch(uq("BATCH"), false, None).await.unwrap().id;
 
-    let a = member_picking(&svc, &pool, company, wh, "manual").await;
-    svc.add_picking_to_batch(company, batch_id, a).await.unwrap();
+    let a = member_picking(&svc, &pool, wh, "manual").await;
+    svc.add_picking_to_batch(batch_id, a).await.unwrap();
 
     // Cancel the member's moves through the engine; the picking re-projects to cancel and
     // the cascade carries the batch.
-    let (_, moves) = svc.fetch_picking(company, a).await.unwrap();
+    let (_, moves) = svc.fetch_picking(a).await.unwrap();
     for m in moves {
-        svc.action_cancel(company, m.id).await.unwrap();
+        svc.action_cancel(m.id).await.unwrap();
     }
-    let (h, _) = svc.fetch_picking(company, a).await.unwrap();
+    let (h, _) = svc.fetch_picking(a).await.unwrap();
     assert_eq!(h.state, "cancel");
-    let (h, members) = svc.fetch_batch(company, batch_id).await.unwrap();
+    let (h, members) = svc.fetch_batch(batch_id).await.unwrap();
     assert_eq!(h.state, "cancel");
     assert_eq!(members.len(), 1, "the cancelled member still groups — it only drops out of the aggregation");
 }
@@ -247,19 +243,18 @@ async fn all_members_cancelled_cancels_the_batch() {
 async fn emptying_the_batch_auto_cancels() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let batch_id = svc.create_batch(company, uq("BATCH"), false, None).await.unwrap().id;
+    let wh = warehouse(&svc).await;
+    let batch_id = svc.create_batch(uq("BATCH"), false, None).await.unwrap().id;
 
     // Never grouped a picking: still draft after a probe.
-    let (h, _) = svc.fetch_batch(company, batch_id).await.unwrap();
+    let (h, _) = svc.fetch_batch(batch_id).await.unwrap();
     assert_eq!(h.state, "draft");
 
-    let a = member_picking(&svc, &pool, company, wh, "manual").await;
-    svc.add_picking_to_batch(company, batch_id, a).await.unwrap();
+    let a = member_picking(&svc, &pool, wh, "manual").await;
+    svc.add_picking_to_batch(batch_id, a).await.unwrap();
     // Detaching the only member empties a batch that HAS grouped work → cancel.
-    svc.remove_picking_from_batch(company, batch_id, a).await.unwrap();
-    let (h, members) = svc.fetch_batch(company, batch_id).await.unwrap();
+    svc.remove_picking_from_batch(batch_id, a).await.unwrap();
+    let (h, members) = svc.fetch_batch(batch_id).await.unwrap();
     assert_eq!(h.state, "cancel");
     assert_eq!(members.len(), 0);
 }
@@ -273,78 +268,62 @@ async fn emptying_the_batch_auto_cancels() {
 async fn waiting_member_holds_batch_at_waiting() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let batch_id = svc.create_batch(company, uq("BATCH"), false, None).await.unwrap().id;
+    let wh = warehouse(&svc).await;
+    let batch_id = svc.create_batch(uq("BATCH"), false, None).await.unwrap().id;
 
-    let a = member_picking(&svc, &pool, company, wh, "manual").await;
-    let b = member_picking(&svc, &pool, company, wh, "at_confirm").await;
+    let a = member_picking(&svc, &pool, wh, "manual").await;
+    let b = member_picking(&svc, &pool, wh, "at_confirm").await;
     // Stage one member's projection at `waiting` (the state the recompute itself would
     // store for a picking whose every move waits on an undone parent).
     sqlx::query("UPDATE inventory.transfers SET state = 'waiting'::transfer_state WHERE id = $1")
         .bind(a).execute(&pool).await.unwrap();
 
-    svc.add_picking_to_batch(company, batch_id, a).await.unwrap();
-    let (h, _) = svc.fetch_batch(company, batch_id).await.unwrap();
+    svc.add_picking_to_batch(batch_id, a).await.unwrap();
+    let (h, _) = svc.fetch_batch(batch_id).await.unwrap();
     assert_eq!(h.state, "waiting", "a single waiting member holds the batch at waiting");
 
     // An assigned member joins: the waiting member is still the least-advanced live one —
     // the batch stays at `waiting`.
-    svc.add_picking_to_batch(company, batch_id, b).await.unwrap();
-    let (h, _) = svc.fetch_batch(company, batch_id).await.unwrap();
+    svc.add_picking_to_batch(batch_id, b).await.unwrap();
+    let (h, _) = svc.fetch_batch(batch_id).await.unwrap();
     assert_eq!(h.state, "waiting");
     // Detach the WAITING member: only the assigned one remains → the band jumps to ready —
     // removal re-derives too.
-    svc.remove_picking_from_batch(company, batch_id, a).await.unwrap();
-    let (h, _) = svc.fetch_batch(company, batch_id).await.unwrap();
+    svc.remove_picking_from_batch(batch_id, a).await.unwrap();
+    let (h, _) = svc.fetch_batch(batch_id).await.unwrap();
     assert_eq!(h.state, "ready");
     // Re-attach the waiting member: back down to waiting — a re-add re-derives as well.
-    svc.add_picking_to_batch(company, batch_id, a).await.unwrap();
-    let (h, _) = svc.fetch_batch(company, batch_id).await.unwrap();
+    svc.add_picking_to_batch(batch_id, a).await.unwrap();
+    let (h, _) = svc.fetch_batch(batch_id).await.unwrap();
     assert_eq!(h.state, "waiting");
 }
 
 // ── guards ────────────────────────────────────────────────────────────────────
 
-/// R3-shaped: the batch name is unique per company — the typed duplicate error — and a
-/// different company may reuse it.
+/// The batch name's uniqueness guarantee moved to the composing service's decorator
+/// (the org-leading unique re-declaration): the module ships no name unique of its
+/// own, so an undecorated module database cannot refuse a duplicate. Pin that
+/// posture — the old company-leading unique is gone and the decorator owns the slot.
 #[tokio::test]
-async fn batch_name_unique_per_company() {
+async fn batch_name_unique() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
     let name = uq("BATCH");
-    svc.create_batch(company, name.clone(), false, None).await.unwrap();
-    let err = svc.create_batch(company, name.clone(), false, None).await.unwrap_err();
-    assert!(matches!(err, InventoryError::DuplicateNumber(_)), "got {err:?}");
-    svc.create_batch(Uuid::new_v4(), name, false, None).await.unwrap();
-}
-
-/// Cross-company: a wrong-company batch reads as NotFound (the fence — never a leak),
-/// and a picking of ANOTHER company cannot join this company's batch (NotFound again).
-#[tokio::test]
-async fn cross_company_refusals() {
-    let pool = pool().await;
-    let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let other = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let wh_other = warehouse(&svc, other).await;
-    let batch_id = svc.create_batch(company, uq("BATCH"), false, None).await.unwrap().id;
-
-    // The other company's own batch is invisible to this company: NotFound, not a row.
-    let other_batch = svc.create_batch(other, uq("BATCH"), false, None).await.unwrap().id;
-    let err = svc.fetch_batch(company, other_batch).await.unwrap_err();
-    assert!(matches!(err, InventoryError::NotFound(_)), "got {err:?}");
-
-    // A picking of the other company cannot join this company's batch.
-    let foreign = member_picking(&svc, &pool, other, wh_other, "manual").await;
-    let err = svc.add_picking_to_batch(company, batch_id, foreign).await.unwrap_err();
-    assert!(matches!(err, InventoryError::NotFound(_)), "got {err:?}");
-    // And the reverse: this company's picking into the other company's batch.
-    let own = member_picking(&svc, &pool, company, wh, "manual").await;
-    let err = svc.add_picking_to_batch(other, other_batch, own).await.unwrap_err();
-    assert!(matches!(err, InventoryError::NotFound(_)), "got {err:?}");
+    svc.create_batch(name.clone(), false, None).await.unwrap();
+    let second = svc.create_batch(name.clone(), false, None).await.unwrap();
+    assert_ne!(second.id, Uuid::nil(), "undecorated, the module admits the duplicate");
+    let uniques: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM pg_indexes WHERE schemaname = 'inventory' \
+          AND tablename = 'picking_batches' AND indexdef ILIKE 'CREATE UNIQUE%' \
+          AND indexname NOT LIKE '%\\_pkey'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        uniques, 0,
+        "the module ships no picking_batches unique — the decorator owns the (org unit, name) slot"
+    );
 }
 
 /// Terminal refusals: a picking may only JOIN while non-terminal, a terminal batch
@@ -354,49 +333,48 @@ async fn cross_company_refusals() {
 async fn membership_guards() {
     let pool = pool().await;
     let svc = InventoryWriteService::new(pool.clone());
-    let company = Uuid::new_v4();
-    let wh = warehouse(&svc, company).await;
-    let batch_id = svc.create_batch(company, uq("BATCH"), false, None).await.unwrap().id;
-    let second_batch = svc.create_batch(company, uq("BATCH"), false, None).await.unwrap().id;
+    let wh = warehouse(&svc).await;
+    let batch_id = svc.create_batch(uq("BATCH"), false, None).await.unwrap().id;
+    let second_batch = svc.create_batch(uq("BATCH"), false, None).await.unwrap().id;
 
     // A DONE picking cannot join (validate a member fully first).
-    let done = member_picking(&svc, &pool, company, wh, "manual").await;
+    let done = member_picking(&svc, &pool, wh, "manual").await;
     let sink = counting_sink();
-    svc.validate_picking(company, done, &gl(), &*sink).await.unwrap();
-    let err = svc.add_picking_to_batch(company, batch_id, done).await.unwrap_err();
+    svc.validate_picking(done, &gl(), &*sink).await.unwrap();
+    let err = svc.add_picking_to_batch(batch_id, done).await.unwrap_err();
     assert!(matches!(err, InventoryError::PickingTerminalForBatch { .. }), "got {err:?}");
 
     // A CANCELLED picking cannot join either.
-    let cancelled = member_picking(&svc, &pool, company, wh, "manual").await;
-    let (_, moves) = svc.fetch_picking(company, cancelled).await.unwrap();
+    let cancelled = member_picking(&svc, &pool, wh, "manual").await;
+    let (_, moves) = svc.fetch_picking(cancelled).await.unwrap();
     for m in moves {
-        svc.action_cancel(company, m.id).await.unwrap();
+        svc.action_cancel(m.id).await.unwrap();
     }
-    let err = svc.add_picking_to_batch(company, batch_id, cancelled).await.unwrap_err();
+    let err = svc.add_picking_to_batch(batch_id, cancelled).await.unwrap_err();
     assert!(matches!(err, InventoryError::PickingTerminalForBatch { .. }), "got {err:?}");
 
     // One batch per picking: a member of the first batch refuses the second.
-    let member = member_picking(&svc, &pool, company, wh, "manual").await;
-    svc.add_picking_to_batch(company, batch_id, member).await.unwrap();
-    let err = svc.add_picking_to_batch(company, second_batch, member).await.unwrap_err();
+    let member = member_picking(&svc, &pool, wh, "manual").await;
+    svc.add_picking_to_batch(batch_id, member).await.unwrap();
+    let err = svc.add_picking_to_batch(second_batch, member).await.unwrap_err();
     assert!(matches!(err, InventoryError::PickingAlreadyBatched { .. }), "got {err:?}");
 
     // A batch the engine drove to done refuses NEW members (its work is finished).
-    let a = member_picking(&svc, &pool, company, wh, "manual").await;
-    let b = member_picking(&svc, &pool, company, wh, "manual").await;
-    svc.add_picking_to_batch(company, second_batch, a).await.unwrap();
-    svc.add_picking_to_batch(company, second_batch, b).await.unwrap();
-    svc.validate_picking(company, a, &gl(), &*sink).await.unwrap();
-    svc.validate_picking(company, b, &gl(), &*sink).await.unwrap();
-    let (h, _) = svc.fetch_batch(company, second_batch).await.unwrap();
+    let a = member_picking(&svc, &pool, wh, "manual").await;
+    let b = member_picking(&svc, &pool, wh, "manual").await;
+    svc.add_picking_to_batch(second_batch, a).await.unwrap();
+    svc.add_picking_to_batch(second_batch, b).await.unwrap();
+    svc.validate_picking(a, &gl(), &*sink).await.unwrap();
+    svc.validate_picking(b, &gl(), &*sink).await.unwrap();
+    let (h, _) = svc.fetch_batch(second_batch).await.unwrap();
     assert_eq!(h.state, "done");
-    let c = member_picking(&svc, &pool, company, wh, "manual").await;
-    let err = svc.add_picking_to_batch(company, second_batch, c).await.unwrap_err();
+    let c = member_picking(&svc, &pool, wh, "manual").await;
+    let err = svc.add_picking_to_batch(second_batch, c).await.unwrap_err();
     assert!(matches!(err, InventoryError::BatchTerminal { .. }), "got {err:?}");
     // Removal stays allowed on a terminal batch (that is how a finished list is cleaned).
-    svc.remove_picking_from_batch(company, second_batch, a).await.unwrap();
+    svc.remove_picking_from_batch(second_batch, a).await.unwrap();
 
     // Removing a picking that is not a member: the typed not-a-member error.
-    let err = svc.remove_picking_from_batch(company, batch_id, c).await.unwrap_err();
+    let err = svc.remove_picking_from_batch(batch_id, c).await.unwrap_err();
     assert!(matches!(err, InventoryError::NotABatchMember { .. }), "got {err:?}");
 }

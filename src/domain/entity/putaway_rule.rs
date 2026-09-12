@@ -59,7 +59,6 @@ pub struct PutawayRule {
     pub storage_category_id: Option<Uuid>,
     pub sublocation: PutawaySublocation,
     pub active: bool,
-    pub company_id: Option<Uuid>,
     #[serde(default)]
     #[sqlx(json)]
     pub metadata: AuditMetadata,
@@ -84,7 +83,6 @@ impl PutawayRule {
             storage_category_id: None,
             sublocation,
             active,
-            company_id: None,
             metadata: AuditMetadata::default(),
         }
     }
@@ -168,12 +166,6 @@ impl PutawayRule {
         self
     }
 
-    /// Set the company_id field (chainable)
-    pub fn with_company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     // ==========================================================
     // Partial Update
     // ==========================================================
@@ -208,9 +200,6 @@ impl PutawayRule {
                 }
                 "active" => {
                     if let Ok(v) = serde_json::from_value(value) { self.active = v; }
-                }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
                 }
                 _ => {} // ignore unknown fields
             }
@@ -272,15 +261,11 @@ impl backbone_orm::EntityRepoMeta for PutawayRule {
         m.insert("category_id".to_string(), "uuid".to_string());
         m.insert("package_type_id".to_string(), "uuid".to_string());
         m.insert("storage_category_id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("sublocation".to_string(), "putaway_sublocation".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
         &[]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -299,7 +284,6 @@ pub struct PutawayRuleBuilder {
     storage_category_id: Option<Uuid>,
     sublocation: Option<PutawaySublocation>,
     active: Option<bool>,
-    company_id: Option<Uuid>,
 }
 
 impl PutawayRuleBuilder {
@@ -357,12 +341,6 @@ impl PutawayRuleBuilder {
         self
     }
 
-    /// Set the company_id field (optional)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Build the PutawayRule entity
     ///
     /// Returns Err if any required field without a default is missing.
@@ -381,7 +359,6 @@ impl PutawayRuleBuilder {
             storage_category_id: self.storage_category_id,
             sublocation: self.sublocation.unwrap_or_default(),
             active: self.active.unwrap_or(true),
-            company_id: self.company_id,
             metadata: AuditMetadata::default(),
         })
     }

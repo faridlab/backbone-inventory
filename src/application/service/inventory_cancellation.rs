@@ -40,8 +40,12 @@
 //!
 //! Per the module's 4-layer rule this file holds no SQL — the statements live on the repositories
 //! and the move engine; every engine verb runs its own guarded transaction.
+//!
+//! Tenancy (ADR-0029): the module is tenant-agnostic. Every write transaction this file opens
+//! re-binds the caller's ambient org scope (`relay_ambient_scope`); the composing decorator owns
+//! isolation. Cross-module wire fields that still carry a company id are legacy twins filled
+//! from the ambient scope's company echo.
 
-use backbone_orm::company_scope;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
@@ -52,7 +56,8 @@ use crate::infrastructure::persistence::{
 use super::inventory_gl::{AccountingPostEnvelope, GlPostLine, GlPostSink};
 use super::inventory_move_engine::{BackorderPolicy, MoveGlDirective, NewStockMove};
 use super::inventory_write_service::{
-    money, DoorOwnedGlSink, InventoryError, InventoryWriteService, SubmitOutcome,
+    legacy_company_echo, money, relay_ambient_scope, DoorOwnedGlSink, InventoryError,
+    InventoryWriteService, SubmitOutcome,
 };
 
 impl InventoryWriteService {
@@ -83,19 +88,16 @@ impl InventoryWriteService {
         // A reversal references the original post; the original must be posted.
         let orig_post_id = h.gl.accounting_post_id.ok_or(InventoryError::GlNotPosted(id))?;
 
-        let items = company_scope::with_company_scope(
-            Some(h.company_id),
-            self.receipt_items.fetch_items(&self.db_pool, id),
-        ).await?;
+        let items = self.receipt_items.fetch_items(&self.db_pool, id).await?;
 
         // The door's move endpoints — the mirror image of the submit door's pair: the warehouse's
-        // stock location is now the SOURCE, the company's supplier location the destination the
-        // received goods return to.
-        let (supplier_loc, stock_loc) = self.door_move_endpoints(h.company_id, h.warehouse_id, "supplier").await?;
+        // stock location is now the SOURCE, the supplier location the destination the received
+        // goods return to.
+        let (supplier_loc, stock_loc) = self.door_move_endpoints(h.warehouse_id, "supplier").await?;
 
         // The reversal legs already landed in a prior (crashed) attempt: a DONE move under the
         // line's reverse name means the bin draw already happened — the pre-check below skips it.
-        let prior = self.door_moves_by_origin(h.company_id, &h.receipt_number).await?;
+        let prior = self.door_moves_by_origin(&h.receipt_number).await?;
         let rev_name = |idx: usize| format!("{}/REV/{}", h.receipt_number, idx + 1);
 
         // ---- all-or-nothing availability pre-check, under the Bin locks -----------------------
@@ -104,9 +106,10 @@ impl InventoryWriteService {
         // the quant grain). A landed line is skipped — its bin draw already committed.
         {
             let mut tx = self.db_pool.begin().await?;
-            // RLS scope (ADR-0008): MUST be bound before any bin read — an unbound connection is
-            // fenced to zero rows, so the FOR UPDATE below would read every bin as empty.
-            company_scope::bind_company_on(&mut tx, h.company_id).await?;
+            // Re-bind the caller's ambient org scope before any bin read (ADR-0029) — the scope
+            // is task-local and a fresh pool transaction carries none of it; undecorated
+            // (module tests, jobs) the transaction stays plain.
+            relay_ambient_scope(&mut tx).await?;
             for (idx, it) in items.iter().enumerate() {
                 if it.quantity.is_zero() { continue; }
                 // A landed-cost service line minted no stock — there is nothing of it on the
@@ -115,7 +118,7 @@ impl InventoryWriteService {
                 let already_reversed = prior.iter()
                     .any(|m| m.name == rev_name(idx) && m.state == "done");
                 if already_reversed { continue; }
-                let bin = self.bins.lock_or_init(&mut tx, h.company_id, it.item_id, h.warehouse_id).await?;
+                let bin = self.bins.lock_or_init(&mut tx, it.item_id, h.warehouse_id).await?;
                 if bin.actual_qty < it.quantity {
                     return Err(InventoryError::InsufficientStockToReverse {
                         item_id: it.item_id, warehouse_id: h.warehouse_id,
@@ -125,7 +128,7 @@ impl InventoryWriteService {
                 // The quant-surface heal: stock received through the legacy direct-write paths
                 // wrote Bins without quants — seed the quant from the (locked) Bin once, so the
                 // reverse move's reservation has a surface to reserve against.
-                self.pickings.ensure_quant_surface(&mut tx, h.company_id, it.item_id, stock_loc, Some(h.warehouse_id)).await?;
+                self.pickings.ensure_quant_surface(&mut tx, it.item_id, stock_loc, Some(h.warehouse_id)).await?;
             }
             tx.commit().await?;
         }
@@ -140,7 +143,6 @@ impl InventoryWriteService {
             let reverse_value = money(it.quantity * it.rate);
             let mid = match self.mint_line_move(NewStockMove {
                 name: rev_name(idx),
-                company_id: h.company_id,
                 item_id: it.item_id,
                 demand_qty: it.quantity,
                 price_unit: Decimal::ZERO, // the reversal is valued by its forced_value, never a price
@@ -161,25 +163,25 @@ impl InventoryWriteService {
                 Some(mid) => mid,
                 None => continue, // the line already reversed in a prior (crashed) attempt
             };
-            let state = self.advance_move_to_assigned(h.company_id, mid).await?;
+            let state = self.advance_move_to_assigned(mid).await?;
             if state != "assigned" {
                 // The stock quant's free availability cannot cover the WHOLE reversal — the
                 // received goods are (partly) reserved for someone else. Release whatever the
                 // partial assign took; no stock moved, no reservation held, the voucher stays
                 // submitted (retryable once the reservation clears).
-                self.unreserve_move(h.company_id, mid).await?;
-                let on_hand = self.quants.fetch_on_hand(&self.db_pool, h.company_id, it.item_id, stock_loc).await?;
+                self.unreserve_move(mid).await?;
+                let on_hand = self.quants.fetch_on_hand(&self.db_pool, it.item_id, stock_loc).await?;
                 return Err(InventoryError::InsufficientStockToReverse {
                     item_id: it.item_id, warehouse_id: h.warehouse_id,
                     available: on_hand.on_hand_qty - on_hand.reserved_qty,
                     requested: it.quantity,
                 });
             }
-            self.action_done(h.company_id, mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
+            self.action_done(mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
         }
         {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, h.company_id).await?;
+            relay_ambient_scope(&mut tx).await?;
             self.receipts.mark_cancelled(&mut tx, id).await?;
             tx.commit().await?;
         }
@@ -190,13 +192,15 @@ impl InventoryWriteService {
         // reverses nothing on the way out.
         // The inventory leg resolves the SAME location valuation-account override the submit
         // used, so the compensation mirrors the original post exactly (posture symmetry).
-        let inv_acct = self.inventory_leg_account(h.company_id, stock_loc, h.inventory_account_id).await?;
+        let inv_acct = self.inventory_leg_account(stock_loc, h.inventory_account_id).await?;
         let total: Decimal = items.iter()
             .filter(|l| !l.is_landed_costs_line)
             .map(|l| money(l.quantity * l.rate))
             .sum();
         let env = AccountingPostEnvelope {
-            idempotency_key: format!("{id}-reversal"), company_id: h.company_id, branch_id: h.branch_id,
+            // Legacy twin (ADR-0029): filled from the ambient org scope's company echo for
+            // consumers that still read a tenant off the wire. No module statement keys on it.
+            idempotency_key: format!("{id}-reversal"), company_id: legacy_company_echo(), branch_id: h.branch_id,
             source_type: "inventory".into(), source_id: id, source_reference: Some(h.receipt_number.clone()),
             posting_date: h.posting_date, currency: h.currency.clone(), posting_type: "reversal".into(),
             reverses_post_id: Some(orig_post_id),
@@ -230,15 +234,12 @@ impl InventoryWriteService {
         }
         let orig_post_id = h.gl.accounting_post_id.ok_or(InventoryError::GlNotPosted(id))?;
 
-        let items = company_scope::with_company_scope(
-            Some(h.company_id),
-            self.delivery_items.fetch_cancel_items(&self.db_pool, id),
-        ).await?;
+        let items = self.delivery_items.fetch_cancel_items(&self.db_pool, id).await?;
 
-        // The door's move endpoints — the mirror image of the submit door's pair: the company's
-        // customer location is now the SOURCE, the warehouse's stock location the destination
+        // The door's move endpoints — the mirror image of the submit door's pair: the customer
+        // location is now the SOURCE, the warehouse's stock location the destination
         // the delivered goods return to.
-        let (customer_loc, stock_loc) = self.door_move_endpoints(h.company_id, h.warehouse_id, "customer").await?;
+        let (customer_loc, stock_loc) = self.door_move_endpoints(h.warehouse_id, "customer").await?;
 
         // ---- physical reversal: one reverse move per line, engine-driven -----------------------
         for (idx, it) in items.iter().enumerate() {
@@ -246,7 +247,6 @@ impl InventoryWriteService {
             let name = format!("{}/REV/{}", h.delivery_number, idx + 1);
             let mid = match self.mint_line_move(NewStockMove {
                 name,
-                company_id: h.company_id,
                 item_id: it.item_id,
                 demand_qty: it.quantity,
                 price_unit: Decimal::ZERO, // the reversal is valued by its forced_value, never a price
@@ -269,7 +269,7 @@ impl InventoryWriteService {
                 Some(mid) => mid,
                 None => continue, // the line already reversed in a prior (crashed) attempt
             };
-            let state = self.advance_move_to_assigned(h.company_id, mid).await?;
+            let state = self.advance_move_to_assigned(mid).await?;
             if state != "assigned" {
                 // Unreachable in practice (an external source's supply is unconditionally
                 // available, so assign always covers the full demand) — but a delivery cancel
@@ -279,11 +279,11 @@ impl InventoryWriteService {
                     move_id: mid, action: "cancel", current: state,
                 });
             }
-            self.action_done(h.company_id, mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
+            self.action_done(mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
         }
         {
             let mut tx = self.db_pool.begin().await?;
-            company_scope::bind_company_on(&mut tx, h.company_id).await?;
+            relay_ambient_scope(&mut tx).await?;
             self.deliveries.mark_cancelled(&mut tx, id).await?;
             tx.commit().await?;
         }
@@ -293,12 +293,14 @@ impl InventoryWriteService {
         // resolves the SAME posture the original debit used (the anglo-saxon interim-delivered
         // account when the posture is ON — a compensation must mirror what was actually posted)
         // and the inventory leg resolves the same location valuation-account override.
-        let posture = self.posting_posture(h.company_id).await?;
-        let credit_acct = self.delivery_debit_account(h.company_id, &posture, h.cogs_account_id)?;
-        let inv_acct = self.inventory_leg_account(h.company_id, stock_loc, h.inventory_account_id).await?;
+        let posture = self.posting_posture().await?;
+        let credit_acct = self.delivery_debit_account(&posture, h.cogs_account_id)?;
+        let inv_acct = self.inventory_leg_account(stock_loc, h.inventory_account_id).await?;
         let total: Decimal = items.iter().map(|l| l.cogs_amount).sum();
         let env = AccountingPostEnvelope {
-            idempotency_key: format!("{id}-reversal"), company_id: h.company_id, branch_id: h.branch_id,
+            // Legacy twin (ADR-0029): filled from the ambient org scope's company echo for
+            // consumers that still read a tenant off the wire. No module statement keys on it.
+            idempotency_key: format!("{id}-reversal"), company_id: legacy_company_echo(), branch_id: h.branch_id,
             source_type: "inventory".into(), source_id: id, source_reference: Some(h.delivery_number.clone()),
             posting_date: h.posting_date, currency: h.currency.clone(), posting_type: "reversal".into(),
             reverses_post_id: Some(orig_post_id),
@@ -314,16 +316,16 @@ impl InventoryWriteService {
     // ---- shared: the door-minted moves of one voucher origin ------------------------------
 
     /// The moves minted under one voucher origin (voucher doors stamp the voucher number in
-    /// `origin`), company-fenced. The cancel doors read them to tell an already-landed reverse
-    /// leg from a fresh one (crash recovery) — the mapping is the deterministic move NAME.
+    /// `origin`). The cancel doors read them to tell an already-landed reverse leg from a
+    /// fresh one (crash recovery) — the mapping is the deterministic move NAME. The read
+    /// rides the caller's ambient org scope (ADR-0029).
     async fn door_moves_by_origin(
         &self,
-        company_id: Uuid,
         origin: &str,
     ) -> Result<Vec<MoveRow>, InventoryError> {
         let mut tx = self.db_pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, company_id).await?;
-        let rows = self.moves.fetch_moves_by_origin(&mut tx, company_id, origin).await?;
+        relay_ambient_scope(&mut tx).await?;
+        let rows = self.moves.fetch_moves_by_origin(&mut tx, origin).await?;
         tx.commit().await?;
         Ok(rows)
     }
@@ -346,11 +348,13 @@ impl InventoryWriteService {
         let orig_post_id = h.gl.accounting_post_id.ok_or(InventoryError::GlNotPosted(id))?;
         // Same posture + location-override resolution as the forward cancellation, so the
         // recovered reversal mirrors the original post exactly.
-        let (_, stock_loc) = self.door_move_endpoints(h.company_id, h.warehouse_id, "supplier").await?;
-        let inv_acct = self.inventory_leg_account(h.company_id, stock_loc, h.inventory_account_id).await?;
+        let (_, stock_loc) = self.door_move_endpoints(h.warehouse_id, "supplier").await?;
+        let inv_acct = self.inventory_leg_account(stock_loc, h.inventory_account_id).await?;
         let amt = h.total_value;
         let env = AccountingPostEnvelope {
-            idempotency_key: format!("{id}-reversal"), company_id: h.company_id, branch_id: h.branch_id,
+            // Legacy twin (ADR-0029): filled from the ambient org scope's company echo for
+            // consumers that still read a tenant off the wire. No module statement keys on it.
+            idempotency_key: format!("{id}-reversal"), company_id: legacy_company_echo(), branch_id: h.branch_id,
             source_type: "inventory".into(), source_id: id, source_reference: Some(h.receipt_number.clone()),
             posting_date: h.posting_date, currency: h.currency.clone(), posting_type: "reversal".into(),
             reverses_post_id: Some(orig_post_id),
@@ -375,13 +379,15 @@ impl InventoryWriteService {
         // Same posture + location-override resolution as the forward cancellation (the credit
         // leg mirrors the original debit — the anglo-saxon interim account when the posture
         // is ON — so the recovered reversal mirrors the original post exactly).
-        let posture = self.posting_posture(h.company_id).await?;
-        let credit_acct = self.delivery_debit_account(h.company_id, &posture, h.cogs_account_id)?;
-        let (_, stock_loc) = self.door_move_endpoints(h.company_id, h.warehouse_id, "customer").await?;
-        let inv_acct = self.inventory_leg_account(h.company_id, stock_loc, h.inventory_account_id).await?;
+        let posture = self.posting_posture().await?;
+        let credit_acct = self.delivery_debit_account(&posture, h.cogs_account_id)?;
+        let (_, stock_loc) = self.door_move_endpoints(h.warehouse_id, "customer").await?;
+        let inv_acct = self.inventory_leg_account(stock_loc, h.inventory_account_id).await?;
         let amt = h.total_cogs;
         let env = AccountingPostEnvelope {
-            idempotency_key: format!("{id}-reversal"), company_id: h.company_id, branch_id: h.branch_id,
+            // Legacy twin (ADR-0029): filled from the ambient org scope's company echo for
+            // consumers that still read a tenant off the wire. No module statement keys on it.
+            idempotency_key: format!("{id}-reversal"), company_id: legacy_company_echo(), branch_id: h.branch_id,
             source_type: "inventory".into(), source_id: id, source_reference: Some(h.delivery_number.clone()),
             posting_date: h.posting_date, currency: h.currency.clone(), posting_type: "reversal".into(),
             reverses_post_id: Some(orig_post_id),

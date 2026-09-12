@@ -48,7 +48,6 @@ pub struct OperationTypeFilter {
     pub sequence_code: Option<String>,
     pub code: Option<PickingCode>,
     pub active: Option<bool>,
-    pub company_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
     pub default_location_src_id: Option<Uuid>,
     pub default_location_dest_id: Option<Uuid>,
@@ -62,7 +61,7 @@ pub struct OperationTypeFilter {
 impl OperationTypeFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.name.is_some() || self.sequence_code.is_some() || self.code.is_some() || self.active.is_some() || self.company_id.is_some() || self.warehouse_id.is_some() || self.default_location_src_id.is_some() || self.default_location_dest_id.is_some() || self.reservation_method.is_some() || self.move_type.is_some() || self.create_backorder.is_some() || self.use_create_lots.is_some() || self.use_existing_lots.is_some()
+        self.name.is_some() || self.sequence_code.is_some() || self.code.is_some() || self.active.is_some() || self.warehouse_id.is_some() || self.default_location_src_id.is_some() || self.default_location_dest_id.is_some() || self.reservation_method.is_some() || self.move_type.is_some() || self.create_backorder.is_some() || self.use_create_lots.is_some() || self.use_existing_lots.is_some()
     }
 }
 

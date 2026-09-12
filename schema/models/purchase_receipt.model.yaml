@@ -23,10 +23,6 @@ models:
         attributes: ["@required", "@max(40)"]
         description: "Human reference (the post's voucher_no)"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "Books/stock owner # logical FK to organization.Company.id"
 
       branch_id:
         type: uuid?
@@ -127,8 +123,6 @@ models:
         fields: [receipt_number]
         where: "deleted_at IS NULL"
       - type: index
-        fields: [company_id, supplier_id, status]
-      - type: index
         fields: [posting_state]
       - type: index
         fields: [transfer_id]
@@ -149,10 +143,6 @@ models:
         attributes: ["@required", "@foreign_key(PurchaseReceipt.id)"]
         description: "Owning receipt"
 
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "Books/stock owner # logical FK to organization.Company.id; denormalized from PurchaseReceipt to FORCE RLS on the child (ADR-0010 Decision A)"
 
       item_id:
         type: uuid

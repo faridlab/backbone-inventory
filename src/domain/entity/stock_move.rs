@@ -71,7 +71,6 @@ pub struct StockMove {
     pub location_id: Uuid,
     pub location_dest_id: Uuid,
     pub partner_id: Option<Uuid>,
-    pub company_id: Uuid,
     pub rule_id: Option<Uuid>,
     pub warehouse_id: Option<Uuid>,
     pub orderpoint_id: Option<Uuid>,
@@ -92,7 +91,7 @@ impl StockMove {
     }
 
     /// Create a new StockMove with required fields
-    pub fn new(name: String, state: MoveState, posting_state: GlPostingState, priority: Priority, create_date: DateTime<Utc>, date: DateTime<Utc>, item_id: Uuid, demand_qty: Decimal, quantity: Decimal, price_unit: Decimal, procure_method: ProcureMethod, location_id: Uuid, location_dest_id: Uuid, company_id: Uuid, move_orig_ids: Vec<Uuid>, move_dest_ids: Vec<Uuid>, is_inventory: bool, scrapped: bool, propagate_cancel: bool) -> Self {
+    pub fn new(name: String, state: MoveState, posting_state: GlPostingState, priority: Priority, create_date: DateTime<Utc>, date: DateTime<Utc>, item_id: Uuid, demand_qty: Decimal, quantity: Decimal, price_unit: Decimal, procure_method: ProcureMethod, location_id: Uuid, location_dest_id: Uuid, move_orig_ids: Vec<Uuid>, move_dest_ids: Vec<Uuid>, is_inventory: bool, scrapped: bool, propagate_cancel: bool) -> Self {
         Self {
             id: Uuid::new_v4(),
             name,
@@ -112,7 +111,6 @@ impl StockMove {
             location_id,
             location_dest_id,
             partner_id: None,
-            company_id,
             rule_id: None,
             warehouse_id: None,
             orderpoint_id: None,
@@ -281,9 +279,6 @@ impl StockMove {
                 "partner_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.partner_id = v; }
                 }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 "rule_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.rule_id = v; }
                 }
@@ -367,7 +362,6 @@ impl backbone_orm::EntityRepoMeta for StockMove {
         m.insert("location_id".to_string(), "uuid".to_string());
         m.insert("location_dest_id".to_string(), "uuid".to_string());
         m.insert("partner_id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("rule_id".to_string(), "uuid".to_string());
         m.insert("warehouse_id".to_string(), "uuid".to_string());
         m.insert("orderpoint_id".to_string(), "uuid".to_string());
@@ -379,9 +373,6 @@ impl backbone_orm::EntityRepoMeta for StockMove {
     }
     fn search_fields() -> &'static [&'static str] {
         &["name"]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
     fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
         &[("picking", "transfers", "pickingId")]
@@ -411,7 +402,6 @@ pub struct StockMoveBuilder {
     location_id: Option<Uuid>,
     location_dest_id: Option<Uuid>,
     partner_id: Option<Uuid>,
-    company_id: Option<Uuid>,
     rule_id: Option<Uuid>,
     warehouse_id: Option<Uuid>,
     orderpoint_id: Option<Uuid>,
@@ -525,12 +515,6 @@ impl StockMoveBuilder {
         self
     }
 
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Set the rule_id field (optional)
     pub fn rule_id(mut self, value: Uuid) -> Self {
         self.rule_id = Some(value);
@@ -587,7 +571,6 @@ impl StockMoveBuilder {
         let item_id = self.item_id.ok_or_else(|| "item_id is required".to_string())?;
         let location_id = self.location_id.ok_or_else(|| "location_id is required".to_string())?;
         let location_dest_id = self.location_dest_id.ok_or_else(|| "location_dest_id is required".to_string())?;
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
         let move_orig_ids = self.move_orig_ids.ok_or_else(|| "move_orig_ids is required".to_string())?;
         let move_dest_ids = self.move_dest_ids.ok_or_else(|| "move_dest_ids is required".to_string())?;
 
@@ -610,7 +593,6 @@ impl StockMoveBuilder {
             location_id,
             location_dest_id,
             partner_id: self.partner_id,
-            company_id,
             rule_id: self.rule_id,
             warehouse_id: self.warehouse_id,
             orderpoint_id: self.orderpoint_id,

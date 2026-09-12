@@ -20,7 +20,6 @@ use uuid::Uuid;
 pub struct NewScrapRow<'a> {
     pub id: Uuid,
     pub name: &'a str,
-    pub company_id: Uuid,
     pub origin: Option<&'a str>,
     pub item_id: Uuid,
     pub scrap_qty: Decimal,
@@ -37,7 +36,6 @@ pub struct NewScrapRow<'a> {
 #[derive(Debug, Clone)]
 pub struct ScrapRow {
     pub id: Uuid,
-    pub company_id: Uuid,
     pub name: String,
     /// draft / done (as text).
     pub state: String,
@@ -66,8 +64,8 @@ impl ScrapDoorRepository {
     }
 
     /// Insert the scrap header (draft). Leaks the raw `sqlx::Error` deliberately so the
-    /// service can turn a unique violation on (name, company_id) into the typed duplicate
-    /// error.
+    /// service can turn a unique violation on the name — the composing decorator's org-scoped
+    /// arbiter — into the typed duplicate error.
     pub async fn insert_scrap(
         &self,
         conn: &mut PgConnection,
@@ -77,9 +75,9 @@ impl ScrapDoorRepository {
             r#"INSERT INTO inventory.scraps
                  (id, name, state, origin, item_id, scrap_qty, location_id,
                   scrap_location_id, lot_id, package_id, owner_id, picking_id,
-                  scrap_reason_tag_ids, company_id)
+                  scrap_reason_tag_ids)
                VALUES ($1, $2, 'draft'::scrap_state, $3, $4, $5, $6,
-                       $7, $8, $9, $10, $11, $12, $13)"#,
+                       $7, $8, $9, $10, $11, $12)"#,
         )
         .bind(s.id)
         .bind(s.name)
@@ -93,7 +91,6 @@ impl ScrapDoorRepository {
         .bind(s.owner_id)
         .bind(s.picking_id)
         .bind(&s.scrap_reason_tag_ids)
-        .bind(s.company_id)
         .execute(&mut *conn)
         .await?;
         Ok(())
@@ -106,7 +103,7 @@ impl ScrapDoorRepository {
         scrap_id: Uuid,
     ) -> Result<Option<ScrapRow>, sqlx::Error> {
         let row = sqlx::query(
-            r#"SELECT id, company_id, name, state::text AS state, origin, item_id, scrap_qty,
+            r#"SELECT id, name, state::text AS state, origin, item_id, scrap_qty,
                       location_id, scrap_location_id, lot_id, package_id, owner_id, picking_id,
                       move_id, scrap_reason_tag_ids
                FROM inventory.scraps
@@ -117,7 +114,6 @@ impl ScrapDoorRepository {
         .await?;
         Ok(row.map(|r| ScrapRow {
             id: r.get("id"),
-            company_id: r.get("company_id"),
             name: r.get("name"),
             state: r.get("state"),
             origin: r.get("origin"),

@@ -1,7 +1,8 @@
-//! Posting-posture probes for the valuation overlay: the per-company settings row
+//! Posting-posture probes for the valuation overlay: the settings row
 //! (`inventory.inventory_company_settings`: cost-method vocabulary, perpetual/periodic axis,
 //! anglo-saxon delivery-debit posture) switching WHICH account the EXISTING door posts use —
-//! never a second posting path.
+//! never a second posting path. (Per-org-unit settings rows are the composing service's
+//! decorator posture; the bare module resolves the single row this table holds.)
 //!
 //! Coverage (P1–P8):
 //! - P1/P6 the rollout no-op: an ABSENT settings row (and posture OFF) posts exactly today's
@@ -94,27 +95,35 @@ async fn pool() -> PgPool {
     PgPool::connect(&url).await.expect("connect DB")
 }
 
-/// One company's posting posture. `None` interim + `anglo=true` is the fail-closed case.
+/// The module's posting posture. `None` interim + `anglo=true` is the fail-closed case.
+/// The settings table is a singleton from the bare module's point of view (the decorator
+/// scopes it per org unit), and the scratch database persists rows across runs — so the
+/// previous row is cleared before seeding, and the probes serialize on POSTURE_SERIAL.
 async fn set_posture(
     pool: &PgPool,
-    company: Uuid,
     policy: &str,
     anglo: bool,
     interim: Option<Uuid>,
 ) {
+    sqlx::query("DELETE FROM inventory.inventory_company_settings")
+        .execute(pool).await.expect("clear posture");
     sqlx::query(
         r#"INSERT INTO inventory.inventory_company_settings
-             (id, company_id, cost_method, valuation_policy, anglo_saxon_accounting,
+             (id, cost_method, valuation_policy, anglo_saxon_accounting,
               stock_interim_delivered_account_id)
-           VALUES ($1,$2,'average',$3::valuation_policy,$4,$5)"#,
+           VALUES ($1,'average',$2::valuation_policy,$3,$4)"#,
     )
-    .bind(Uuid::new_v4()).bind(company).bind(policy).bind(anglo).bind(interim)
+    .bind(Uuid::new_v4()).bind(policy).bind(anglo).bind(interim)
     .execute(pool).await.expect("seed posture");
 }
 
-async fn warehouse(w: &InventoryWriteService, company: Uuid) -> Uuid {
+/// The settings row is read unscoped (an arbitrary single live row), so posture probes
+/// must not run concurrently with each other.
+static POSTURE_SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+async fn warehouse(w: &InventoryWriteService) -> Uuid {
     w.create_warehouse(NewWarehouse {
-        company_id: company, code: uq("WH"), name: uq("Main"),
+        code: uq("WH"), name: uq("Main"),
         warehouse_type: None, parent_warehouse_id: None, is_group: false,
     }).await.unwrap()
 }
@@ -138,9 +147,9 @@ fn accts() -> Accts {
     }
 }
 
-async fn receive(w: &InventoryWriteService, company: Uuid, wh: Uuid, a: &Accts, item: Uuid, qty: &str, rate: &str, sink: &dyn GlPostSink) -> Uuid {
+async fn receive(w: &InventoryWriteService, wh: Uuid, a: &Accts, item: Uuid, qty: &str, rate: &str, sink: &dyn GlPostSink) -> Uuid {
     let rid = w.create_purchase_receipt(NewReceipt {
-        receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
+        receipt_number: uq("PR"), branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: a.inv, grir_account_id: a.grir,
@@ -150,9 +159,9 @@ async fn receive(w: &InventoryWriteService, company: Uuid, wh: Uuid, a: &Accts, 
     rid
 }
 
-async fn deliver(w: &InventoryWriteService, company: Uuid, wh: Uuid, a: &Accts, item: Uuid, qty: &str, sink: &dyn GlPostSink) -> Result<backbone_inventory::application::service::inventory_write_service::SubmitOutcome, InventoryError> {
+async fn deliver(w: &InventoryWriteService, wh: Uuid, a: &Accts, item: Uuid, qty: &str, sink: &dyn GlPostSink) -> Result<backbone_inventory::application::service::inventory_write_service::SubmitOutcome, InventoryError> {
     let did = w.create_delivery_note(NewDelivery {
-        delivery_number: uq("DN"), company_id: company, branch_id: None, customer_id: Uuid::new_v4(),
+        delivery_number: uq("DN"), branch_id: None, customer_id: Uuid::new_v4(),
         source_so_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         cogs_account_id: a.cogs, inventory_account_id: a.inv,
@@ -171,19 +180,21 @@ async fn voucher_state(pool: &PgPool, table: &str, id: Uuid) -> (String, String)
 
 #[tokio::test]
 async fn absent_settings_row_posts_todays_shapes() {
+    let _serial = POSTURE_SERIAL.lock().await;
     let pool = pool().await;
-    let company = Uuid::new_v4();
     // NOTE: no inventory_company_settings row — the runtime defaults must equal today.
+    sqlx::query("DELETE FROM inventory.inventory_company_settings")
+        .execute(&pool).await.unwrap();
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
-    let wh = warehouse(&w, company).await;
+    let wh = warehouse(&w).await;
     let a = accts();
     let item = Uuid::new_v4();
-    receive(&w, company, wh, &a, item, "10", "100", &rec).await;
+    receive(&w, wh, &a, item, "10", "100", &rec).await;
     assert_eq!(rec.debits(a.inv).len(), 1, "P6: Dr Inventory (header account, no override)");
     assert_eq!(rec.debits(a.inv)[0].debit, d("1000"));
     assert_eq!(rec.credits(a.grir).len(), 1, "P6: Cr GR/IR clearing");
-    let out = deliver(&w, company, wh, &a, item, "4", &rec).await.unwrap();
+    let out = deliver(&w, wh, &a, item, "4", &rec).await.unwrap();
     assert!(out.posted, "P1: posture OFF still posts");
     assert_eq!(rec.debits(a.cogs).len(), 1, "P1: Dr COGS unchanged");
     assert_eq!(rec.debits(a.cogs)[0].debit, d("400"), "4 @ moving-average 100");
@@ -195,19 +206,19 @@ async fn absent_settings_row_posts_todays_shapes() {
 
 #[tokio::test]
 async fn anglo_posture_swaps_delivery_debit_to_interim() {
+    let _serial = POSTURE_SERIAL.lock().await;
     let pool = pool().await;
-    let company = Uuid::new_v4();
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
-    let wh = warehouse(&w, company).await;
+    let wh = warehouse(&w).await;
     let a = accts();
     let item = Uuid::new_v4();
-    set_posture(&pool, company, "perpetual", true, Some(a.interim)).await;
-    receive(&w, company, wh, &a, item, "10", "100", &rec).await;
+    set_posture(&pool, "perpetual", true, Some(a.interim)).await;
+    receive(&w, wh, &a, item, "10", "100", &rec).await;
     // A1: the receipt side is unchanged in BOTH postures — grir IS the interim-received leg.
     assert_eq!(rec.debits(a.inv).len(), 1, "receipt still Dr Inventory");
     assert_eq!(rec.credits(a.grir).len(), 1, "receipt still Cr GR/IR");
-    let out = deliver(&w, company, wh, &a, item, "4", &rec).await.unwrap();
+    let out = deliver(&w, wh, &a, item, "4", &rec).await.unwrap();
     assert!(out.posted);
     assert_eq!(rec.debits(a.interim).len(), 1, "P2: Dr interim-delivered (the swap)");
     assert_eq!(rec.debits(a.interim)[0].debit, d("400"));
@@ -223,17 +234,17 @@ async fn anglo_posture_swaps_delivery_debit_to_interim() {
 
 #[tokio::test]
 async fn anglo_posture_without_interim_account_fails_closed() {
+    let _serial = POSTURE_SERIAL.lock().await;
     let pool = pool().await;
-    let company = Uuid::new_v4();
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
-    let wh = warehouse(&w, company).await;
+    let wh = warehouse(&w).await;
     let a = accts();
     let item = Uuid::new_v4();
-    set_posture(&pool, company, "perpetual", true, None).await;
-    receive(&w, company, wh, &a, item, "10", "100", &rec).await; // receipt side needs no interim account
+    set_posture(&pool, "perpetual", true, None).await;
+    receive(&w, wh, &a, item, "10", "100", &rec).await; // receipt side needs no interim account
     let did = w.create_delivery_note(NewDelivery {
-        delivery_number: uq("DN"), company_id: company, branch_id: None, customer_id: Uuid::new_v4(),
+        delivery_number: uq("DN"), branch_id: None, customer_id: Uuid::new_v4(),
         source_so_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         cogs_account_id: a.cogs, inventory_account_id: a.inv,
@@ -246,8 +257,8 @@ async fn anglo_posture_without_interim_account_fails_closed() {
     assert_eq!(rec.count(), 2, "P3: only the receipt's legs — the delivery posted nothing");
     let (status, _) = voucher_state(&pool, "delivery_notes", did).await;
     assert_eq!(status, "draft", "P3: the voucher never left draft");
-    let moves: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM inventory.stock_moves WHERE company_id=$1 AND origin LIKE 'DN-%'")
-        .bind(company).fetch_one(&pool).await.unwrap();
+    let moves: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM inventory.stock_moves WHERE item_id=$1 AND origin LIKE 'DN-%'")
+        .bind(item).fetch_one(&pool).await.unwrap();
     assert_eq!(moves, 0, "P3: nothing minted — refused before any movement");
 }
 
@@ -255,17 +266,17 @@ async fn anglo_posture_without_interim_account_fails_closed() {
 
 #[tokio::test]
 async fn posture_is_identical_across_submit_repost_and_cancel() {
+    let _serial = POSTURE_SERIAL.lock().await;
     let pool = pool().await;
-    let company = Uuid::new_v4();
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
-    let wh = warehouse(&w, company).await;
+    let wh = warehouse(&w).await;
     let a = accts();
     let item = Uuid::new_v4();
-    set_posture(&pool, company, "perpetual", true, Some(a.interim)).await;
-    receive(&w, company, wh, &a, item, "10", "100", &rec).await;
+    set_posture(&pool, "perpetual", true, Some(a.interim)).await;
+    receive(&w, wh, &a, item, "10", "100", &rec).await;
     let did = w.create_delivery_note(NewDelivery {
-        delivery_number: uq("DN"), company_id: company, branch_id: None, customer_id: Uuid::new_v4(),
+        delivery_number: uq("DN"), branch_id: None, customer_id: Uuid::new_v4(),
         source_so_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         cogs_account_id: a.cogs, inventory_account_id: a.inv,
@@ -306,24 +317,22 @@ async fn posture_is_identical_across_submit_repost_and_cancel() {
 
 #[tokio::test]
 async fn periodic_policy_suppresses_realtime_posts() {
+    let _serial = POSTURE_SERIAL.lock().await;
     let pool = pool().await;
-    let company = Uuid::new_v4();
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
-    let wh = warehouse(&w, company).await;
+    let wh = warehouse(&w).await;
     let a = accts();
     let item = Uuid::new_v4();
-    set_posture(&pool, company, "periodic", false, None).await;
-    receive(&w, company, wh, &a, item, "10", "100", &rec).await; // submit must succeed (physical movement)
+    set_posture(&pool, "periodic", false, None).await;
+    let rid = receive(&w, wh, &a, item, "10", "100", &rec).await; // submit must succeed (physical movement)
     assert_eq!(rec.count(), 0, "P5: periodic posts nothing at receipt time");
-    let (rstatus, rps) = voucher_state(&pool, "purchase_receipts",
-        sqlx::query_scalar::<_, Uuid>("SELECT id FROM inventory.purchase_receipts WHERE company_id=$1")
-            .bind(company).fetch_one(&pool).await.unwrap()).await;
+    let (rstatus, rps) = voucher_state(&pool, "purchase_receipts", rid).await;
     assert_eq!(rstatus, "submitted", "P5: the physical movement still happened");
     assert_eq!(rps, "not_applicable", "P5: the voucher retired to not_applicable");
 
     let did = w.create_delivery_note(NewDelivery {
-        delivery_number: uq("DN"), company_id: company, branch_id: None, customer_id: Uuid::new_v4(),
+        delivery_number: uq("DN"), branch_id: None, customer_id: Uuid::new_v4(),
         source_so_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         cogs_account_id: a.cogs, inventory_account_id: a.inv,
@@ -335,22 +344,18 @@ async fn periodic_policy_suppresses_realtime_posts() {
     assert_eq!(dps, "not_applicable");
     // The stock really moved — only the GL legs are suppressed.
     let (qty,): (Decimal,) = sqlx::query_as(
-        "SELECT actual_qty FROM inventory.bins WHERE company_id=$1 AND item_id=$2 AND warehouse_id=$3",
-    ).bind(company).bind(item).bind(wh).fetch_one(&pool).await.unwrap();
+        "SELECT actual_qty FROM inventory.bins WHERE item_id=$1 AND warehouse_id=$2",
+    ).bind(item).bind(wh).fetch_one(&pool).await.unwrap();
     assert_eq!(qty, d("6"), "P5: the estate moved 10 → 6 despite no GL post");
 
-    // Engine legs too: a directive-carrying move under a periodic company stays not_applicable.
-    let stock: Uuid = sqlx::query_scalar("SELECT id FROM inventory.locations WHERE company_id=$1 AND warehouse_id=$2 AND usage='internal'")
-        .bind(company).bind(wh).fetch_one(&pool).await.unwrap();
-    // Resolve the company-owned customer location the way the doors do:
-    // company-owned first, with the shared reference root (company NULL) as
-    // fallback. On the seeded chain the shared root exists, so no door ever
-    // minted a company-owned endpoint — bootstrap one here, mirroring
-    // `ensure_partner_location`, so the fixture holds on both chains.
+    // Engine legs too: a directive-carrying move under a periodic posture stays not_applicable.
+    let stock: Uuid = sqlx::query_scalar("SELECT id FROM inventory.locations WHERE warehouse_id=$1 AND usage='internal'")
+        .bind(wh).fetch_one(&pool).await.unwrap();
+    // Resolve the customer location the way the doors do — the active reference endpoint,
+    // bootstrapped when absent (mirroring `ensure_partner_location`).
     let customer: Uuid = match sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM inventory.locations WHERE company_id=$1 AND usage='customer'",
+        "SELECT id FROM inventory.locations WHERE usage='customer' AND active AND (metadata->>'deleted_at') IS NULL ORDER BY name ASC LIMIT 1",
     )
-    .bind(company)
     .fetch_optional(&pool)
     .await
     .unwrap()
@@ -360,11 +365,10 @@ async fn periodic_policy_suppresses_realtime_posts() {
             let id = Uuid::new_v4();
             sqlx::query(
                 r#"INSERT INTO inventory.locations
-                     (id, name, complete_name, usage, active, company_id, parent_path)
-                   VALUES ($1, 'Customers', 'Customers', 'customer'::location_usage, TRUE, $2, $1::text)"#,
+                     (id, name, complete_name, usage, active, parent_path)
+                   VALUES ($1, 'Customers', 'Customers', 'customer'::location_usage, TRUE, $1::text)"#,
             )
             .bind(id)
-            .bind(company)
             .execute(&pool)
             .await
             .unwrap();
@@ -376,15 +380,15 @@ async fn periodic_policy_suppresses_realtime_posts() {
         grir_account_id: None, adjustment_account_id: None, currency: "IDR".into(),
     };
     let mid = w.create_move(NewStockMove {
-        name: uq("MV"), company_id: company, item_id: item, demand_qty: d("2"),
+        name: uq("MV"), item_id: item, demand_qty: d("2"),
         price_unit: Decimal::ZERO, procure_method: "make_to_stock".into(), picking_id: None,
         origin: None, location_id: stock, location_dest_id: customer, partner_id: None,
         warehouse_id: Some(wh), orderpoint_id: None, move_orig_ids: vec![], move_dest_ids: vec![],
         is_inventory: false, scrapped: false, forced_value: None,
     }).await.unwrap();
-    w.action_confirm(company, mid).await.unwrap();
-    w.action_assign(company, mid).await.unwrap();
-    w.action_done(company, mid, BackorderPolicy::Never, &gl, &rec).await.unwrap();
+    w.action_confirm(mid).await.unwrap();
+    w.action_assign(mid).await.unwrap();
+    w.action_done(mid, BackorderPolicy::Never, &gl, &rec).await.unwrap();
     let mps: String = sqlx::query_scalar("SELECT posting_state::text FROM inventory.stock_moves WHERE id=$1")
         .bind(mid).fetch_one(&pool).await.unwrap();
     assert_eq!(mps, "not_applicable", "P5: the engine leg never armed under periodic");
@@ -395,28 +399,33 @@ async fn periodic_policy_suppresses_realtime_posts() {
 
 #[tokio::test]
 async fn location_valuation_override_wins_over_header_account() {
+    let _serial = POSTURE_SERIAL.lock().await;
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    // These cases run under the DEFAULT posture — the settings singleton is read
+    // unscoped on scratch and other runs leave their row behind, so clear it first
+    // (the same isolation `set_posture` applies for the posture-mutating cases).
+    sqlx::query("DELETE FROM inventory.inventory_company_settings")
+        .execute(&pool).await.unwrap();
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
-    let wh = warehouse(&w, company).await;
+    let wh = warehouse(&w).await;
     let a = accts();
     let item = Uuid::new_v4();
     // First receipt bootstraps the warehouse's Stock location; then the override lands on it.
-    receive(&w, company, wh, &a, item, "10", "100", &rec).await;
+    receive(&w, wh, &a, item, "10", "100", &rec).await;
     let stock: Uuid = sqlx::query_scalar(
-        "SELECT id FROM inventory.locations WHERE company_id=$1 AND warehouse_id=$2 AND usage='internal'",
-    ).bind(company).bind(wh).fetch_one(&pool).await.unwrap();
+        "SELECT id FROM inventory.locations WHERE warehouse_id=$1 AND usage='internal'",
+    ).bind(wh).fetch_one(&pool).await.unwrap();
     sqlx::query("UPDATE inventory.locations SET valuation_account_id=$2 WHERE id=$1")
         .bind(stock).bind(a.override_acct).execute(&pool).await.unwrap();
 
     // Receipt: the Inventory DEBIT leg resolves the override (chain: location → header).
-    receive(&w, company, wh, &a, item, "10", "120", &rec).await;
+    receive(&w, wh, &a, item, "10", "120", &rec).await;
     assert_eq!(rec.debits(a.override_acct).len(), 1, "P7: receipt Dr the location's valuation account");
     assert_eq!(rec.debits(a.override_acct)[0].debit, d("1200"));
     assert_eq!(rec.credits(a.grir).len(), 2, "GR/IR legs unchanged (one per receipt)");
     // Delivery: the Inventory CREDIT leg resolves the same override.
-    deliver(&w, company, wh, &a, item, "4", &rec).await.unwrap();
+    deliver(&w, wh, &a, item, "4", &rec).await.unwrap();
     assert_eq!(rec.credits(a.override_acct).len(), 1, "P7: delivery Cr the location's valuation account");
     assert_eq!(rec.credits(a.override_acct)[0].credit, d("440"), "4 @ blended 110");
     assert_eq!(rec.credits(a.inv).len(), 0, "P7: the header account lost to the override");
@@ -426,15 +435,20 @@ async fn location_valuation_override_wins_over_header_account() {
 
 #[tokio::test]
 async fn zero_value_zero_qty_voucher_posts_nothing() {
+    let _serial = POSTURE_SERIAL.lock().await;
     let pool = pool().await;
-    let company = Uuid::new_v4();
+    // These cases run under the DEFAULT posture — the settings singleton is read
+    // unscoped on scratch and other runs leave their row behind, so clear it first
+    // (the same isolation `set_posture` applies for the posture-mutating cases).
+    sqlx::query("DELETE FROM inventory.inventory_company_settings")
+        .execute(&pool).await.unwrap();
     let w = InventoryWriteService::new(pool.clone());
     let rec = Recorder::default();
-    let wh = warehouse(&w, company).await;
+    let wh = warehouse(&w).await;
     let a = accts();
     let item = Uuid::new_v4();
     let rid = w.create_purchase_receipt(NewReceipt {
-        receipt_number: uq("PR"), company_id: company, branch_id: None, supplier_id: Uuid::new_v4(),
+        receipt_number: uq("PR"), branch_id: None, supplier_id: Uuid::new_v4(),
         source_po_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         inventory_account_id: a.inv, grir_account_id: a.grir,
@@ -446,7 +460,7 @@ async fn zero_value_zero_qty_voucher_posts_nothing() {
     assert_eq!(ps, "not_applicable", "P8: retired, not failed");
 
     let did = w.create_delivery_note(NewDelivery {
-        delivery_number: uq("DN"), company_id: company, branch_id: None, customer_id: Uuid::new_v4(),
+        delivery_number: uq("DN"), branch_id: None, customer_id: Uuid::new_v4(),
         source_so_id: None, warehouse_id: wh, posting_date: day(),
         currency: "IDR".into(),
         cogs_account_id: a.cogs, inventory_account_id: a.inv,

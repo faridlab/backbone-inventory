@@ -12,7 +12,7 @@ use anyhow::Result;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use backbone_orm::company_scope;
+use backbone_orm::{company_scope, org_scope};
 
 use crate::domain::entity::Warehouse;
 
@@ -45,7 +45,6 @@ impl WarehouseRepository {
 /// DB (`$5::warehouse_type`) so a bad value fails as a DB error, not a deserialize panic.
 pub struct NewWarehouseRow<'a> {
     pub id: Uuid,
-    pub company_id: Uuid,
     pub code: &'a str,
     pub name: &'a str,
     pub warehouse_type: &'a str,
@@ -57,54 +56,54 @@ pub struct NewWarehouseRow<'a> {
 impl WarehouseRepository {
     /// Register a warehouse.
     ///
-    /// A write outside any transaction: takes the pool and runs `execute_scoped` so the RLS fence
-    /// (ADR-0008) applies. The caller wraps this in `with_company_scope(Some(company))` — the
-    /// company is on the DTO, and that scope satisfies the INSERT's WITH CHECK fence.
+    /// A write outside any transaction: takes the pool and runs `org_scope::execute_scoped` so
+    /// the write rides the ambient org scope's request-dedicated connection — the composing
+    /// service sets it per request, and it satisfies the decorator's WITH CHECK fence
+    /// (ADR-0029). Undecorated (module tests) the insert runs plain.
     ///
-    /// Returns the raw `sqlx::Error` deliberately: the caller inspects it for a unique violation to
-    /// turn a duplicate warehouse code into a domain error.
+    /// Returns the raw `sqlx::Error` deliberately: the caller inspects it for a unique violation
+    /// (the composing decorator's org-scoped code arbiter) to turn a duplicate warehouse code
+    /// into a domain error.
     pub async fn insert_warehouse(
         &self,
         pool: &PgPool,
         w: &NewWarehouseRow<'_>,
     ) -> Result<(), sqlx::Error> {
-        company_scope::execute_scoped(
+        org_scope::execute_scoped(
             pool,
             sqlx::query(
                 r#"INSERT INTO inventory.warehouses
-                    (id, company_id, code, name, warehouse_type, parent_warehouse_id, is_group)
-                   VALUES ($1,$2,$3,$4,$5::warehouse_type,$6,$7)"#,
+                    (id, code, name, warehouse_type, parent_warehouse_id, is_group)
+                   VALUES ($1,$2,$3,$4::warehouse_type,$5,$6)"#,
             )
-            .bind(w.id).bind(w.company_id).bind(w.code).bind(w.name).bind(w.warehouse_type)
+            .bind(w.id).bind(w.code).bind(w.name).bind(w.warehouse_type)
             .bind(w.parent_warehouse_id).bind(w.is_group),
         )
         .await?;
         Ok(())
     }
 
-    /// Resolve a warehouse-pivot candidate: does this warehouse exist, belong to the company, and
-    /// is it a concrete stock warehouse (not a grouping node)? Backs the availability scope read's
-    /// fail-loud pivot validation — a typo'd or foreign warehouse id must refuse typed, never
-    /// project a silently-empty (all-sold-out) storefront. `Ok(None)` = no such live warehouse for
-    /// this company; `Some(is_group)` = found, with the grouping flag for the caller to refuse.
+    /// Resolve a warehouse-pivot candidate: does this warehouse exist and is it a concrete stock
+    /// warehouse (not a grouping node)? Backs the availability scope read's
+    /// fail-loud pivot validation — a typo'd warehouse id must refuse typed, never
+    /// project a silently-empty (all-sold-out) storefront. `Ok(None)` = no such live warehouse;
+    /// `Some(is_group)` = found, with the grouping flag for the caller to refuse.
     ///
-    /// Pool-based, explicitly company-fenced by argument, and run through `company_scope` so the
-    /// read rides the RLS fence (ADR-0008).
+    /// Pool-based and org-scoped: the read rides the ambient org scope the composing service set
+    /// per request (ADR-0029).
     pub async fn fetch_pivot_warehouse(
         &self,
         pool: &PgPool,
-        company_id: Uuid,
         warehouse_id: Uuid,
     ) -> Result<Option<bool>, sqlx::Error> {
         let row = company_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
                 r#"SELECT is_group FROM inventory.warehouses
-                   WHERE id = $1 AND company_id = $2
+                   WHERE id = $1
                      AND (metadata->>'deleted_at') IS NULL"#,
             )
-            .bind(warehouse_id)
-            .bind(company_id),
+            .bind(warehouse_id),
         )
         .await?;
         Ok(row.map(|r| r.get("is_group")))

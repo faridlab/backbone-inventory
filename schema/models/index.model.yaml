@@ -14,43 +14,28 @@ version: 2
 schema: inventory
 
 # -----------------------------------------------------------------------------
-# Company fence (ADR-0014) — module-level declaration; the DSL admits exactly
-# one per module, so the per-entity posture is realized by column nullability:
+# Tenancy: none, by design (ADR-0029) — this module is tenant-agnostic and
+# ships no fence of its own. The composing service owns tenancy: its decorator
+# arms RLS (ENABLE + FORCE) with zero module policies and stamps the acting
+# org unit via the fill trigger; scope visibility rides the ambient org scope.
 #
-#   shared_blank  : nullable company_id — NULL rows are first-class shared rows
-#                   (the port of Odoo's `[False]` escape). Applies to MASTER
-#                   DATA: Location, Lot, Package, Route, RouteRule,
-#                   OperationType.
-#   strict        : NOT NULL company_id — the `company_id IS NULL` arm of the
-#                   shared_blank predicate is dead on these tables, making
-#                   them behaviorally strict. Applies to TRANSACTIONS and
-#                   their configuration rows: Warehouse, StockItem, Transfer,
-#                   StockMove, StockMoveLine, Quant, ReorderingRule, Bin,
-#                   StockLedgerEntry, and every voucher header/line.
+# Shared masters (Location, Lot, Package, Route, RouteRule, OperationType,
+# ScrapReasonTag, and the storage family: PackageType, StorageCategory,
+# StorageCategoryCapacity, PutawayRule) anchor at the tenant ROOT org node
+# (allow_root) — every entitled scope sees them through the scope union
+# (subtree ∪ tenant root). Transactions and per-unit configuration rows
+# (Warehouse, StockItem, Transfer, moves/lines, Quant, ReorderingRule, Bin,
+# StockLedgerEntry, vouchers, InventoryCompanySetting, LandedCost, picking
+# batches, scraps) are plain org-scoped rows.
 #
-# Posture map (entity -> realized fence, all under this one declaration):
-#   Warehouse            -> strict (@required company_id)
-#   StockItem            -> strict
-#   Location             -> shared_blank (shared supplier/customer root trees)
-#   Lot                  -> shared_blank
-#   Package              -> shared_blank (company derived from location chain)
-#   Route                -> shared_blank (global MTO route seeds NULL)
-#   RouteRule            -> shared_blank
-#   OperationType        -> shared_blank (global virtual adjustment type)
-#   ReorderingRule       -> strict (company in the unique key)
-#   Transfer             -> strict (mirrors the type's company)
-#   StockMove            -> strict
-#   StockMoveLine        -> strict
-#   Quant                -> strict (company derived from location chain)
-#   StockLedgerEntry     -> strict
-#   Bin                  -> strict
-#   vouchers x4 + lines  -> strict
-#   InventoryCompanySetting -> strict (settings are per-company by definition —
-#                           NOT NULL company_id, one row per company, no
-#                           shared_blank escape)
-#   LandedCost + lines   -> strict (the LC books in its acting company)
+# Company-scoped uniqueness now lives in the composing decorator as org-scoped
+# re-declarations (13): warehouses(org, code) and (org, name),
+# stock_items(org, item), lots(name, item, org), locations(barcode, org),
+# transfers(name, org), reordering_rules(item, location, org),
+# bins(org, item, warehouse), inventory_company_settings(org),
+# landed_costs(org, lc_number), picking_batches(name, org), scraps(name, org),
+# scrap_reason_tags(name, org).
 # -----------------------------------------------------------------------------
-company_fence: shared_blank
 
 description: "Inventory: quant-driven stock (one quant per item x location x lot x package x owner; reserved_quantity authoritative) + 7-state stock moves projected onto transfer documents + append-only Stock Ledger (SLE) with moving-average valuation. Vouchers (PurchaseReceipt / DeliveryNote / StockEntry / StockReconciliation) mint Transfers grouping moves; move _action_done writes the SLE rows and GL legs (Dr Inventory - Cr GR/IR on receipt, Dr COGS - Cr Inventory on delivery) into backbone-accounting via the GL-posting contract."
 

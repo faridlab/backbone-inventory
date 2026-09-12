@@ -52,7 +52,6 @@ impl std::ops::Deref for LandedCostLineId {
 pub struct LandedCostLine {
     pub id: Uuid,
     pub lc_id: Uuid,
-    pub company_id: Uuid,
     pub name: String,
     pub account_id: Uuid,
     pub split_method: LandedCostSplitMethod,
@@ -69,11 +68,10 @@ impl LandedCostLine {
     }
 
     /// Create a new LandedCostLine with required fields
-    pub fn new(lc_id: Uuid, company_id: Uuid, name: String, account_id: Uuid, split_method: LandedCostSplitMethod, amount: Decimal) -> Self {
+    pub fn new(lc_id: Uuid, name: String, account_id: Uuid, split_method: LandedCostSplitMethod, amount: Decimal) -> Self {
         Self {
             id: Uuid::new_v4(),
             lc_id,
-            company_id,
             name,
             account_id,
             split_method,
@@ -144,9 +142,6 @@ impl LandedCostLine {
                 "lc_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.lc_id = v; }
                 }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 "name" => {
                     if let Ok(v) = serde_json::from_value(value) { self.name = v; }
                 }
@@ -214,16 +209,12 @@ impl backbone_orm::EntityRepoMeta for LandedCostLine {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
         m.insert("lc_id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("account_id".to_string(), "uuid".to_string());
         m.insert("split_method".to_string(), "landed_cost_split_method".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
         &["name"]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
     fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
         &[("landedCost", "landed_costs", "lcId")]
@@ -237,7 +228,6 @@ impl backbone_orm::EntityRepoMeta for LandedCostLine {
 #[derive(Debug, Clone, Default)]
 pub struct LandedCostLineBuilder {
     lc_id: Option<Uuid>,
-    company_id: Option<Uuid>,
     name: Option<String>,
     account_id: Option<Uuid>,
     split_method: Option<LandedCostSplitMethod>,
@@ -248,12 +238,6 @@ impl LandedCostLineBuilder {
     /// Set the lc_id field (required)
     pub fn lc_id(mut self, value: Uuid) -> Self {
         self.lc_id = Some(value);
-        self
-    }
-
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
         self
     }
 
@@ -286,7 +270,6 @@ impl LandedCostLineBuilder {
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<LandedCostLine, String> {
         let lc_id = self.lc_id.ok_or_else(|| "lc_id is required".to_string())?;
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
         let name = self.name.ok_or_else(|| "name is required".to_string())?;
         let account_id = self.account_id.ok_or_else(|| "account_id is required".to_string())?;
         let amount = self.amount.ok_or_else(|| "amount is required".to_string())?;
@@ -294,7 +277,6 @@ impl LandedCostLineBuilder {
         Ok(LandedCostLine {
             id: Uuid::new_v4(),
             lc_id,
-            company_id,
             name,
             account_id,
             split_method: self.split_method.unwrap_or_default(),
