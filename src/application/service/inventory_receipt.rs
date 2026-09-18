@@ -95,6 +95,26 @@ impl InventoryWriteService {
     /// (`{receipt_number}/{seq}`, `origin` = the receipt number) make a re-submit RESUME
     /// instead of double-receiving.
     pub async fn submit_purchase_receipt(&self, id: Uuid, sink: &dyn GlPostSink) -> Result<SubmitOutcome, InventoryError> {
+        self.submit_purchase_receipt_into(id, None, sink).await
+    }
+
+    /// Submit a receipt into a destination other than the warehouse's stock location.
+    ///
+    /// The ordinary receipt lands on the shelf, which is what a goods receipt means. A
+    /// subcontract receipt does not: the supplier's output belongs to an open manufacturing
+    /// order, and landing it on the shelf makes the estate believe in it twice, once here and
+    /// once when that order is received. The caller passes the location the goods are really
+    /// standing in — the production counterpart — and the manufacturing receive moves them onto
+    /// the shelf at their finished value.
+    ///
+    /// Inventory does not know what subcontracting is and does not learn it here: it takes a
+    /// location. Deciding WHICH location belongs to whoever knows why the goods arrived.
+    pub async fn submit_purchase_receipt_into(
+        &self,
+        id: Uuid,
+        destination_location_id: Option<Uuid>,
+        sink: &dyn GlPostSink,
+    ) -> Result<SubmitOutcome, InventoryError> {
         // RLS scope (ADR-0008), ID-only: fenced by the request/inherited scope.
         let hdr = self.receipts.fetch_submit_header(&self.db_pool, id).await?
             .ok_or(InventoryError::NotFound(id))?;
@@ -113,7 +133,21 @@ impl InventoryWriteService {
 
         // The door's move endpoints: the supplier location (virtual source) and the
         // warehouse's stock location (internal destination) — resolve-or-bootstrap each.
-        let (supplier_loc, stock_loc) = self.door_move_endpoints(warehouse, "supplier").await?;
+        let (supplier_loc, default_stock_loc) = self.door_move_endpoints(warehouse, "supplier").await?;
+        // An override must still be a location this tenant can see; the fenced read refuses a
+        // stranger's id rather than moving goods somewhere nobody can account for.
+        let stock_loc = match destination_location_id {
+            None => default_stock_loc,
+            Some(requested) => backbone_orm::company_scope::fetch_optional_scalar_scoped(
+                &self.db_pool,
+                sqlx::query_scalar::<_, Uuid>(
+                    "SELECT id FROM inventory.locations WHERE id = $1 AND active",
+                )
+                .bind(requested),
+            )
+            .await?
+            .ok_or(InventoryError::NotFound(requested))?,
+        };
 
         // The posting posture (the valuation settings row; absent row = today's shapes).
         // The receipt side is unchanged in BOTH postures — the header `grir_account_id` IS the
