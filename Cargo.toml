@@ -1,6 +1,6 @@
 [package]
 name = "backbone-inventory"
-version = "0.9.10"
+version = "0.9.11"
 edition = "2021"
 description = "Inventory: stock ledger of record (SLE) + moving-average valuation; emits COGS/asset AccountingPost (Delivery/Receipt -> GL)"
 
@@ -17,13 +17,13 @@ path = "src/lib.rs"
 # or `rev = "<commit-sha>"`. Cargo dedupes the git fetch — the repo is only
 # cloned once even though four crates reference it.
 # -----------------------------------------------------------------------------
-backbone-core = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.24", features = ["postgres"] }
+backbone-core = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.26, features = ["postgres"] }
 # The GL-posting wire contract (envelope + sink port), shared across producers (phase 2).
 # backbone-gl-posting 0.1.0 shipped on backbone-framework v2.7.5; inventory_gl.rs re-exports it.
-backbone-gl-posting = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.24" }
-backbone-orm = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.24" }
-backbone-auth = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.24", features = ["axum"] }
-backbone-messaging = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.24" }
+backbone-gl-posting = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.26 }
+backbone-orm = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.26 }
+backbone-auth = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.26, features = ["axum"] }
+backbone-messaging = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.26 }
 
 # Core async runtime and serialization
 tokio = { version = "1.0", features = ["full"] }
@@ -99,4 +99,4 @@ rand = "0.8"
 #
 # Dual-mode: committed source is the git tag (prod/standalone/CI); .cargo/config.toml (gitignored)
 # patches it to ../backbone-accounting for local workspace dev. See .cargo/config.toml.example.
-backbone-accounting = { git = "https://github.com/faridlab/backbone-accounting", tag = "v0.9.6" }
+backbone-accounting = { git = "https://github.com/faridlab/backbone-accounting", tag = "v0.9.7" }
