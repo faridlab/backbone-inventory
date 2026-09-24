@@ -1,6 +1,6 @@
 [package]
 name = "backbone-inventory"
-version = "0.9.17"
+version = "0.9.18"
 edition = "2021"
 description = "Inventory: stock ledger of record (SLE) + moving-average valuation; emits COGS/asset AccountingPost (Delivery/Receipt -> GL)"
 
@@ -99,4 +99,4 @@ rand = "0.8"
 #
 # Dual-mode: committed source is the git tag (prod/standalone/CI); .cargo/config.toml (gitignored)
 # patches it to ../backbone-accounting for local workspace dev. See .cargo/config.toml.example.
-backbone-accounting = { git = "https://github.com/faridlab/backbone-accounting", tag = "v0.9.13" }
+backbone-accounting = { git = "https://github.com/faridlab/backbone-accounting", tag = "v0.9.14" }
