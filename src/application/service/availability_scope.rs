@@ -68,6 +68,11 @@ pub struct ScopedAvailability {
     /// `on_hand_qty − reserved_qty`, computed per call. Never read off the
     /// stored `available_quantity` column — freshness over cheapness.
     pub available_qty: Decimal,
+    /// The checkout-intent ledger's held sum at this warehouse (active
+    /// holds from the reservation surface), already subtracted from
+    /// `available_qty` — surfaced so a screen can say "2 free, 1 held by
+    /// other carts" instead of an unexplained number.
+    pub externally_held_qty: Decimal,
 }
 
 /// One checkout-scope demand: the item plus the quantity the CALLER's own
@@ -256,16 +261,39 @@ impl AvailabilityScopeRead {
             .into_iter()
             .map(|r| (r.item_id, (r.on_hand_qty, r.reserved_qty)))
             .collect();
+        // The reservation ledger's active holds subtract at the warehouse
+        // grain — the intent surface this read backs. Unexpired held lines
+        // only; swept ones have already given their units back.
+        let mut held: std::collections::HashMap<Uuid, Decimal> =
+            std::collections::HashMap::new();
+        {
+            let mut conn = self.db_pool.acquire().await?;
+            let ledger: Vec<(Uuid, Decimal)> = sqlx::query_as(
+                r#"SELECT item_id, COALESCE(SUM(qty), 0)
+                     FROM inventory.stock_reservations
+                    WHERE warehouse_id = $1 AND status = 'held'
+                      AND expires_at > now()
+                    GROUP BY item_id"#,
+            )
+            .bind(warehouse_id)
+            .fetch_all(&mut *conn)
+            .await?;
+            for (item, qty) in ledger {
+                held.insert(item, qty);
+            }
+        }
         Ok(item_ids
             .iter()
             .map(|id| {
                 let (on_hand, reserved) =
                     by_item.get(id).copied().unwrap_or((Decimal::ZERO, Decimal::ZERO));
+                let externally_held = held.get(id).copied().unwrap_or(Decimal::ZERO);
                 ScopedAvailability {
                     item_id: *id,
                     on_hand_qty: on_hand,
                     reserved_qty: reserved,
-                    available_qty: on_hand - reserved,
+                    externally_held_qty: externally_held,
+                    available_qty: on_hand - reserved - externally_held,
                 }
             })
             .collect())

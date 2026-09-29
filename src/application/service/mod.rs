@@ -85,6 +85,10 @@ pub mod inventory_posture;
 // receipt's DONE moves, remaining-share revaluation through the engine's adjustment verb,
 // one door-owned GL envelope) → done; cancel from draft only. Also `_custom`-named.
 pub mod landed_cost_service_custom;
+pub mod inventory_reservation;
+pub use inventory_reservation::{
+    HoldAckLine, HoldLine, ReservationError, ReservationService,
+};
 // END CUSTOM
 
 pub use picking_batch_service::PickingBatchService;

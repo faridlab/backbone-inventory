@@ -158,4 +158,8 @@ pub use picking_batch_projection_repository::{
 };
 // Scrap-door surface types (repository declared `user_owned` above).
 pub use scrap_door_repository::{NewScrapRow, ScrapDoorRepository, ScrapRow};
+pub mod stock_reservation_repository;
+pub use stock_reservation_repository::{
+    HeldAtWarehouse, HeldReservation, ReservationRepoError, StockReservationRepository,
+};
 // END CUSTOM
