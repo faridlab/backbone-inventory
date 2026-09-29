@@ -292,15 +292,18 @@ async fn lifecycle_confirm_assign_done_writes_real_rows() {
     .await
     .expect("src quant visible");
     assert_eq!(src_qty, d("4"), "6 drawn from the source quant");
-    let dst_qty: Decimal = sqlx::query_scalar(
-        "SELECT quantity FROM inventory.stock_quants WHERE item_id=$1 AND location_id=$2",
+    // Virtual counterparts carry NO quant rows (owner ruling 2026-09-29): a
+    // customer destination records the move and its valuation, never a
+    // standing quant — the tally shape this probe used to pin is retired.
+    let dst_rows: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM inventory.stock_quants WHERE item_id=$1 AND location_id=$2",
     )
     .bind(item)
     .bind(customer)
     .fetch_one(&pool)
     .await
-    .expect("dest quant visible");
-    assert_eq!(dst_qty, d("6"), "6 landed at the destination quant");
+    .expect("dest quant read");
+    assert_eq!(dst_rows, 0, "virtual destination holds no quant row");
     let sle: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM inventory.stock_ledger_entries WHERE voucher_id=$1",
     )
@@ -980,11 +983,14 @@ async fn tenancy_posture_flags_without_policies() {
     // default-denied regardless of any legacy company variable — while the owner still sees
     // the seeded row (the denial is the fence, not an empty database).
     bootstrap_role(&pool, &["locations"]).await;
-    let restricted = PgPool::connect(&format!(
-        "postgresql://{ROLE}:{PWD}@localhost:5433/backbone_inventory"
-    ))
-    .await
-    .expect("probe-role connect");
+    // The restricted-role DSN defaults to the pinned scratch container
+    // (127.0.0.1:5433); INVENTORY_TEST_PROBE_URL overrides it for hosts that
+    // run the suite against another instance (the container no longer exists
+    // in some environments — see the events harness's twin override).
+    let dsn = std::env::var("INVENTORY_TEST_PROBE_URL").unwrap_or_else(|_| {
+        format!("postgresql://{ROLE}:{PWD}@localhost:5433/backbone_inventory")
+    });
+    let restricted = PgPool::connect(&dsn).await.expect("probe-role connect");
 
     let loc_id = Uuid::new_v4();
     let name = uq("LOC");
@@ -1000,9 +1006,12 @@ async fn tenancy_posture_flags_without_policies() {
     .await
     .expect("seed location as owner");
 
-    let mut app = sqlx::PgConnection::connect(&format!(
-        "postgresql://{ROLE}:{PWD}@localhost:5433/backbone_inventory"
-    ))
+    let mut app = sqlx::PgConnection::connect(&std::env::var(
+        "INVENTORY_TEST_PROBE_URL",
+    )
+    .unwrap_or_else(|_| {
+        format!("postgresql://{ROLE}:{PWD}@localhost:5433/backbone_inventory")
+    }))
     .await
     .expect("app-role connect");
     sqlx::query("SELECT set_config('app.company_id', $1, false)")

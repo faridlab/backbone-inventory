@@ -299,9 +299,14 @@ async fn partial_validate_keeps_projection_open_via_backorder() {
     assert!(moves.iter().any(|m| m.state == "done"));
     assert!(moves.iter().any(|m| m.state == "confirmed"),
         "the backorder is minted confirmed (reserve-on-mint found nothing free to hold)");
-    // Stock truth: the source quant holds none of the drawn 4; the customer location got 4.
+    // Stock truth: the source quant holds none of the drawn 4; the virtual
+    // customer counterpart holds no quant at all (owner ruling 2026-09-29).
     assert_eq!(on_hand(&pool, item, stock).await, d("0"));
-    assert_eq!(on_hand(&pool, item, customer).await, d("4"));
+    assert_eq!(on_hand(&pool, item, customer).await, d("0"));
+    let (rows,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM inventory.stock_quants WHERE item_id=$1 AND location_id=$2",
+    ).bind(item).bind(customer).fetch_one(&pool).await.unwrap();
+    assert_eq!(rows, 0, "virtual counterparts carry no quant rows");
 }
 
 // ── the ONE adjustment door (spec §5.2) ──────────────────────────────────────

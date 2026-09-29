@@ -547,12 +547,21 @@ impl InventoryWriteService {
                 }
                 self.quants.apply_qty(&mut tx, src_quant.id, -line.quantity, Decimal::ZERO).await?;
             }
-            let dst_dims = QuantDims {
-                item_id: line.item_id, location_id: line.location_dest_id,
-                lot_id: line.lot_id, package_id: line.result_package_id.or(line.package_id), owner_id: line.owner_id,
-            };
-            let dst_quant = self.quants.lock_or_init(&mut tx, dst_dims).await?;
-            self.quants.apply_qty(&mut tx, dst_quant.id, line.quantity, Decimal::ZERO).await?;
+            // Only an INTERNAL destination materializes a quant, the exact twin
+            // of the draw gate above: the quant estate tracks our own stock,
+            // so virtual counterparts (vendors, customers, production, transit,
+            // loss) keep NO balance — a move through them records its lines and
+            // its valuation, never a standing quant. The owner ruling of 2026-09-29;
+            // the previous shape (IN recorded, OUT dropped) left the counterparts
+            // as running tallies nothing could read.
+            if dst.usage == "internal" {
+                let dst_dims = QuantDims {
+                    item_id: line.item_id, location_id: line.location_dest_id,
+                    lot_id: line.lot_id, package_id: line.result_package_id.or(line.package_id), owner_id: line.owner_id,
+                };
+                let dst_quant = self.quants.lock_or_init(&mut tx, dst_dims).await?;
+                self.quants.apply_qty(&mut tx, dst_quant.id, line.quantity, Decimal::ZERO).await?;
+            }
         }
 
         // -- valuation core (V7: OUT valued before, IN after) --------------------------------

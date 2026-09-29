@@ -229,10 +229,17 @@ async fn rejected_post_marks_failed_and_repost_heals() {
     // The physical movement stands: move done, stock really moved, NO journal anywhere.
     assert_eq!(state_of(&pool, mv_id).await, "done");
     assert_eq!(posting_state_of(&pool, mv_id).await, "failed", "the GL hole is recorded, not silent");
-    let (at_cust,): (Decimal,) = sqlx::query_as(
+    // The physical leg committed: the source drew down and the virtual
+    // customer counterpart holds NO quant row by the 2026-09-29 ruling —
+    // so the proof reads the source side (10 - 4 drawn) and the move state.
+    let (at_src,): (Decimal,) = sqlx::query_as(
         "SELECT COALESCE(SUM(quantity),0) FROM inventory.stock_quants WHERE item_id=$1 AND location_id=$2",
+    ).bind(item).bind(stock).fetch_one(&pool).await.unwrap();
+    assert_eq!(at_src, d("6"), "the physical leg committed before the post was attempted");
+    let (cust_rows,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM inventory.stock_quants WHERE item_id=$1 AND location_id=$2",
     ).bind(item).bind(customer).fetch_one(&pool).await.unwrap();
-    assert_eq!(at_cust, d("4"), "the physical leg committed before the post was attempted");
+    assert_eq!(cust_rows, 0, "virtual counterparts carry no quant rows");
     assert_eq!(journal_count(&pool, mv_id).await, 0, "the GL leg is genuinely missing");
 
     // Repost with a healthy sink → posted, and the real journal carries the engine's valuation.

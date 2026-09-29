@@ -492,3 +492,46 @@ async fn competing_reservations_exactly_one_winner() {
     let (_, r2) = quant_at(&pool, item, stock).await;
     assert_eq!(r2, d("6"), "the authoritative counter equals the free stock taken");
 }
+
+/// Virtual counterparts keep NO balance: a done move whose destination is
+/// virtual (production) leaves no quant row there, exactly as its OUT leg
+/// from a virtual source (vendors) never drew one — the tally shape, where
+/// the IN leg accumulated while the OUT leg dropped, is gone by owner ruling.
+/// Internal destinations keep materializing.
+#[tokio::test]
+async fn virtual_counterparts_carry_no_quant_rows() {
+    let pool = pool().await;
+    let w = InventoryWriteService::new(pool.clone());
+    let item = Uuid::new_v4();
+    let wh = warehouse(&w).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
+    let production = loc(&pool, "production", None).await;
+    let vendor = loc(&pool, "supplier", None).await;
+    seed_quant(&pool, item, stock, "5").await;
+    seed_bin(&pool, item, wh, "5", "100").await;
+
+    // Internal -> production (virtual destination): done, but no quant at production.
+    let mv = w.create_move(new_move(item, stock, production, "5")).await.unwrap();
+    w.action_confirm(mv).await.unwrap();
+    w.action_assign(mv).await.unwrap();
+    let out = w.action_done(mv, BackorderPolicy::Always, &no_gl(), &StubGl).await.unwrap();
+    assert_eq!(out.done_qty, d("5"));
+    let (pq, pr) = quant_at(&pool, item, production).await;
+    assert_eq!((pq, pr), (d("0"), d("0")), "virtual destination holds no quant row");
+    let (sq, sr) = quant_at(&pool, item, stock).await;
+    assert_eq!((sq, sr), (d("0"), d("0")), "the internal source was drawn to zero");
+
+    // Vendors (virtual source) -> internal (receipt shape): the destination
+    // materializes; the virtual source never held a row and never will.
+    let wh2 = warehouse(&w).await;
+    let shelf = loc(&pool, "internal", Some(wh2)).await;
+    let rcv = w.create_move(new_move(item, vendor, shelf, "5")).await.unwrap();
+    w.action_confirm(rcv).await.unwrap();
+    w.action_assign(rcv).await.unwrap(); // incoming supply mints its demand line, reserves nothing
+    let out2 = w.action_done(rcv, BackorderPolicy::Always, &no_gl(), &StubGl).await.unwrap();
+    assert_eq!(out2.done_qty, d("5"));
+    let (vq, vr) = quant_at(&pool, item, vendor).await;
+    assert_eq!((vq, vr), (d("0"), d("0")), "virtual source holds no quant row");
+    let (hq, hr) = quant_at(&pool, item, shelf).await;
+    assert_eq!((hq, hr), (d("5"), d("0")), "internal destination materialized the supply");
+}
