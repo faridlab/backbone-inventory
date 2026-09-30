@@ -290,6 +290,8 @@ impl backbone_orm::EntityRepoMeta for ReorderingRule {
         m.insert("warehouse_id".to_string(), "uuid".to_string());
         m.insert("route_id".to_string(), "uuid".to_string());
         m.insert("trigger".to_string(), "orderpoint_trigger".to_string());
+        m.insert("snoozed_until".to_string(), "date".to_string());
+        m.insert("deadline_date".to_string(), "date".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {

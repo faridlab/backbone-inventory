@@ -298,6 +298,8 @@ impl backbone_orm::EntityRepoMeta for Location {
         m.insert("valuation_account_id".to_string(), "uuid".to_string());
         m.insert("storage_category_id".to_string(), "uuid".to_string());
         m.insert("usage".to_string(), "location_usage".to_string());
+        m.insert("last_inventory_date".to_string(), "date".to_string());
+        m.insert("next_inventory_date".to_string(), "date".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {

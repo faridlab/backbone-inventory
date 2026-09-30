@@ -110,6 +110,9 @@ models:
 
   - name: Bin
     collection: bins
+    # engine-owned table: written only by the move engine / its parent
+    # document verbs; the generic CRUD surface is reads.
+    read_only: true
     description: "Running per-(item, warehouse) balance: qty + moving-average rate + value"
 
     fields:

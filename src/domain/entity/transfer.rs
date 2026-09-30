@@ -320,6 +320,8 @@ impl backbone_orm::EntityRepoMeta for Transfer {
         m.insert("priority".to_string(), "priority".to_string());
         m.insert("move_type".to_string(), "move_type".to_string());
         m.insert("state".to_string(), "transfer_state".to_string());
+        m.insert("scheduled_date".to_string(), "timestamptz".to_string());
+        m.insert("date_done".to_string(), "timestamptz".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {

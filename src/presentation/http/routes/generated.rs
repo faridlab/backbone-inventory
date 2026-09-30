@@ -10,31 +10,31 @@ use std::sync::Arc;
 
 use super::{
     picking_batch_handler::create_picking_batch_read_routes,
-    delivery_note_handler::create_delivery_note_routes,
-    delivery_note_item_handler::create_delivery_note_item_routes,
+    delivery_note_handler::create_delivery_note_read_routes,
+    delivery_note_item_handler::create_delivery_note_item_read_routes,
     inventory_company_setting_handler::create_inventory_company_setting_routes,
-    landed_cost_handler::create_landed_cost_routes,
-    landed_cost_line_handler::create_landed_cost_line_routes,
-    landed_cost_adjustment_line_handler::create_landed_cost_adjustment_line_routes,
+    landed_cost_handler::create_landed_cost_read_routes,
+    landed_cost_line_handler::create_landed_cost_line_read_routes,
+    landed_cost_adjustment_line_handler::create_landed_cost_adjustment_line_read_routes,
     location_handler::create_location_routes,
-    stock_move_handler::create_stock_move_routes,
-    stock_move_line_handler::create_stock_move_line_routes,
+    stock_move_handler::create_stock_move_read_routes,
+    stock_move_line_handler::create_stock_move_line_read_routes,
     operation_type_handler::create_operation_type_routes,
     transfer_handler::create_transfer_read_routes,
     route_handler::create_route_routes,
     route_rule_handler::create_route_rule_routes,
     reordering_rule_handler::create_reordering_rule_routes,
-    purchase_receipt_handler::create_purchase_receipt_routes,
-    purchase_receipt_item_handler::create_purchase_receipt_item_routes,
-    quant_handler::create_quant_routes,
+    purchase_receipt_handler::create_purchase_receipt_read_routes,
+    purchase_receipt_item_handler::create_purchase_receipt_item_read_routes,
+    quant_handler::create_quant_read_routes,
     scrap_handler::create_scrap_read_routes,
     scrap_reason_tag_handler::create_scrap_reason_tag_routes,
-    stock_entry_handler::create_stock_entry_routes,
-    stock_entry_item_handler::create_stock_entry_item_routes,
-    stock_ledger_entry_handler::create_stock_ledger_entry_routes,
-    bin_handler::create_bin_routes,
-    stock_reconciliation_handler::create_stock_reconciliation_routes,
-    stock_reconciliation_item_handler::create_stock_reconciliation_item_routes,
+    stock_entry_handler::create_stock_entry_read_routes,
+    stock_entry_item_handler::create_stock_entry_item_read_routes,
+    stock_ledger_entry_handler::create_stock_ledger_entry_read_routes,
+    bin_handler::create_bin_read_routes,
+    stock_reconciliation_handler::create_stock_reconciliation_read_routes,
+    stock_reconciliation_item_handler::create_stock_reconciliation_item_read_routes,
     package_type_handler::create_package_type_routes,
     storage_category_handler::create_storage_category_routes,
     storage_category_capacity_handler::create_storage_category_capacity_routes,
@@ -139,24 +139,24 @@ pub fn configure_routes(services: HttpServices) -> Router {
     Router::new()
         // PickingBatch routes (READ-ONLY — append-only/event-sourced entity; writes arrive via the event handlers)
         .merge(create_picking_batch_read_routes(services.picking_batch))
-        // DeliveryNote routes (12 Backbone endpoints)
-        .merge(create_delivery_note_routes(services.delivery_note))
-        // DeliveryNoteItem routes (12 Backbone endpoints)
-        .merge(create_delivery_note_item_routes(services.delivery_note_item))
+        // DeliveryNote routes (READ-ONLY mount — hand_set lifecycle; the state field moves only through the module's validated verbs)
+        .merge(create_delivery_note_read_routes(services.delivery_note))
+        // DeliveryNoteItem routes (READ-ONLY — append-only/event-sourced entity; writes arrive via the event handlers)
+        .merge(create_delivery_note_item_read_routes(services.delivery_note_item))
         // InventoryCompanySetting routes (12 Backbone endpoints)
         .merge(create_inventory_company_setting_routes(services.inventory_company_setting))
-        // LandedCost routes (12 Backbone endpoints)
-        .merge(create_landed_cost_routes(services.landed_cost))
-        // LandedCostLine routes (12 Backbone endpoints)
-        .merge(create_landed_cost_line_routes(services.landed_cost_line))
-        // LandedCostAdjustmentLine routes (12 Backbone endpoints)
-        .merge(create_landed_cost_adjustment_line_routes(services.landed_cost_adjustment_line))
+        // LandedCost routes (READ-ONLY mount — hand_set lifecycle; the state field moves only through the module's validated verbs)
+        .merge(create_landed_cost_read_routes(services.landed_cost))
+        // LandedCostLine routes (READ-ONLY — append-only/event-sourced entity; writes arrive via the event handlers)
+        .merge(create_landed_cost_line_read_routes(services.landed_cost_line))
+        // LandedCostAdjustmentLine routes (READ-ONLY — append-only/event-sourced entity; writes arrive via the event handlers)
+        .merge(create_landed_cost_adjustment_line_read_routes(services.landed_cost_adjustment_line))
         // Location routes (12 Backbone endpoints)
         .merge(create_location_routes(services.location))
-        // StockMove routes (12 Backbone endpoints)
-        .merge(create_stock_move_routes(services.stock_move))
-        // StockMoveLine routes (12 Backbone endpoints)
-        .merge(create_stock_move_line_routes(services.stock_move_line))
+        // StockMove routes (READ-ONLY mount — hand_set lifecycle; the state field moves only through the module's validated verbs)
+        .merge(create_stock_move_read_routes(services.stock_move))
+        // StockMoveLine routes (READ-ONLY — append-only/event-sourced entity; writes arrive via the event handlers)
+        .merge(create_stock_move_line_read_routes(services.stock_move_line))
         // OperationType routes (12 Backbone endpoints)
         .merge(create_operation_type_routes(services.operation_type))
         // Transfer routes (READ-ONLY — append-only/event-sourced entity; writes arrive via the event handlers)
@@ -167,28 +167,28 @@ pub fn configure_routes(services: HttpServices) -> Router {
         .merge(create_route_rule_routes(services.route_rule))
         // ReorderingRule routes (12 Backbone endpoints)
         .merge(create_reordering_rule_routes(services.reordering_rule))
-        // PurchaseReceipt routes (12 Backbone endpoints)
-        .merge(create_purchase_receipt_routes(services.purchase_receipt))
-        // PurchaseReceiptItem routes (12 Backbone endpoints)
-        .merge(create_purchase_receipt_item_routes(services.purchase_receipt_item))
-        // Quant routes (12 Backbone endpoints)
-        .merge(create_quant_routes(services.quant))
+        // PurchaseReceipt routes (READ-ONLY mount — hand_set lifecycle; the state field moves only through the module's validated verbs)
+        .merge(create_purchase_receipt_read_routes(services.purchase_receipt))
+        // PurchaseReceiptItem routes (READ-ONLY — append-only/event-sourced entity; writes arrive via the event handlers)
+        .merge(create_purchase_receipt_item_read_routes(services.purchase_receipt_item))
+        // Quant routes (READ-ONLY — append-only/event-sourced entity; writes arrive via the event handlers)
+        .merge(create_quant_read_routes(services.quant))
         // Scrap routes (READ-ONLY — append-only/event-sourced entity; writes arrive via the event handlers)
         .merge(create_scrap_read_routes(services.scrap))
         // ScrapReasonTag routes (12 Backbone endpoints)
         .merge(create_scrap_reason_tag_routes(services.scrap_reason_tag))
-        // StockEntry routes (12 Backbone endpoints)
-        .merge(create_stock_entry_routes(services.stock_entry))
-        // StockEntryItem routes (12 Backbone endpoints)
-        .merge(create_stock_entry_item_routes(services.stock_entry_item))
-        // StockLedgerEntry routes (12 Backbone endpoints)
-        .merge(create_stock_ledger_entry_routes(services.stock_ledger_entry))
-        // Bin routes (12 Backbone endpoints)
-        .merge(create_bin_routes(services.bin))
-        // StockReconciliation routes (12 Backbone endpoints)
-        .merge(create_stock_reconciliation_routes(services.stock_reconciliation))
-        // StockReconciliationItem routes (12 Backbone endpoints)
-        .merge(create_stock_reconciliation_item_routes(services.stock_reconciliation_item))
+        // StockEntry routes (READ-ONLY mount — hand_set lifecycle; the state field moves only through the module's validated verbs)
+        .merge(create_stock_entry_read_routes(services.stock_entry))
+        // StockEntryItem routes (READ-ONLY — append-only/event-sourced entity; writes arrive via the event handlers)
+        .merge(create_stock_entry_item_read_routes(services.stock_entry_item))
+        // StockLedgerEntry routes (READ-ONLY mount — hand_set lifecycle; the state field moves only through the module's validated verbs)
+        .merge(create_stock_ledger_entry_read_routes(services.stock_ledger_entry))
+        // Bin routes (READ-ONLY — append-only/event-sourced entity; writes arrive via the event handlers)
+        .merge(create_bin_read_routes(services.bin))
+        // StockReconciliation routes (READ-ONLY mount — hand_set lifecycle; the state field moves only through the module's validated verbs)
+        .merge(create_stock_reconciliation_read_routes(services.stock_reconciliation))
+        // StockReconciliationItem routes (READ-ONLY — append-only/event-sourced entity; writes arrive via the event handlers)
+        .merge(create_stock_reconciliation_item_read_routes(services.stock_reconciliation_item))
         // PackageType routes (12 Backbone endpoints)
         .merge(create_package_type_routes(services.package_type))
         // StorageCategory routes (12 Backbone endpoints)
@@ -212,15 +212,15 @@ pub mod individual {
     use super::*;
 
     pub fn picking_batch_routes(service: Arc<PickingBatchService>) -> Router {
-        create_picking_batch_routes(service)
+        create_picking_batch_read_routes(service)
     }
 
     pub fn delivery_note_routes(service: Arc<DeliveryNoteService>) -> Router {
-        create_delivery_note_routes(service)
+        create_delivery_note_read_routes(service)
     }
 
     pub fn delivery_note_item_routes(service: Arc<DeliveryNoteItemService>) -> Router {
-        create_delivery_note_item_routes(service)
+        create_delivery_note_item_read_routes(service)
     }
 
     pub fn inventory_company_setting_routes(service: Arc<InventoryCompanySettingService>) -> Router {
@@ -228,15 +228,15 @@ pub mod individual {
     }
 
     pub fn landed_cost_routes(service: Arc<LandedCostService>) -> Router {
-        create_landed_cost_routes(service)
+        create_landed_cost_read_routes(service)
     }
 
     pub fn landed_cost_line_routes(service: Arc<LandedCostLineService>) -> Router {
-        create_landed_cost_line_routes(service)
+        create_landed_cost_line_read_routes(service)
     }
 
     pub fn landed_cost_adjustment_line_routes(service: Arc<LandedCostAdjustmentLineService>) -> Router {
-        create_landed_cost_adjustment_line_routes(service)
+        create_landed_cost_adjustment_line_read_routes(service)
     }
 
     pub fn location_routes(service: Arc<LocationService>) -> Router {
@@ -244,11 +244,11 @@ pub mod individual {
     }
 
     pub fn stock_move_routes(service: Arc<StockMoveService>) -> Router {
-        create_stock_move_routes(service)
+        create_stock_move_read_routes(service)
     }
 
     pub fn stock_move_line_routes(service: Arc<StockMoveLineService>) -> Router {
-        create_stock_move_line_routes(service)
+        create_stock_move_line_read_routes(service)
     }
 
     pub fn operation_type_routes(service: Arc<OperationTypeService>) -> Router {
@@ -256,7 +256,7 @@ pub mod individual {
     }
 
     pub fn transfer_routes(service: Arc<TransferService>) -> Router {
-        create_transfer_routes(service)
+        create_transfer_read_routes(service)
     }
 
     pub fn route_routes(service: Arc<RouteService>) -> Router {
@@ -272,19 +272,19 @@ pub mod individual {
     }
 
     pub fn purchase_receipt_routes(service: Arc<PurchaseReceiptService>) -> Router {
-        create_purchase_receipt_routes(service)
+        create_purchase_receipt_read_routes(service)
     }
 
     pub fn purchase_receipt_item_routes(service: Arc<PurchaseReceiptItemService>) -> Router {
-        create_purchase_receipt_item_routes(service)
+        create_purchase_receipt_item_read_routes(service)
     }
 
     pub fn quant_routes(service: Arc<QuantService>) -> Router {
-        create_quant_routes(service)
+        create_quant_read_routes(service)
     }
 
     pub fn scrap_routes(service: Arc<ScrapService>) -> Router {
-        create_scrap_routes(service)
+        create_scrap_read_routes(service)
     }
 
     pub fn scrap_reason_tag_routes(service: Arc<ScrapReasonTagService>) -> Router {
@@ -292,27 +292,27 @@ pub mod individual {
     }
 
     pub fn stock_entry_routes(service: Arc<StockEntryService>) -> Router {
-        create_stock_entry_routes(service)
+        create_stock_entry_read_routes(service)
     }
 
     pub fn stock_entry_item_routes(service: Arc<StockEntryItemService>) -> Router {
-        create_stock_entry_item_routes(service)
+        create_stock_entry_item_read_routes(service)
     }
 
     pub fn stock_ledger_entry_routes(service: Arc<StockLedgerEntryService>) -> Router {
-        create_stock_ledger_entry_routes(service)
+        create_stock_ledger_entry_read_routes(service)
     }
 
     pub fn bin_routes(service: Arc<BinService>) -> Router {
-        create_bin_routes(service)
+        create_bin_read_routes(service)
     }
 
     pub fn stock_reconciliation_routes(service: Arc<StockReconciliationService>) -> Router {
-        create_stock_reconciliation_routes(service)
+        create_stock_reconciliation_read_routes(service)
     }
 
     pub fn stock_reconciliation_item_routes(service: Arc<StockReconciliationItemService>) -> Router {
-        create_stock_reconciliation_item_routes(service)
+        create_stock_reconciliation_item_read_routes(service)
     }
 
     pub fn package_type_routes(service: Arc<PackageTypeService>) -> Router {

@@ -264,6 +264,7 @@ impl backbone_orm::EntityRepoMeta for StockLedgerEntry {
         m.insert("voucher_id".to_string(), "uuid".to_string());
         m.insert("voucher_type".to_string(), "voucher_type".to_string());
         m.insert("status".to_string(), "stock_ledger_status".to_string());
+        m.insert("posting_date".to_string(), "date".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {

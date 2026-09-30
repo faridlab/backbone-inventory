@@ -67,6 +67,9 @@ pub use application::service::PackageService;
 pub use application::service::WarehouseService;
 pub use application::service::StockItemService;
 
+// Re-exports - Validation
+pub use application::validator::{ValidationError, ValidationResult};
+
 use std::sync::Arc;
 use axum::Router;
 use sqlx::PgPool;
@@ -136,19 +139,31 @@ impl InventoryModule {
     pub fn all_crud_routes(&self) -> Router {
         use presentation::http::{
             create_picking_batch_read_routes,
-            create_delivery_note_routes,
+            create_delivery_note_read_routes,
+            create_delivery_note_item_read_routes,
             create_inventory_company_setting_routes,
-            create_landed_cost_routes,
+            create_landed_cost_read_routes,
+            create_landed_cost_line_read_routes,
+            create_landed_cost_adjustment_line_read_routes,
             create_location_routes,
+            create_stock_move_read_routes,
+            create_stock_move_line_read_routes,
             create_operation_type_routes,
             create_transfer_read_routes,
             create_route_routes,
             create_route_rule_routes,
             create_reordering_rule_routes,
-            create_purchase_receipt_routes,
+            create_purchase_receipt_read_routes,
+            create_purchase_receipt_item_read_routes,
+            create_quant_read_routes,
             create_scrap_read_routes,
             create_scrap_reason_tag_routes,
-            create_stock_entry_routes,
+            create_stock_entry_read_routes,
+            create_stock_entry_item_read_routes,
+            create_stock_ledger_entry_read_routes,
+            create_bin_read_routes,
+            create_stock_reconciliation_read_routes,
+            create_stock_reconciliation_item_read_routes,
             create_package_type_routes,
             create_storage_category_routes,
             create_storage_category_capacity_routes,
@@ -159,33 +174,54 @@ impl InventoryModule {
             create_stock_item_routes,
         };
 
-        // Engine-owned tables are deliberately NOT mounted here — see
-        // tests/route_surface_guard.rs. Child line items are owned by their parent
-        // document; `bins` is the moving-average balance tied to the append-only SLE
-        // and the GL; `stock_moves` / `stock_move_lines` / `stock_quants` are the
-        // stock-convergence engine's own state (the 7-state lifecycle, the reservation
-        // mirror, and the authoritative reserved_quantity) and are driven only by the
-        // move engine's guarded transitions — never free-hand-set over HTTP. Reads for
-        // all of them stay available via `readonly_routes()`. The transfer projection
-        // mounts read-only even here (it has no write surface of its own).
-        // `stock_ledger_entries` and `stock_reconciliations` are also engine-owned:
-        // the SLE is the append-only ledger the move engine mints, and reconciliations
-        // are the GL-posting adjustments — both must write only through the engine.
         Router::new()
             .merge(create_picking_batch_read_routes(self.picking_batch_service.clone()))
-            .merge(create_delivery_note_routes(self.delivery_note_service.clone()))
+            // DeliveryNote: hand_set lifecycle — the state field moves only through the
+            // module's validated verbs; generic writes cannot reach it, so only the
+            // read surface mounts here.
+            .merge(create_delivery_note_read_routes(self.delivery_note_service.clone()))
+            .merge(create_delivery_note_item_read_routes(self.delivery_note_item_service.clone()))
             .merge(create_inventory_company_setting_routes(self.inventory_company_setting_service.clone()))
-            .merge(create_landed_cost_routes(self.landed_cost_service.clone()))
+            // LandedCost: hand_set lifecycle — the state field moves only through the
+            // module's validated verbs; generic writes cannot reach it, so only the
+            // read surface mounts here.
+            .merge(create_landed_cost_read_routes(self.landed_cost_service.clone()))
+            .merge(create_landed_cost_line_read_routes(self.landed_cost_line_service.clone()))
+            .merge(create_landed_cost_adjustment_line_read_routes(self.landed_cost_adjustment_line_service.clone()))
             .merge(create_location_routes(self.location_service.clone()))
+            // StockMove: hand_set lifecycle — the state field moves only through the
+            // module's validated verbs; generic writes cannot reach it, so only the
+            // read surface mounts here.
+            .merge(create_stock_move_read_routes(self.stock_move_service.clone()))
+            .merge(create_stock_move_line_read_routes(self.stock_move_line_service.clone()))
             .merge(create_operation_type_routes(self.operation_type_service.clone()))
             .merge(create_transfer_read_routes(self.transfer_service.clone()))
             .merge(create_route_routes(self.route_service.clone()))
             .merge(create_route_rule_routes(self.route_rule_service.clone()))
             .merge(create_reordering_rule_routes(self.reordering_rule_service.clone()))
-            .merge(create_purchase_receipt_routes(self.purchase_receipt_service.clone()))
+            // PurchaseReceipt: hand_set lifecycle — the state field moves only through the
+            // module's validated verbs; generic writes cannot reach it, so only the
+            // read surface mounts here.
+            .merge(create_purchase_receipt_read_routes(self.purchase_receipt_service.clone()))
+            .merge(create_purchase_receipt_item_read_routes(self.purchase_receipt_item_service.clone()))
+            .merge(create_quant_read_routes(self.quant_service.clone()))
             .merge(create_scrap_read_routes(self.scrap_service.clone()))
             .merge(create_scrap_reason_tag_routes(self.scrap_reason_tag_service.clone()))
-            .merge(create_stock_entry_routes(self.stock_entry_service.clone()))
+            // StockEntry: hand_set lifecycle — the state field moves only through the
+            // module's validated verbs; generic writes cannot reach it, so only the
+            // read surface mounts here.
+            .merge(create_stock_entry_read_routes(self.stock_entry_service.clone()))
+            .merge(create_stock_entry_item_read_routes(self.stock_entry_item_service.clone()))
+            // StockLedgerEntry: hand_set lifecycle — the state field moves only through the
+            // module's validated verbs; generic writes cannot reach it, so only the
+            // read surface mounts here.
+            .merge(create_stock_ledger_entry_read_routes(self.stock_ledger_entry_service.clone()))
+            .merge(create_bin_read_routes(self.bin_service.clone()))
+            // StockReconciliation: hand_set lifecycle — the state field moves only through the
+            // module's validated verbs; generic writes cannot reach it, so only the
+            // read surface mounts here.
+            .merge(create_stock_reconciliation_read_routes(self.stock_reconciliation_service.clone()))
+            .merge(create_stock_reconciliation_item_read_routes(self.stock_reconciliation_item_service.clone()))
             .merge(create_package_type_routes(self.package_type_service.clone()))
             .merge(create_storage_category_routes(self.storage_category_service.clone()))
             .merge(create_storage_category_capacity_routes(self.storage_category_capacity_service.clone()))

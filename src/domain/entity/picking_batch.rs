@@ -235,6 +235,7 @@ impl backbone_orm::EntityRepoMeta for PickingBatch {
         m.insert("id".to_string(), "uuid".to_string());
         m.insert("user_id".to_string(), "uuid".to_string());
         m.insert("state".to_string(), "picking_batch_state".to_string());
+        m.insert("scheduled_date".to_string(), "timestamptz".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
