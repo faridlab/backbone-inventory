@@ -285,6 +285,8 @@ impl backbone_orm::EntityRepoMeta for StockReconciliation {
         m.insert("accounting_post_id".to_string(), "uuid".to_string());
         m.insert("status".to_string(), "doc_status".to_string());
         m.insert("posting_state".to_string(), "gl_posting_state".to_string());
+        m.insert("posting_date".to_string(), "date".to_string());
+        m.insert("posted_at".to_string(), "timestamptz".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {

@@ -246,6 +246,7 @@ impl backbone_orm::EntityRepoMeta for Package {
         m.insert("location_id".to_string(), "uuid".to_string());
         m.insert("parent_package_id".to_string(), "uuid".to_string());
         m.insert("package_type_id".to_string(), "uuid".to_string());
+        m.insert("pack_date".to_string(), "date".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {

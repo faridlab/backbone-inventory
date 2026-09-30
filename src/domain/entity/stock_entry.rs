@@ -268,6 +268,7 @@ impl backbone_orm::EntityRepoMeta for StockEntry {
         m.insert("stock_entry_type".to_string(), "stock_entry_type".to_string());
         m.insert("status".to_string(), "doc_status".to_string());
         m.insert("posting_state".to_string(), "gl_posting_state".to_string());
+        m.insert("posting_date".to_string(), "date".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {

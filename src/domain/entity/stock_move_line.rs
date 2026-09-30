@@ -304,6 +304,7 @@ impl backbone_orm::EntityRepoMeta for StockMoveLine {
         m.insert("location_dest_id".to_string(), "uuid".to_string());
         m.insert("item_id".to_string(), "uuid".to_string());
         m.insert("state".to_string(), "move_state".to_string());
+        m.insert("date".to_string(), "timestamptz".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {

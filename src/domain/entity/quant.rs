@@ -302,6 +302,8 @@ impl backbone_orm::EntityRepoMeta for Quant {
         m.insert("lot_id".to_string(), "uuid".to_string());
         m.insert("package_id".to_string(), "uuid".to_string());
         m.insert("owner_id".to_string(), "uuid".to_string());
+        m.insert("in_date".to_string(), "timestamptz".to_string());
+        m.insert("inventory_date".to_string(), "date".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {

@@ -124,6 +124,9 @@ models:
 
   - name: LandedCostLine
     collection: landed_cost_lines
+    # engine-owned table: written only by the move engine / its parent
+    # document verbs; the generic CRUD surface is reads.
+    read_only: true
     description: "One landed-cost charge line (amount split over the target lines by its method; credit side is its account)"
 
     fields:
@@ -177,6 +180,9 @@ models:
 
   - name: LandedCostAdjustmentLine
     collection: landed_cost_adjustment_lines
+    # engine-owned table: written only by the move engine / its parent
+    # document verbs; the generic CRUD surface is reads.
+    read_only: true
     description: "TRANSIENT allocation worksheet (NOT a ledger): deleted and recreated on every recompute; readonly to clients"
 
     fields:

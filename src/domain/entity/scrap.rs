@@ -302,6 +302,7 @@ impl backbone_orm::EntityRepoMeta for Scrap {
         m.insert("picking_id".to_string(), "uuid".to_string());
         m.insert("move_id".to_string(), "uuid".to_string());
         m.insert("state".to_string(), "scrap_state".to_string());
+        m.insert("date_expected".to_string(), "timestamptz".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {

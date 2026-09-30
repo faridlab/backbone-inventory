@@ -369,6 +369,8 @@ impl backbone_orm::EntityRepoMeta for StockMove {
         m.insert("posting_state".to_string(), "gl_posting_state".to_string());
         m.insert("priority".to_string(), "priority".to_string());
         m.insert("procure_method".to_string(), "procure_method".to_string());
+        m.insert("create_date".to_string(), "timestamptz".to_string());
+        m.insert("date".to_string(), "timestamptz".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
