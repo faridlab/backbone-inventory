@@ -309,7 +309,7 @@ impl QuantRepository {
         item_id: Uuid,
         location_id: Uuid,
     ) -> Result<QuantOnHandRow, sqlx::Error> {
-        let row = backbone_orm::company_scope::fetch_one_row_scoped(
+        let row = backbone_orm::org_scope::fetch_one_row_scoped(
             pool,
             sqlx::query(
                 r#"SELECT
@@ -346,7 +346,7 @@ impl QuantRepository {
         item_ids: &[Uuid],
         warehouse_id: Uuid,
     ) -> Result<Vec<QuantWarehouseRow>, sqlx::Error> {
-        let rows = backbone_orm::company_scope::fetch_all_rows_scoped(
+        let rows = backbone_orm::org_scope::fetch_all_rows_scoped(
             pool,
             sqlx::query(
                 r#"SELECT

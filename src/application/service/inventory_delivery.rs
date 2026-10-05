@@ -38,7 +38,7 @@ impl InventoryWriteService {
             if l.quantity < Decimal::ZERO { return Err(InventoryError::NegativeQuantity); }
         }
         let id = Uuid::new_v4();
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let ins = self.deliveries.insert_draft(&mut tx, &NewDeliveryRow {
             id,
@@ -88,7 +88,7 @@ impl InventoryWriteService {
     /// reservation held.
     pub async fn submit_delivery_note(&self, id: Uuid, sink: &dyn GlPostSink) -> Result<SubmitOutcome, InventoryError> {
         // RLS scope (ADR-0008), ID-only: fenced by the request/inherited scope.
-        let hdr = self.deliveries.fetch_submit_header(&self.db_pool, id).await?
+        let hdr = self.deliveries.fetch_submit_header(&self.rpool(), id).await?
             .ok_or(InventoryError::NotFound(id))?;
         if hdr.status != "draft" {
             return Err(InventoryError::NotDraft(id.to_string()));
@@ -109,7 +109,7 @@ impl InventoryWriteService {
         let posture = self.posting_posture().await?;
         let debit_acct = self.delivery_debit_account(&posture, cogs_acct)?;
 
-        let items = self.delivery_items.fetch_items(&self.db_pool, id).await?;
+        let items = self.delivery_items.fetch_items(&self.rpool(), id).await?;
 
         // The door's move endpoints: the warehouse's stock location (internal source) and the
         // customer location (virtual destination) — resolve-or-bootstrap each.
@@ -125,7 +125,7 @@ impl InventoryWriteService {
         // rows carry.
         let mut line_rates: std::collections::HashMap<Uuid, Decimal> = std::collections::HashMap::new();
         {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             // Re-bind the caller's ambient org scope before any bin read (ADR-0029) — the
             // scope is task-local and a fresh pool transaction carries none of it;
             // undecorated (module tests, jobs) the transaction stays plain.
@@ -176,7 +176,7 @@ impl InventoryWriteService {
                 None => {
                     // The line already landed in a prior (crashed) attempt: its COGS is the
                     // value its move carried — recover it from the move's SLE leg.
-                    let prior_cogs = self.sles.sum_move_value(&self.db_pool, &name).await?;
+                    let prior_cogs = self.sles.sum_move_value(&self.rpool(), &name).await?;
                     total_cogs += prior_cogs;
                     continue;
                 }
@@ -187,7 +187,7 @@ impl InventoryWriteService {
                 // refuses the delivery. Release whatever the partial assign took; no stock
                 // moved, no reservation held, the voucher stays draft (retryable).
                 self.unreserve_move(mid).await?;
-                let on_hand = self.quants.fetch_on_hand(&self.db_pool, it.item_id, stock_loc).await?;
+                let on_hand = self.quants.fetch_on_hand(&self.rpool(), it.item_id, stock_loc).await?;
                 return Err(InventoryError::InsufficientStock {
                     item_id: it.item_id, warehouse_id: warehouse,
                     available: on_hand.on_hand_qty, requested: it.quantity,
@@ -199,7 +199,7 @@ impl InventoryWriteService {
             let cogs = outcome.out_value;
             let rate = line_rates.get(&it.item_id).copied().unwrap_or(Decimal::ZERO);
             {
-                let mut tx = self.db_pool.begin().await?;
+                let mut tx = self.rpool().begin().await?;
                 relay_ambient_scope(&mut tx).await?;
                 self.delivery_items.update_valuation(&mut tx, it.id, rate, cogs).await?;
                 tx.commit().await?;
@@ -207,7 +207,7 @@ impl InventoryWriteService {
             total_cogs += cogs;
         }
         {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             self.deliveries.mark_submitted_with_cogs(&mut tx, id, total_cogs).await?;
             tx.commit().await?;
@@ -220,7 +220,7 @@ impl InventoryWriteService {
         if posture.periodic
             || !Self::should_create_account_move(total_cogs, total_qty, true)
         {
-            self.gl.mark_not_applicable(&self.db_pool, GlVoucher::DeliveryNote, id).await?;
+            self.gl.mark_not_applicable(&self.rpool(), GlVoucher::DeliveryNote, id).await?;
             self.sink.publish(InventoryEvent::StockDelivered(StockDelivered {
                 delivery_id: id, company_id: legacy_company_echo(), warehouse_id: warehouse, source_so_id: source_so,
                 total_cogs,
@@ -256,7 +256,7 @@ impl InventoryWriteService {
 
     pub async fn repost_delivery_note(&self, id: Uuid, sink: &dyn GlPostSink) -> Result<SubmitOutcome, InventoryError> {
         // RLS scope (ADR-0008), ID-only: fenced by the request/inherited scope.
-        let h = self.deliveries.fetch_repost_header(&self.db_pool, id).await?
+        let h = self.deliveries.fetch_repost_header(&self.rpool(), id).await?
             .ok_or(InventoryError::NotFound(id))?;
         if let Some(o) = Self::already_settled(&h.gl, id) { return Ok(o); }
         // The SAME posture the submit ran under (absent row = defaults): the anglo-saxon
@@ -267,7 +267,7 @@ impl InventoryWriteService {
         // submit used.
         let posture = self.posting_posture().await?;
         if posture.periodic {
-            self.gl.mark_not_applicable(&self.db_pool, GlVoucher::DeliveryNote, id).await?;
+            self.gl.mark_not_applicable(&self.rpool(), GlVoucher::DeliveryNote, id).await?;
             return Ok(SubmitOutcome {
                 voucher_id: id, posted: false, journal_id: None, post_id: None,
                 gl_amount: Decimal::ZERO,

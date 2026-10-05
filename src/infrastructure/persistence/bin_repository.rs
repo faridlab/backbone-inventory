@@ -8,7 +8,7 @@
 //! All standard CRUD methods are available via `Deref`.
 
 use anyhow::Result;
-use backbone_orm::company_scope;
+use backbone_orm::org_scope;
 use rust_decimal::Decimal;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -144,7 +144,7 @@ impl BinRepository {
         item_id: Uuid,
         warehouse_id: Uuid,
     ) -> Result<Option<BinAvailabilityRow>, sqlx::Error> {
-        let row = company_scope::fetch_optional_row_scoped(
+        let row = org_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
                 r#"SELECT actual_qty, reserved_qty FROM inventory.bins
@@ -165,7 +165,7 @@ impl BinRepository {
         pool: &PgPool,
         item_id: Uuid,
     ) -> Result<Vec<BinWarehouseAvailabilityRow>, sqlx::Error> {
-        let rows = company_scope::fetch_all_rows_scoped(
+        let rows = org_scope::fetch_all_rows_scoped(
             pool,
             sqlx::query(
                 r#"SELECT warehouse_id, actual_qty, reserved_qty FROM inventory.bins
@@ -192,7 +192,7 @@ impl BinRepository {
         item_id: Uuid,
         warehouse_id: Uuid,
     ) -> Result<Option<BinBalanceRow>, sqlx::Error> {
-        let row = company_scope::fetch_optional_row_scoped(
+        let row = org_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
                 r#"SELECT actual_qty, valuation_rate, stock_value FROM inventory.bins

@@ -225,6 +225,13 @@ impl ProcurementService {
         Self { db_pool, sink }
     }
 
+    /// The database this call runs on: the composer's request pool when one
+    /// is bound (a tenant mount, or a relay consumer wrapped by the host),
+    /// else the composed pool (ADR-0029 pool law).
+    fn rpool(&self) -> PgPool {
+        crate::request_pool::current().unwrap_or_else(|| self.db_pool.clone())
+    }
+
     // -- routes ---------------------------------------------------------------
 
     /// Create a route (an ordered rule collection).
@@ -235,7 +242,7 @@ impl ProcurementService {
     /// tests, jobs) the transaction stays plain.
     pub async fn create_route(&self, r: NewRoute) -> Result<Uuid, ProcurementError> {
         let id = Uuid::new_v4();
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         super::inventory_write_service::relay_ambient_scope(&mut tx).await?;
         ProcurementRepository::insert_route(&mut *tx, id, &r.name, r.active, r.sequence).await?;
         tx.commit().await?;
@@ -251,7 +258,7 @@ impl ProcurementService {
     /// The pre-check read and the insert ride one transaction re-bound to the caller's ambient
     /// org scope (ADR-0029); undecorated (module tests, jobs) the transaction stays plain.
     pub async fn create_rule(&self, r: NewRouteRule) -> Result<Uuid, ProcurementError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         super::inventory_write_service::relay_ambient_scope(&mut tx).await?;
         self.check_rule_destination(&mut tx, r.location_dest_id).await?;
 
@@ -302,7 +309,7 @@ impl ProcurementService {
         demand_location_id: Uuid,
         route_ids: Option<Vec<Uuid>>,
     ) -> Result<Option<RuleRow>, ProcurementError> {
-        Ok(ProcurementRepository::search_rule(&self.db_pool, demand_location_id, route_ids).await?)
+        Ok(ProcurementRepository::search_rule(&self.rpool(), demand_location_id, route_ids).await?)
     }
 
     /// `_run_pull`: mint the inbound DRAFT move a selected pull rule prescribes — FROM the
@@ -404,7 +411,7 @@ impl ProcurementService {
     /// ambient org scope (ADR-0029); undecorated (module tests, jobs) it stays plain — the
     /// composed decorator owns isolation.
     pub async fn create_orderpoint(&self, o: NewOrderpoint) -> Result<Uuid, ProcurementError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         super::inventory_write_service::relay_ambient_scope(&mut tx).await?;
         let existing = ProcurementRepository::orderpoint_exists(&mut *tx, o.item_id, o.location_id).await?;
         if existing > 0 {
@@ -486,7 +493,7 @@ impl ProcurementService {
         &self,
         orderpoint_id: Uuid,
     ) -> Result<OrderpointComputes, ProcurementError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         super::inventory_write_service::relay_ambient_scope(&mut tx).await?;
         let op = sqlx::query_as::<_, OrderpointRowDb>(
             r#"SELECT id, name, trigger::text AS trigger, item_id, location_id, warehouse_id,

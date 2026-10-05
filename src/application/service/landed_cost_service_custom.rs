@@ -157,7 +157,7 @@ impl InventoryWriteService {
             }
         }
         let id = Uuid::new_v4();
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let ins = self.valuation_overlay.insert_landed_cost_draft(&mut tx, &NewLandedCostRow {
             id,
@@ -221,7 +221,7 @@ impl InventoryWriteService {
     /// Cancel a DRAFT landed cost. A `done` landed cost can never cancel — its bins and ledger
     /// already revalued; the correction pattern is a NEGATIVE landed cost (swapped legs).
     pub async fn cancel_landed_cost(&self, lc_id: Uuid) -> Result<(), InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let hdr = self.valuation_overlay
             .fetch_lc_header(&mut tx, lc_id).await?
@@ -253,7 +253,7 @@ impl InventoryWriteService {
         sink: &dyn GlPostSink,
     ) -> Result<SubmitOutcome, InventoryError> {
         let (hdr, receipt_inventory_account_id, lines, worksheet, sles) = {
-            let mut conn = self.db_pool.acquire().await?;
+            let mut conn = self.rpool().acquire().await?;
             // Re-bind the caller's ambient org scope before any read (ADR-0029) — the scope is
             // task-local and a fresh pool connection carries none of it; undecorated (module
             // tests, jobs) the reads stay plain.
@@ -292,7 +292,7 @@ impl InventoryWriteService {
         let mut debits: Vec<(Uuid, Decimal)> = Vec::new();
         let mut credits: Vec<(Uuid, Decimal)> = Vec::new();
         {
-            let mut conn = self.db_pool.acquire().await?;
+            let mut conn = self.rpool().acquire().await?;
             for (voucher_no, delta) in &sles {
                 // voucher_no = {lc_number}/{move_name}/{move_line_id} — the trailing id is the
                 // stable target grain.
@@ -330,7 +330,7 @@ impl InventoryWriteService {
     /// rejected validation has written nothing at all.
     async fn lc_compute(&self, lc_id: Uuid) -> Result<LcPlan, InventoryError> {
         let (hdr, lines, mut targets, posture, receipt_inventory_account_id) = {
-            let mut conn = self.db_pool.acquire().await?;
+            let mut conn = self.rpool().acquire().await?;
             // Re-bind the caller's ambient org scope before any read (ADR-0029) — the scope is
             // task-local and a fresh pool connection carries none of it; undecorated (module
             // tests, jobs) the reads stay plain.
@@ -394,7 +394,7 @@ impl InventoryWriteService {
 
         // Read-only FIFO attribution (the remaining share per move) — attribution, NOT costing.
         let move_ids: Vec<Uuid> = targets.iter().map(|t| t.mv.id).collect();
-        let remaining = self.sles.remaining_qty_for_moves(&self.db_pool, &move_ids).await?;
+        let remaining = self.sles.remaining_qty_for_moves(&self.rpool(), &move_ids).await?;
         for t in targets.iter_mut() {
             t.remaining_qty = remaining.get(&t.mv.id).copied().unwrap_or(Decimal::ZERO);
         }
@@ -517,7 +517,7 @@ impl InventoryWriteService {
     /// before commit rolls the whole unit back; a crash after it leaves the armed leg for
     /// [`Self::repost_landed_cost`].
     async fn lc_apply(&self, plan: &LcPlan) -> Result<(), InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         self.valuation_overlay.delete_worksheet(&mut tx, plan.lc_id).await?;
         for r in &plan.rows {
@@ -562,7 +562,7 @@ impl InventoryWriteService {
             revalued_value: plan.revalued_total,
         });
         if plan.posture.periodic || plan.revalued_total.is_zero() {
-            self.gl.mark_not_applicable(&self.db_pool, GlVoucher::LandedCost, plan.lc_id).await?;
+            self.gl.mark_not_applicable(&self.rpool(), GlVoucher::LandedCost, plan.lc_id).await?;
             self.sink.publish(event());
             return Ok(SubmitOutcome {
                 voucher_id: plan.lc_id, posted: false, journal_id: None, post_id: None,

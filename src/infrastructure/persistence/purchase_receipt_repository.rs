@@ -13,7 +13,7 @@ use rust_decimal::Decimal;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use backbone_orm::company_scope;
+use backbone_orm::org_scope;
 
 use super::gl_voucher_repository::GlSettlementState;
 
@@ -151,7 +151,7 @@ impl PurchaseReceiptRepository {
         pool: &PgPool,
         id: Uuid,
     ) -> Result<Option<ReceiptSubmitHeaderRow>, sqlx::Error> {
-        let row = company_scope::fetch_optional_row_scoped(
+        let row = org_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
                 r#"SELECT receipt_number, branch_id, warehouse_id, posting_date, source_po_id,
@@ -177,7 +177,7 @@ impl PurchaseReceiptRepository {
         pool: &PgPool,
         id: Uuid,
     ) -> Result<Option<ReceiptRepostHeaderRow>, sqlx::Error> {
-        let row = company_scope::fetch_optional_row_scoped(
+        let row = org_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
                 r#"SELECT branch_id, receipt_number, posting_date, currency, total_value,
@@ -237,7 +237,7 @@ impl PurchaseReceiptRepository {
         pool: &PgPool,
         id: Uuid,
     ) -> Result<Option<ReceiptCancelHeaderRow>, sqlx::Error> {
-        let row = company_scope::fetch_optional_row_scoped(
+        let row = org_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
                 r#"SELECT branch_id, warehouse_id, posting_date, currency, receipt_number,

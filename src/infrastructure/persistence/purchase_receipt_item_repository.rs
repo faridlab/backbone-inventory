@@ -13,7 +13,7 @@ use rust_decimal::Decimal;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use backbone_orm::company_scope;
+use backbone_orm::org_scope;
 
 use crate::domain::entity::PurchaseReceiptItem;
 
@@ -92,7 +92,7 @@ impl PurchaseReceiptItemRepository {
         pool: &PgPool,
         receipt_id: Uuid,
     ) -> Result<Vec<ReceiptItemRow>, sqlx::Error> {
-        let rows = company_scope::fetch_all_rows_scoped(
+        let rows = org_scope::fetch_all_rows_scoped(
             pool,
             sqlx::query(
                 r#"SELECT item_id, quantity, rate, is_landed_costs_line FROM inventory.purchase_receipt_items

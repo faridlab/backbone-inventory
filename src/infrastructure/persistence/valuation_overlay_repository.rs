@@ -134,7 +134,7 @@ impl ValuationOverlayRepository {
         &self,
         pool: &PgPool,
     ) -> Result<Option<PostureRow>, sqlx::Error> {
-        let row = backbone_orm::company_scope::fetch_optional_row_scoped(
+        let row = backbone_orm::org_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
                 r#"SELECT cost_method::text AS cost_method, valuation_policy::text AS valuation_policy,
@@ -185,7 +185,7 @@ impl ValuationOverlayRepository {
         pool: &PgPool,
         location_id: Uuid,
     ) -> Result<Option<Uuid>, sqlx::Error> {
-        let row = backbone_orm::company_scope::fetch_optional_row_scoped(
+        let row = backbone_orm::org_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
                 r#"SELECT valuation_account_id FROM inventory.locations

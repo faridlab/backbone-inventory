@@ -234,10 +234,17 @@ impl AvailabilityScopeRead {
         }
     }
 
+    /// The database this call runs on: the composer's request pool when one
+    /// is bound (a tenant mount, or a relay consumer wrapped by the host),
+    /// else the composed pool (ADR-0029 pool law).
+    fn rpool(&self) -> PgPool {
+        crate::request_pool::current().unwrap_or_else(|| self.db_pool.clone())
+    }
+
     /// Fail-loud pivot validation: the warehouse must exist, be live, and be
     /// a concrete stock warehouse.
     async fn validate_pivot(&self, warehouse_id: Uuid) -> Result<(), AvailabilityScopeError> {
-        match self.warehouses.fetch_pivot_warehouse(&self.db_pool, warehouse_id).await? {
+        match self.warehouses.fetch_pivot_warehouse(&self.rpool(), warehouse_id).await? {
             None => Err(AvailabilityScopeError::UnknownWarehouse(warehouse_id)),
             Some(true) => Err(AvailabilityScopeError::GroupPivot(warehouse_id)),
             Some(false) => Ok(()),
@@ -255,7 +262,7 @@ impl AvailabilityScopeRead {
     ) -> Result<Vec<ScopedAvailability>, AvailabilityScopeError> {
         let rows = self
             .quants
-            .fetch_warehouse_on_hand(&self.db_pool, item_ids, warehouse_id)
+            .fetch_warehouse_on_hand(&self.rpool(), item_ids, warehouse_id)
             .await?;
         let by_item: std::collections::HashMap<Uuid, (Decimal, Decimal)> = rows
             .into_iter()
@@ -267,7 +274,7 @@ impl AvailabilityScopeRead {
         let mut held: std::collections::HashMap<Uuid, Decimal> =
             std::collections::HashMap::new();
         {
-            let mut conn = self.db_pool.acquire().await?;
+            let mut conn = self.rpool().acquire().await?;
             let ledger: Vec<(Uuid, Decimal)> = sqlx::query_as(
                 r#"SELECT item_id, COALESCE(SUM(qty), 0)
                      FROM inventory.stock_reservations

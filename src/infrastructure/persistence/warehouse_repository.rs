@@ -12,7 +12,7 @@ use anyhow::Result;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use backbone_orm::{company_scope, org_scope};
+use backbone_orm::org_scope;
 
 use crate::domain::entity::Warehouse;
 
@@ -96,7 +96,7 @@ impl WarehouseRepository {
         pool: &PgPool,
         warehouse_id: Uuid,
     ) -> Result<Option<bool>, sqlx::Error> {
-        let row = company_scope::fetch_optional_row_scoped(
+        let row = org_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
                 r#"SELECT is_group FROM inventory.warehouses

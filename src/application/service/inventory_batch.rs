@@ -47,7 +47,7 @@ impl InventoryWriteService {
         user_id: Option<Uuid>,
     ) -> Result<BatchHeaderRow, InventoryError> {
         let id = Uuid::new_v4();
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         // Re-bind the caller's ambient org scope before the write (ADR-0029) — the
         // composing decorator's fence arbiter turns a collision into the typed duplicate.
         relay_ambient_scope(&mut tx).await?;
@@ -72,7 +72,7 @@ impl InventoryWriteService {
         &self,
         batch_id: Uuid,
     ) -> Result<(BatchHeaderRow, Vec<BatchMemberRow>), InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let header = self.batches.fetch_batch(&mut tx, batch_id).await?
             .ok_or(InventoryError::NotFound(batch_id))?;
@@ -97,7 +97,7 @@ impl InventoryWriteService {
         batch_id: Uuid,
         picking_id: Uuid,
     ) -> Result<BatchHeaderRow, InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let batch = self.batches.fetch_batch(&mut tx, batch_id).await?
             .ok_or(InventoryError::NotFound(batch_id))?;
@@ -135,7 +135,7 @@ impl InventoryWriteService {
         batch_id: Uuid,
         picking_id: Uuid,
     ) -> Result<BatchHeaderRow, InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         self.batches.fetch_batch(&mut tx, batch_id).await?
             .ok_or(InventoryError::NotFound(batch_id))?;

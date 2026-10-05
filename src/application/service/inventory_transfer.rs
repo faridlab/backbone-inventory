@@ -132,7 +132,7 @@ impl InventoryWriteService {
             }
         }
         let id = Uuid::new_v4();
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         // Re-bind the caller's ambient org scope before any read (ADR-0029) — the scope is
         // task-local and a fresh pool transaction carries none of it; undecorated (module
         // tests, jobs) the transaction stays plain.
@@ -213,7 +213,7 @@ impl InventoryWriteService {
         transfer_id: Uuid,
     ) -> Result<(crate::infrastructure::persistence::TransferHeaderRow,
                  Vec<crate::infrastructure::persistence::MoveStateRow>), InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let header = self.pickings.fetch_transfer(&mut tx, transfer_id).await?
             .ok_or(InventoryError::NotFound(transfer_id))?;
@@ -242,7 +242,7 @@ impl InventoryWriteService {
         &self,
         move_id: Uuid,
     ) -> Result<PickingAssignment, InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         // The read rides the caller's ambient org scope (ADR-0029): under the composed shape
         // the decorator's fence bounds it; undecorated (module tests, jobs) it is plain.
         relay_ambient_scope(&mut tx).await?;
@@ -323,7 +323,7 @@ impl InventoryWriteService {
         sink: &dyn GlPostSink,
     ) -> Result<PickingValidated, InventoryError> {
         let move_ids = {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             self.pickings.fetch_transfer(&mut tx, transfer_id).await?
                 .ok_or(InventoryError::NotFound(transfer_id))?;
@@ -336,7 +336,7 @@ impl InventoryWriteService {
         let mut outcomes = Vec::new();
         for mid in move_ids {
             let mv = {
-                let mut tx = self.db_pool.begin().await?;
+                let mut tx = self.rpool().begin().await?;
                 relay_ambient_scope(&mut tx).await?;
                 let mv = self.moves.fetch_move(&mut tx, mid).await?.ok_or(InventoryError::NotFound(mid))?;
                 tx.commit().await?;
@@ -366,7 +366,7 @@ impl InventoryWriteService {
         transfer_id: Uuid,
     ) -> Result<BackorderPolicy, InventoryError> {
         let picking_type_id = {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             let header = self.pickings.fetch_transfer(&mut tx, transfer_id).await?
                 .ok_or(InventoryError::NotFound(transfer_id))?;
@@ -374,7 +374,7 @@ impl InventoryWriteService {
             header.picking_type_id
         };
         let facts = {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             let f = self.pickings.fetch_operation_type(&mut tx, picking_type_id).await
                 .map_err(InventoryError::from)?
@@ -398,7 +398,7 @@ impl InventoryWriteService {
         &self,
         mv: &crate::infrastructure::persistence::MoveRow,
     ) -> Result<(), InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let locs = self.moves.fetch_move_locations(&mut tx, mv.location_id, mv.location_dest_id).await?;
         let src = locs.0.ok_or(InventoryError::LocationNotFound(mv.location_id))?;
@@ -410,7 +410,7 @@ impl InventoryWriteService {
         tx.commit().await?;
 
         let lines = {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             let l = self.move_lines.fetch_lines_for_move(&mut tx, mv.id).await?;
             tx.commit().await?;
@@ -442,7 +442,7 @@ impl InventoryWriteService {
         qty: Decimal,
     ) -> Result<(), InventoryError> {
         if qty <= Decimal::ZERO { return Ok(()); }
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         self.move_lines.insert_line(&mut tx, &NewMoveLineRow {
             id: Uuid::new_v4(),
@@ -477,7 +477,7 @@ impl InventoryWriteService {
         for l in &t.lines { if l.quantity < Decimal::ZERO { return Err(InventoryError::NegativeQuantity); } }
 
         let id = Uuid::new_v4();
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         // Re-bind the caller's ambient org scope before any read (ADR-0029) — under the
         // composed shape the decorator's fence bounds the bin read below; undecorated
         // (module tests, jobs) the transaction stays plain.
@@ -559,7 +559,7 @@ impl InventoryWriteService {
         &self,
         move_id: Uuid,
     ) -> Result<crate::infrastructure::persistence::MoveRow, InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let mv = self.moves.fetch_move(&mut tx, move_id).await?
             .ok_or(InventoryError::NotFound(move_id))?;

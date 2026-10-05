@@ -11,6 +11,9 @@
 # Add your hand-authored services, handlers, tests, and docs below as you write them.
 
 user_owned:
+  # The composer-installed request-pool shim the write service resolves its database
+  # through (ADR-0029 pool law): hand-written, never schema-derived.
+  - "src/request_pool.rs"
   # The create_backorder policy enum: the generator emits it from schema/models/operation.model.yaml,
   # but a mid-change regen would also re-derive entity/migration files this convergence pass keeps
   # hand-owned — so the file is frozen here and mirrors the schema's enum values exactly

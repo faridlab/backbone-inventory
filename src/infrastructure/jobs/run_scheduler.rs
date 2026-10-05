@@ -26,7 +26,10 @@
 //! **Plain sweep** (tenancy is composition-installed, ADR-0029): the handler never enumerates
 //! tenants and never binds one itself — the composing host owns org binding, relaying the
 //! ambient org scope onto the job's connections, and the decorator's fence bounds every claim
-//! the sweep reads. Undecorated (module tests) the statements run plain.
+//! the sweep reads. The sweep's own transactions resolve the composer's request pool first
+//! (a scheduled pass over one tenant binds one) and fall back to the pool the caller passed,
+//! so an unwrapped lane keeps its own database. Undecorated (module tests) the statements run
+//! plain.
 //!
 //! The move-lifecycle verbs arrive through the [`MovePipeline`] port (implemented by the
 //! stock-move engine) — a job cannot be constructed against a silent no-op.
@@ -95,6 +98,11 @@ pub async fn run_scheduler_with(
     pipeline: Arc<dyn MovePipeline>,
     batching: SchedulerBatching,
 ) -> Result<SchedulerReport, sqlx::Error> {
+    // The database this sweep runs on: the composer's request pool when one is
+    // bound (a scheduled pass over one tenant wraps the call in it), else the
+    // pool the caller passed (ADR-0029 pool law) — an unwrapped lane keeps its
+    // own pool.
+    let pool = crate::request_pool::current().unwrap_or_else(|| pool.clone());
     let mut report = SchedulerReport::default();
 
     // Task 1: reorder (commit per batch; events after each batch's commit).

@@ -100,7 +100,7 @@ impl InventoryWriteService {
         if counted_qty < Decimal::ZERO {
             return Err(InventoryError::NegativeQuantity);
         }
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         // Re-bind the caller's ambient org scope before any read (ADR-0029) — the scope is
         // task-local and a fresh pool transaction carries none of it; undecorated (module
         // tests, jobs) the transaction stays plain.
@@ -172,7 +172,7 @@ impl InventoryWriteService {
     ) -> Result<AppliedCount, InventoryError> {
         // -- gate + guards under the quant's FOR UPDATE lock --------------------------------
         let (quant_id, location_id, counted, staged_diff) = {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             let quant = self.adjustments.lock_quant(&mut tx, selector).await?
                 .ok_or_else(|| match selector {
@@ -214,7 +214,7 @@ impl InventoryWriteService {
 
         // -- zero diff: the count matches the on-hand — consume, no move --------------------
         if staged_diff == Decimal::ZERO {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             self.adjustments.consume_staged_count(&mut tx, quant_id).await?;
             tx.commit().await?;
@@ -226,7 +226,7 @@ impl InventoryWriteService {
 
         // -- resolve the inventory-loss location (the far end of every adjustment move) ----
         let loss_location = {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             let loc = self.pickings.ensure_inventory_loss_location(&mut tx).await?;
             tx.commit().await?;
@@ -237,7 +237,7 @@ impl InventoryWriteService {
         let item_id = match selector {
             QuantSelector::ById(_) => {
                 // The locked row carried it; re-read the grain off the quant we just locked.
-                let mut tx = self.db_pool.begin().await?;
+                let mut tx = self.rpool().begin().await?;
                 relay_ambient_scope(&mut tx).await?;
                 let quant = self.adjustments.lock_quant(&mut tx, QuantSelector::ById(quant_id)).await?
                     .ok_or(InventoryError::NotFound(quant_id))?;
@@ -247,7 +247,7 @@ impl InventoryWriteService {
             QuantSelector::ItemLocation { item_id, .. } => item_id,
         };
         let existing = {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             let found = self.pickings.find_adjustment_moves(
                 &mut tx, item_id, location_id, loss_location,
@@ -266,7 +266,7 @@ impl InventoryWriteService {
                     (location_id, loss_location, -staged_diff)
                 };
                 let warehouse = {
-                    let mut tx = self.db_pool.begin().await?;
+                    let mut tx = self.rpool().begin().await?;
                     relay_ambient_scope(&mut tx).await?;
                     let locs = self.moves.fetch_move_locations(&mut tx, location_id, location_id).await?;
                     tx.commit().await?;
@@ -318,7 +318,7 @@ impl InventoryWriteService {
 
         // -- consume the staging (the gate drops AFTER the move landed) ---------------------
         {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             self.adjustments.consume_staged_count(&mut tx, quant_id).await?;
             tx.commit().await?;
@@ -336,7 +336,7 @@ impl InventoryWriteService {
         &self,
         location_id: Uuid,
     ) -> Result<Vec<StagedCountRow>, InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let rows = self.adjustments.staged_counts_at_location(&mut tx, location_id).await?;
         tx.commit().await?;
@@ -392,7 +392,7 @@ impl InventoryWriteService {
         // grain was the warehouse; the door grain is the location — bootstrapped per
         // warehouse on first use, the same resolution the transfer voucher uses).
         let stock_location = {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             let loc = self.pickings.ensure_internal_location(&mut tx, r.warehouse_id).await?;
             tx.commit().await?;
@@ -406,7 +406,7 @@ impl InventoryWriteService {
             // Heal the quant surface if the stock predates the converged model (Bins
             // without quants) — the door reads and writes the quant grain.
             {
-                let mut tx = self.db_pool.begin().await?;
+                let mut tx = self.rpool().begin().await?;
                 relay_ambient_scope(&mut tx).await?;
                 self.pickings.ensure_quant_surface(
                     &mut tx, l.item_id, stock_location, Some(r.warehouse_id),
@@ -416,7 +416,7 @@ impl InventoryWriteService {
             // The pre-move moving average: the value-diff the door produces (the count is
             // valued at the current average — a counted RATE is refused at the door).
             let rate = {
-                let mut tx = self.db_pool.begin().await?;
+                let mut tx = self.rpool().begin().await?;
                 relay_ambient_scope(&mut tx).await?;
                 let bal = self.bins.lock_or_init(&mut tx, l.item_id, r.warehouse_id).await?;
                 tx.commit().await?;
@@ -440,7 +440,7 @@ impl InventoryWriteService {
 
         // ---- voucher record: header + items + net, one transaction -----------------------
         let id = Uuid::new_v4();
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let ins = self.recons.insert_submitted(&mut tx, &NewReconciliationRow {
             id,
@@ -489,7 +489,7 @@ impl InventoryWriteService {
             };
             self.emit_and_reconcile(crate::infrastructure::persistence::GlVoucher::StockReconciliation, id, &env, sink, net.abs()).await?;
         } else {
-            self.recons.mark_not_applicable(&self.db_pool, id).await?;
+            self.recons.mark_not_applicable(&self.rpool(), id).await?;
         }
         self.sink.publish(InventoryEvent::StockReconciled(StockReconciled {
             reconciliation_id: id, company_id: legacy_company_echo(), warehouse_id: r.warehouse_id, net_difference: net,
@@ -510,14 +510,14 @@ impl InventoryWriteService {
     /// `(company, source_type, source_id, posting_type)`); `net == 0` → reconcile to
     /// `not_applicable`. Already-`posted`/`not_applicable` short-circuits via `already_settled`.
     pub async fn repost_reconciliation(&self, id: Uuid, sink: &dyn GlPostSink) -> Result<SubmitOutcome, InventoryError> {
-        let h = self.recons.fetch_repost_header(&self.db_pool, id).await?
+        let h = self.recons.fetch_repost_header(&self.rpool(), id).await?
             .ok_or(InventoryError::NotFound(id))?;
         if let Some(o) = Self::already_settled(&h.gl, id) { return Ok(o); }
 
         if h.net_difference.is_zero() {
             // net==0 carries no value to post; the recovery is the mark_not_applicable that the
             // crash skipped. No event re-publish — the physical movement already committed.
-            self.recons.mark_not_applicable(&self.db_pool, id).await?;
+            self.recons.mark_not_applicable(&self.rpool(), id).await?;
             return Ok(SubmitOutcome {
                 voucher_id: id, posted: false, journal_id: None, post_id: None, gl_amount: Decimal::ZERO,
             });

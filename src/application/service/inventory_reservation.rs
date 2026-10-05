@@ -73,10 +73,17 @@ impl ReservationService {
         Self { pool }
     }
 
+    /// The database this call runs on: the composer's request pool when one
+    /// is bound (a tenant mount, or a relay consumer wrapped by the host),
+    /// else the composed pool (ADR-0029 pool law).
+    fn rpool(&self) -> sqlx::PgPool {
+        crate::request_pool::current().unwrap_or_else(|| self.pool.clone())
+    }
+
     async fn scoped_tx(
         &self,
     ) -> Result<sqlx::Transaction<'_, sqlx::Postgres>, sqlx::Error> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         if let Some(scope) = backbone_orm::org_scope::current_org_scope() {
             backbone_orm::org_scope::bind_org_scope_on(&mut tx, &scope).await?;
         }
@@ -172,7 +179,7 @@ impl ReservationService {
         Vec<crate::infrastructure::persistence::stock_reservation_repository::HeldReservation>,
         ReservationError,
     > {
-        let mut conn = self.pool.acquire().await?;
+        let mut conn = self.rpool().acquire().await?;
         if let Some(scope) = backbone_orm::org_scope::current_org_scope() {
             // A short-lived read connection with the fence bound, the
             // module's uniform read posture.
@@ -199,7 +206,7 @@ impl ReservationService {
         &self,
         warehouse_id: Uuid,
     ) -> Result<Vec<(Uuid, Decimal)>, ReservationError> {
-        let mut conn = self.pool.acquire().await?;
+        let mut conn = self.rpool().acquire().await?;
         if let Some(scope) = backbone_orm::org_scope::current_org_scope() {
             let _ = backbone_orm::org_scope::bind_org_scope_on(&mut conn, &scope).await;
         }

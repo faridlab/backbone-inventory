@@ -72,10 +72,17 @@ impl InventoryReadService {
         }
     }
 
+    /// The database this call runs on: the composer's request pool when one
+    /// is bound (a tenant mount, or a relay consumer wrapped by the host),
+    /// else the composed pool (ADR-0029 pool law).
+    fn rpool(&self) -> PgPool {
+        crate::request_pool::current().unwrap_or_else(|| self.db_pool.clone())
+    }
+
     /// Availability for one item in one warehouse. Returns a zeroed view (available 0) when no bin
     /// exists yet — an un-received item is simply unavailable, not an error.
     pub async fn availability(&self, item_id: Uuid, warehouse_id: Uuid) -> Result<AvailabilityView, sqlx::Error> {
-        let row = self.bins.fetch_availability(&self.db_pool, item_id, warehouse_id).await?;
+        let row = self.bins.fetch_availability(&self.rpool(), item_id, warehouse_id).await?;
         let (actual, reserved) = match row {
             Some(r) => (r.actual_qty, r.reserved_qty),
             None => (Decimal::ZERO, Decimal::ZERO),
@@ -85,7 +92,7 @@ impl InventoryReadService {
 
     /// Availability for one item across every warehouse that holds a bin for it.
     pub async fn availability_across_warehouses(&self, item_id: Uuid) -> Result<Vec<AvailabilityView>, sqlx::Error> {
-        let rows = self.bins.fetch_availability_across_warehouses(&self.db_pool, item_id).await?;
+        let rows = self.bins.fetch_availability_across_warehouses(&self.rpool(), item_id).await?;
         Ok(rows.into_iter().map(|r| {
             let actual = r.actual_qty;
             let reserved = r.reserved_qty;
@@ -95,7 +102,7 @@ impl InventoryReadService {
 
     /// Valuation balance for one item in one warehouse (None if no bin exists).
     pub async fn stock_balance(&self, item_id: Uuid, warehouse_id: Uuid) -> Result<Option<StockBalance>, sqlx::Error> {
-        let row = self.bins.fetch_balance(&self.db_pool, item_id, warehouse_id).await?;
+        let row = self.bins.fetch_balance(&self.rpool(), item_id, warehouse_id).await?;
         Ok(row.map(|r| StockBalance {
             item_id, warehouse_id,
             actual_qty: r.actual_qty, valuation_rate: r.valuation_rate, stock_value: r.stock_value,
@@ -107,7 +114,7 @@ impl InventoryReadService {
     /// [`Self::availability`] above projects the same invariant off the Bin balance). Zeroed view
     /// when no quant exists — an unreceived item is unavailable, not an error.
     pub async fn quant_availability(&self, item_id: Uuid, location_id: Uuid) -> Result<QuantAvailability, sqlx::Error> {
-        let row = self.quants.fetch_on_hand(&self.db_pool, item_id, location_id).await?;
+        let row = self.quants.fetch_on_hand(&self.rpool(), item_id, location_id).await?;
         Ok(QuantAvailability {
             item_id,
             location_id,

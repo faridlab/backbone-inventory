@@ -480,6 +480,13 @@ impl InventoryWriteService {
         }
     }
 
+    /// The database this call runs on: the composer's request pool when one
+    /// is bound (a tenant mount, or a relay consumer wrapped by the host),
+    /// else the composed pool (ADR-0029 pool law).
+    pub(super) fn rpool(&self) -> PgPool {
+        crate::request_pool::current().unwrap_or_else(|| self.db_pool.clone())
+    }
+
     // ---- shared: repost short-circuit + GL emit/reconcile ------------------
 
     /// Short-circuit a repost when the voucher is already settled: `posted` → return the recorded
@@ -504,11 +511,11 @@ impl InventoryWriteService {
         debug_assert!(env.is_balanced());
         match sink.post(env).await {
             Ok(ack) => {
-                self.gl.mark_posted(&self.db_pool, voucher, voucher_id, ack.journal_id, ack.post_id).await?;
+                self.gl.mark_posted(&self.rpool(), voucher, voucher_id, ack.journal_id, ack.post_id).await?;
                 Ok(SubmitOutcome { voucher_id, posted: true, journal_id: Some(ack.journal_id), post_id: Some(ack.post_id), gl_amount })
             }
             Err(rej) => {
-                let _ = self.gl.mark_failed(&self.db_pool, voucher, voucher_id).await;
+                let _ = self.gl.mark_failed(&self.rpool(), voucher, voucher_id).await;
                 Err(InventoryError::GlRejected { code: rej.code, message: rej.message })
             }
         }
@@ -526,7 +533,7 @@ impl InventoryWriteService {
         debug_assert!(env.is_balanced());
         match sink.post(env).await {
             Ok(ack) => {
-                self.gl.mark_reversal_posted(&self.db_pool, voucher, voucher_id, ack.journal_id, ack.post_id).await?;
+                self.gl.mark_reversal_posted(&self.rpool(), voucher, voucher_id, ack.journal_id, ack.post_id).await?;
                 Ok(SubmitOutcome { voucher_id, posted: true, journal_id: Some(ack.journal_id), post_id: Some(ack.post_id), gl_amount })
             }
             Err(rej) => Err(InventoryError::GlRejected { code: rej.code, message: rej.message }),
@@ -559,7 +566,7 @@ impl InventoryWriteService {
     ) -> Result<Option<Uuid>, InventoryError> {
         let origin = m.origin.clone().unwrap_or_default();
         let existing = {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             let rows = self.moves.fetch_moves_by_origin(&mut tx, &origin).await?;
             tx.commit().await?;
@@ -608,7 +615,7 @@ impl InventoryWriteService {
         &self,
         move_id: Uuid,
     ) -> Result<String, InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let mv = self.moves.fetch_move(&mut tx, move_id).await?
             .ok_or(InventoryError::NotFound(move_id))?;
@@ -625,7 +632,7 @@ impl InventoryWriteService {
         warehouse_id: Uuid,
         partner_usage: &str,
     ) -> Result<(Uuid, Uuid), InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let partner = self.pickings.ensure_partner_location(&mut tx, partner_usage).await?;
         let stock = self.pickings.ensure_internal_location(&mut tx, warehouse_id).await?;

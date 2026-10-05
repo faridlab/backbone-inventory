@@ -74,7 +74,7 @@ impl InventoryWriteService {
     /// leaves the voucher `submitted` with some reverse moves landed — the deterministic names
     /// (`{receipt_number}/REV/{seq}`) make a re-cancel RESUME instead of double-reversing.
     pub async fn cancel_purchase_receipt(&self, id: Uuid, sink: &dyn GlPostSink) -> Result<SubmitOutcome, InventoryError> {
-        let h = self.receipts.fetch_cancel_header(&self.db_pool, id).await?
+        let h = self.receipts.fetch_cancel_header(&self.rpool(), id).await?
             .ok_or(InventoryError::NotFound(id))?;
 
         // Recovery / idempotency: the physical reversal already committed. Re-emit ONLY the GL leg —
@@ -88,7 +88,7 @@ impl InventoryWriteService {
         // A reversal references the original post; the original must be posted.
         let orig_post_id = h.gl.accounting_post_id.ok_or(InventoryError::GlNotPosted(id))?;
 
-        let items = self.receipt_items.fetch_items(&self.db_pool, id).await?;
+        let items = self.receipt_items.fetch_items(&self.rpool(), id).await?;
 
         // The door's move endpoints — the mirror image of the submit door's pair: the warehouse's
         // stock location is now the SOURCE, the supplier location the destination the received
@@ -105,7 +105,7 @@ impl InventoryWriteService {
         // still be on the bin before anything mints (the engine's quant draw guard re-checks at
         // the quant grain). A landed line is skipped — its bin draw already committed.
         {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             // Re-bind the caller's ambient org scope before any bin read (ADR-0029) — the scope
             // is task-local and a fresh pool transaction carries none of it; undecorated
             // (module tests, jobs) the transaction stays plain.
@@ -170,7 +170,7 @@ impl InventoryWriteService {
                 // partial assign took; no stock moved, no reservation held, the voucher stays
                 // submitted (retryable once the reservation clears).
                 self.unreserve_move(mid).await?;
-                let on_hand = self.quants.fetch_on_hand(&self.db_pool, it.item_id, stock_loc).await?;
+                let on_hand = self.quants.fetch_on_hand(&self.rpool(), it.item_id, stock_loc).await?;
                 return Err(InventoryError::InsufficientStockToReverse {
                     item_id: it.item_id, warehouse_id: h.warehouse_id,
                     available: on_hand.on_hand_qty - on_hand.reserved_qty,
@@ -180,7 +180,7 @@ impl InventoryWriteService {
             self.action_done(mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
         }
         {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             self.receipts.mark_cancelled(&mut tx, id).await?;
             tx.commit().await?;
@@ -223,7 +223,7 @@ impl InventoryWriteService {
     /// state and mints the compensating SLE row. The voucher's ONE reversal envelope
     /// (`Dr Inventory · Cr COGS`) is unchanged. Always safe — qty only increases.
     pub async fn cancel_delivery_note(&self, id: Uuid, sink: &dyn GlPostSink) -> Result<SubmitOutcome, InventoryError> {
-        let h = self.deliveries.fetch_cancel_header(&self.db_pool, id).await?
+        let h = self.deliveries.fetch_cancel_header(&self.rpool(), id).await?
             .ok_or(InventoryError::NotFound(id))?;
 
         if h.status == "cancelled" {
@@ -234,7 +234,7 @@ impl InventoryWriteService {
         }
         let orig_post_id = h.gl.accounting_post_id.ok_or(InventoryError::GlNotPosted(id))?;
 
-        let items = self.delivery_items.fetch_cancel_items(&self.db_pool, id).await?;
+        let items = self.delivery_items.fetch_cancel_items(&self.rpool(), id).await?;
 
         // The door's move endpoints — the mirror image of the submit door's pair: the customer
         // location is now the SOURCE, the warehouse's stock location the destination
@@ -282,7 +282,7 @@ impl InventoryWriteService {
             self.action_done(mid, BackorderPolicy::Never, &MoveGlDirective::default(), &DoorOwnedGlSink).await?;
         }
         {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             self.deliveries.mark_cancelled(&mut tx, id).await?;
             tx.commit().await?;
@@ -323,7 +323,7 @@ impl InventoryWriteService {
         &self,
         origin: &str,
     ) -> Result<Vec<MoveRow>, InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let rows = self.moves.fetch_moves_by_origin(&mut tx, origin).await?;
         tx.commit().await?;

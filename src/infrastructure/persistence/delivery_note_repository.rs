@@ -13,7 +13,7 @@ use rust_decimal::Decimal;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use backbone_orm::company_scope;
+use backbone_orm::org_scope;
 
 use super::gl_voucher_repository::GlSettlementState;
 
@@ -146,7 +146,7 @@ impl DeliveryNoteRepository {
         pool: &PgPool,
         id: Uuid,
     ) -> Result<Option<DeliverySubmitHeaderRow>, sqlx::Error> {
-        let row = company_scope::fetch_optional_row_scoped(
+        let row = org_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
                 r#"SELECT delivery_number, branch_id, warehouse_id, posting_date, source_so_id,
@@ -172,7 +172,7 @@ impl DeliveryNoteRepository {
         pool: &PgPool,
         id: Uuid,
     ) -> Result<Option<DeliveryRepostHeaderRow>, sqlx::Error> {
-        let row = company_scope::fetch_optional_row_scoped(
+        let row = org_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
                 r#"SELECT branch_id, delivery_number, posting_date, currency, total_cogs,
@@ -232,7 +232,7 @@ impl DeliveryNoteRepository {
         pool: &PgPool,
         id: Uuid,
     ) -> Result<Option<DeliveryCancelHeaderRow>, sqlx::Error> {
-        let row = company_scope::fetch_optional_row_scoped(
+        let row = org_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
                 r#"SELECT branch_id, warehouse_id, posting_date, currency, delivery_number,

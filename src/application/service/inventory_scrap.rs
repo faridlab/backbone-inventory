@@ -75,7 +75,7 @@ impl InventoryWriteService {
         }
         let id = Uuid::new_v4();
         let name = format!("SCRAP/{}", &Uuid::new_v4().simple().to_string()[..8].to_uppercase());
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         // Re-bind the caller's ambient org scope before any read (ADR-0029) — the scope is
         // task-local and a fresh pool transaction carries none of it; undecorated (module
         // tests, jobs) the transaction stays plain.
@@ -124,7 +124,7 @@ impl InventoryWriteService {
 
     /// The probe: read one scrap header, riding the caller's ambient org scope (ADR-0029).
     pub async fn fetch_scrap(&self, scrap_id: Uuid) -> Result<Option<ScrapRow>, InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let row = self.scraps.fetch_scrap(&mut tx, scrap_id).await?;
         tx.commit().await?;
@@ -182,7 +182,7 @@ impl InventoryWriteService {
         // Drive the pipeline, re-reading the state between verbs (the engine owns the
         // state; this method never asserts it).
         let mv = {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             let mv = self.moves.fetch_move(&mut tx, move_id).await?
                 .ok_or(InventoryError::NotFound(move_id))?;
@@ -214,7 +214,7 @@ impl InventoryWriteService {
             });
         }
         let mv = {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             let mv = self.moves.fetch_move(&mut tx, move_id).await?
                 .ok_or(InventoryError::NotFound(move_id))?;
@@ -224,7 +224,7 @@ impl InventoryWriteService {
         self.prepare_move_for_validate(&mv).await?;
         self.action_done(move_id, BackorderPolicy::Never, gl, sink).await?;
         {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             let closed = self.scraps.mark_scrap_done(&mut tx, scrap_id, move_id).await?;
             tx.commit().await?;

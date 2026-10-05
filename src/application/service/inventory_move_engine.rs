@@ -177,7 +177,7 @@ impl InventoryWriteService {
             return Err(InventoryError::SameLocation { move_id: Uuid::new_v4(), location_id: m.location_id });
         }
         let id = Uuid::new_v4();
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         // Re-bind the caller's ambient org scope onto this transaction before the location
         // reads (ADR-0029) — the scope is task-local and a fresh pool transaction carries none
         // of it. Under the composed shape the decorator's fence bounds every read here;
@@ -238,7 +238,7 @@ impl InventoryWriteService {
     /// The move read rides the caller's ambient org scope (ADR-0029): under the composed shape
     /// the decorator's fence bounds it; undecorated (module tests, jobs) it is plain.
     pub async fn action_confirm(&self, move_id: Uuid) -> Result<String, InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let mv = self.moves.fetch_move(&mut tx, move_id).await?
             .ok_or(InventoryError::NotFound(move_id))?;
@@ -292,7 +292,7 @@ impl InventoryWriteService {
     /// The move read rides the caller's ambient org scope (ADR-0029): under the composed shape
     /// the decorator's fence bounds it; undecorated (module tests, jobs) it is plain.
     pub async fn action_assign(&self, move_id: Uuid) -> Result<MoveAssignOutcome, InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let mv = self.moves.fetch_move(&mut tx, move_id).await?
             .ok_or(InventoryError::NotFound(move_id))?;
@@ -411,7 +411,7 @@ impl InventoryWriteService {
     /// The move read rides the caller's ambient org scope (ADR-0029): under the composed shape
     /// the decorator's fence bounds it; undecorated (module tests, jobs) it is plain.
     pub async fn unreserve_move(&self, move_id: Uuid) -> Result<Decimal, InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let mv = self.moves.fetch_move(&mut tx, move_id).await?
             .ok_or(InventoryError::NotFound(move_id))?;
@@ -466,7 +466,7 @@ impl InventoryWriteService {
         gl: &MoveGlDirective,
         sink: &dyn GlPostSink,
     ) -> Result<MoveDoneOutcome, InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let mv = self.moves.fetch_move(&mut tx, move_id).await?
             .ok_or(InventoryError::NotFound(move_id))?;
@@ -665,11 +665,11 @@ impl InventoryWriteService {
             gl_amount = env.lines.iter().map(|l| l.debit).sum();
             match sink.post(&env).await {
                 Ok(_) => {
-                    self.moves.mark_posting_posted(&self.db_pool, move_id).await?;
+                    self.moves.mark_posting_posted(&self.rpool(), move_id).await?;
                     gl_posted = true;
                 }
                 Err(rej) => {
-                    let _ = self.moves.mark_posting_failed(&self.db_pool, move_id).await;
+                    let _ = self.moves.mark_posting_failed(&self.rpool(), move_id).await;
                     return Err(InventoryError::GlRejected { code: rej.code, message: rej.message });
                 }
             }
@@ -709,7 +709,7 @@ impl InventoryWriteService {
     /// The move read rides the caller's ambient org scope (ADR-0029): under the composed shape
     /// the decorator's fence bounds it; undecorated (module tests, jobs) it is plain.
     pub async fn action_cancel(&self, move_id: Uuid) -> Result<Decimal, InventoryError> {
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let mv = self.moves.fetch_move(&mut tx, move_id).await?
             .ok_or(InventoryError::NotFound(move_id))?;
@@ -771,7 +771,7 @@ impl InventoryWriteService {
         sink: &dyn GlPostSink,
     ) -> Result<SubmitOutcome, InventoryError> {
         let mv = {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             let mv = self.moves.fetch_move(&mut tx, move_id).await?
                 .ok_or(InventoryError::NotFound(move_id))?;
@@ -795,7 +795,7 @@ impl InventoryWriteService {
             return Err(InventoryError::WrongMoveState { move_id, action: "repost_gl", current: mv.state });
         }
         let locs = {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             let locs = self.moves.fetch_move_locations(&mut tx, mv.location_id, mv.location_dest_id).await?;
             tx.commit().await?;
@@ -809,16 +809,16 @@ impl InventoryWriteService {
         // the accounts.
         let posture = self.posting_posture().await?;
         if posture.periodic {
-            self.moves.mark_posting_not_applicable(&self.db_pool, move_id).await?;
+            self.moves.mark_posting_not_applicable(&self.rpool(), move_id).await?;
             return Ok(SubmitOutcome {
                 voucher_id: move_id, posted: false, journal_id: None, post_id: None,
                 gl_amount: Decimal::ZERO,
             });
         }
-        let (out_value, in_value) = self.sles.move_leg_values(&self.db_pool, move_id).await?;
+        let (out_value, in_value) = self.sles.move_leg_values(&self.rpool(), move_id).await?;
         let envelope = self.move_gl_envelope(&mv, &src, &dst, gl, out_value, in_value, &posture);
         let Some(env) = envelope else {
-            self.moves.mark_posting_not_applicable(&self.db_pool, move_id).await?;
+            self.moves.mark_posting_not_applicable(&self.rpool(), move_id).await?;
             return Ok(SubmitOutcome {
                 voucher_id: move_id, posted: false, journal_id: None, post_id: None,
                 gl_amount: Decimal::ZERO,
@@ -828,7 +828,7 @@ impl InventoryWriteService {
         let gl_amount = env.lines.iter().map(|l| l.debit).sum();
         match sink.post(&env).await {
             Ok(ack) => {
-                self.moves.mark_posting_posted(&self.db_pool, move_id).await?;
+                self.moves.mark_posting_posted(&self.rpool(), move_id).await?;
                 Ok(SubmitOutcome {
                     voucher_id: move_id, posted: true,
                     journal_id: Some(ack.journal_id), post_id: Some(ack.post_id),
@@ -836,7 +836,7 @@ impl InventoryWriteService {
                 })
             }
             Err(rej) => {
-                let _ = self.moves.mark_posting_failed(&self.db_pool, move_id).await;
+                let _ = self.moves.mark_posting_failed(&self.rpool(), move_id).await;
                 Err(InventoryError::GlRejected { code: rej.code, message: rej.message })
             }
         }

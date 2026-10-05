@@ -46,7 +46,7 @@ impl InventoryWriteService {
             .map(|l| money(l.quantity * l.rate))
             .sum();
         let id = Uuid::new_v4();
-        let mut tx = self.db_pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         relay_ambient_scope(&mut tx).await?;
         let ins = self.receipts.insert_draft(&mut tx, &NewReceiptRow {
             id,
@@ -116,7 +116,7 @@ impl InventoryWriteService {
         sink: &dyn GlPostSink,
     ) -> Result<SubmitOutcome, InventoryError> {
         // RLS scope (ADR-0008), ID-only: fenced by the request/inherited scope.
-        let hdr = self.receipts.fetch_submit_header(&self.db_pool, id).await?
+        let hdr = self.receipts.fetch_submit_header(&self.rpool(), id).await?
             .ok_or(InventoryError::NotFound(id))?;
         if hdr.status != "draft" {
             return Err(InventoryError::NotDraft(id.to_string()));
@@ -129,7 +129,7 @@ impl InventoryWriteService {
         let grir_acct = hdr.grir_account_id;
         let source_po = hdr.source_po_id;
 
-        let items = self.receipt_items.fetch_items(&self.db_pool, id).await?;
+        let items = self.receipt_items.fetch_items(&self.rpool(), id).await?;
 
         // The door's move endpoints: the supplier location (virtual source) and the
         // warehouse's stock location (internal destination) — resolve-or-bootstrap each.
@@ -139,7 +139,7 @@ impl InventoryWriteService {
         let stock_loc = match destination_location_id {
             None => default_stock_loc,
             Some(requested) => backbone_orm::company_scope::fetch_optional_scalar_scoped(
-                &self.db_pool,
+                &self.rpool(),
                 sqlx::query_scalar::<_, Uuid>(
                     "SELECT id FROM inventory.locations WHERE id = $1 AND active",
                 )
@@ -202,7 +202,7 @@ impl InventoryWriteService {
             .map(|l| money(l.quantity * l.rate))
             .sum();
         {
-            let mut tx = self.db_pool.begin().await?;
+            let mut tx = self.rpool().begin().await?;
             relay_ambient_scope(&mut tx).await?;
             self.receipts.mark_submitted(&mut tx, id).await?;
             tx.commit().await?;
@@ -219,7 +219,7 @@ impl InventoryWriteService {
         if posture.periodic
             || !Self::should_create_account_move(total_debit, total_qty, true)
         {
-            self.gl.mark_not_applicable(&self.db_pool, GlVoucher::PurchaseReceipt, id).await?;
+            self.gl.mark_not_applicable(&self.rpool(), GlVoucher::PurchaseReceipt, id).await?;
             self.sink.publish(InventoryEvent::StockReceived(StockReceived {
                 receipt_id: id, company_id: legacy_company_echo(), warehouse_id: warehouse, source_po_id: source_po,
                 total_value: total_debit,
@@ -264,7 +264,7 @@ impl InventoryWriteService {
     /// header (never re-touches the SLE/Bin — the physical movement already happened).
     pub async fn repost_purchase_receipt(&self, id: Uuid, sink: &dyn GlPostSink) -> Result<SubmitOutcome, InventoryError> {
         // RLS scope (ADR-0008), ID-only: fenced by the request/inherited scope.
-        let h = self.receipts.fetch_repost_header(&self.db_pool, id).await?
+        let h = self.receipts.fetch_repost_header(&self.rpool(), id).await?
             .ok_or(InventoryError::NotFound(id))?;
         if let Some(o) = Self::already_settled(&h.gl, id) { return Ok(o); }
         // The SAME posture the submit ran under (absent row = defaults): a `periodic`
@@ -273,7 +273,7 @@ impl InventoryWriteService {
         // valuation-account override the submit used, so the rebuilt envelope is identical.
         let posture = self.posting_posture().await?;
         if posture.periodic {
-            self.gl.mark_not_applicable(&self.db_pool, GlVoucher::PurchaseReceipt, id).await?;
+            self.gl.mark_not_applicable(&self.rpool(), GlVoucher::PurchaseReceipt, id).await?;
             return Ok(SubmitOutcome {
                 voucher_id: id, posted: false, journal_id: None, post_id: None,
                 gl_amount: Decimal::ZERO,

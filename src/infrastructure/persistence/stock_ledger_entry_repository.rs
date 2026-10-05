@@ -123,7 +123,7 @@ impl StockLedgerEntryRepository {
         pool: &PgPool,
         move_name: &str,
     ) -> Result<Decimal, sqlx::Error> {
-        let row = backbone_orm::company_scope::fetch_one_row_scoped(
+        let row = backbone_orm::org_scope::fetch_one_row_scoped(
             pool,
             sqlx::query(
                 r#"SELECT COALESCE(-SUM(stock_value_difference), 0) AS carried
@@ -149,7 +149,7 @@ impl StockLedgerEntryRepository {
         pool: &PgPool,
         move_id: Uuid,
     ) -> Result<(Decimal, Decimal), sqlx::Error> {
-        let row = backbone_orm::company_scope::fetch_one_row_scoped(
+        let row = backbone_orm::org_scope::fetch_one_row_scoped(
             pool,
             sqlx::query(
                 r#"SELECT
@@ -254,7 +254,7 @@ impl StockLedgerEntryRepository {
         move_ids: &[Uuid],
     ) -> Result<std::collections::HashMap<Uuid, Decimal>, sqlx::Error> {
         if move_ids.is_empty() { return Ok(std::collections::HashMap::new()); }
-        let rows = backbone_orm::company_scope::fetch_all_rows_scoped(
+        let rows = backbone_orm::org_scope::fetch_all_rows_scoped(
             pool,
             sqlx::query(
                 r#"WITH ins AS (

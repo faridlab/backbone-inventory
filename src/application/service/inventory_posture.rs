@@ -75,7 +75,7 @@ impl InventoryWriteService {
     pub(super) async fn posting_posture(
         &self,
     ) -> Result<Posture, InventoryError> {
-        let row = self.valuation_overlay.fetch_posture(&self.db_pool).await?;
+        let row = self.valuation_overlay.fetch_posture(&self.rpool()).await?;
         Ok(match row {
             None => Posture::default(),
             Some(r) => Posture {
@@ -141,7 +141,7 @@ impl InventoryWriteService {
     ) -> Result<Uuid, InventoryError> {
         Ok(self
             .valuation_overlay
-            .fetch_location_valuation_override(&self.db_pool, location_id)
+            .fetch_location_valuation_override(&self.rpool(), location_id)
             .await?
             .unwrap_or(header_account_id))
     }

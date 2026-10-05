@@ -23,7 +23,7 @@ impl InventoryWriteService {
     pub async fn create_warehouse(&self, w: NewWarehouse) -> Result<Uuid, InventoryError> {
         let id = Uuid::new_v4();
         let wt = w.warehouse_type.unwrap_or_else(|| "stock".into());
-        let r = self.warehouses.insert_warehouse(&self.db_pool, &NewWarehouseRow {
+        let r = self.warehouses.insert_warehouse(&self.rpool(), &NewWarehouseRow {
             id,
             code: &w.code,
             name: &w.name,
@@ -41,7 +41,7 @@ impl InventoryWriteService {
     pub async fn create_stock_item(&self, s: NewStockItem) -> Result<Uuid, InventoryError> {
         let id = Uuid::new_v4();
         let vm = s.valuation_method.unwrap_or_else(|| "moving_average".into());
-        let r = self.stock_items.insert_stock_item(&self.db_pool, &NewStockItemRow {
+        let r = self.stock_items.insert_stock_item(&self.rpool(), &NewStockItemRow {
             id,
             item_id: s.item_id,
             stock_uom: &s.stock_uom,
