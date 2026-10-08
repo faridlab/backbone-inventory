@@ -36,7 +36,7 @@ impl Seeder for SeedStorageCategorySeeder {
     }
 
     fn order(&self) -> i32 {
-        28
+        6
     }
 
     async fn should_run(&self, pool: &PgPool) -> Result<bool> {

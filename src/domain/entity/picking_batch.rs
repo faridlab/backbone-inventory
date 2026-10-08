@@ -201,6 +201,9 @@ impl super::Entity for PickingBatch {
 }
 
 impl backbone_core::PersistentEntity for PickingBatch {
+    fn write_protected_fields() -> &'static [&'static str] {
+        &["state"]
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

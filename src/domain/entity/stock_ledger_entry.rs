@@ -227,6 +227,9 @@ impl super::Entity for StockLedgerEntry {
 }
 
 impl backbone_core::PersistentEntity for StockLedgerEntry {
+    fn write_protected_fields() -> &'static [&'static str] {
+        &["qty_after_txn", "valuation_rate", "stock_value", "stock_value_difference", "status"]
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

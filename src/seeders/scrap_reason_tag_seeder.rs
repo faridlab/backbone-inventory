@@ -36,7 +36,7 @@ impl Seeder for SeedScrapReasonTagSeeder {
     }
 
     fn order(&self) -> i32 {
-        20
+        4
     }
 
     async fn should_run(&self, pool: &PgPool) -> Result<bool> {

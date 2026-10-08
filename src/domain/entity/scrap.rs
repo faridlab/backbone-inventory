@@ -261,6 +261,9 @@ impl super::Entity for Scrap {
 }
 
 impl backbone_core::PersistentEntity for Scrap {
+    fn write_protected_fields() -> &'static [&'static str] {
+        &["state"]
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

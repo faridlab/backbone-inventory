@@ -179,6 +179,9 @@ impl super::Entity for Bin {
 }
 
 impl backbone_core::PersistentEntity for Bin {
+    fn write_protected_fields() -> &'static [&'static str] {
+        &["actual_qty", "reserved_qty", "valuation_rate", "stock_value"]
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

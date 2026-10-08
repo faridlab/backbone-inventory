@@ -283,6 +283,9 @@ impl super::Entity for DeliveryNote {
 }
 
 impl backbone_core::PersistentEntity for DeliveryNote {
+    fn write_protected_fields() -> &'static [&'static str] {
+        &["status"]
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

@@ -230,6 +230,9 @@ impl super::Entity for StockEntry {
 }
 
 impl backbone_core::PersistentEntity for StockEntry {
+    fn write_protected_fields() -> &'static [&'static str] {
+        &["status"]
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }
