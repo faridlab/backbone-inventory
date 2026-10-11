@@ -5,7 +5,7 @@
 pub mod persistence;
 
 // <<< CUSTOM
-// The module's scheduled jobs. `jobs/` is declared `user_owned` in metaphor.codegen.yaml
-// (hand-written; the scheduler declaration of record is schema/hooks/index.hook.yaml).
-pub mod jobs;
 // END CUSTOM
+
+// This directory's extension (hand-written; ADR-0031).
+include!("mod.ext.rs");
