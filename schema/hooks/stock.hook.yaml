@@ -22,6 +22,7 @@ version: 2
 state_machines:
   - entity: StockMove
     field: state
+    verbs: hand
     initial: draft
     states: [draft, waiting, confirmed, partially_available, assigned, done, cancel]
     transitions:

@@ -77,6 +77,10 @@ pub use lot_service::LotService;
 pub use package_service::PackageService;
 pub use warehouse_service::WarehouseService;
 pub use stock_item_service::StockItemService;
+pub use delivery_note_service::DeliveryNoteRowRules;
+pub use stock_move_service::StockMoveRowRules;
+pub use purchase_receipt_service::PurchaseReceiptRowRules;
+pub use stock_reconciliation_service::StockReconciliationRowRules;
 
 // This directory's extension (hand-written; ADR-0031).
 include!("mod.ext.rs");

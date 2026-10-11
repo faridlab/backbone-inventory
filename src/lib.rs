@@ -353,7 +353,7 @@ impl InventoryModuleBuilder {
 
         // DeliveryNote service
         let delivery_note_repository = Arc::new(DeliveryNoteRepository::new(db_pool.clone()));
-        let delivery_note_service = Arc::new(DeliveryNoteService::with_repository(delivery_note_repository.clone()));
+        let delivery_note_service = Arc::new(DeliveryNoteService::with_repository(delivery_note_repository.clone()).with_guard(Arc::new(crate::application::service::DeliveryNoteRowRules)));
 
         // DeliveryNoteItem service
         let delivery_note_item_repository = Arc::new(DeliveryNoteItemRepository::new(db_pool.clone()));
@@ -381,7 +381,7 @@ impl InventoryModuleBuilder {
 
         // StockMove service
         let stock_move_repository = Arc::new(StockMoveRepository::new(db_pool.clone()));
-        let stock_move_service = Arc::new(StockMoveService::with_repository(stock_move_repository.clone()));
+        let stock_move_service = Arc::new(StockMoveService::with_repository(stock_move_repository.clone()).with_guard(Arc::new(crate::application::service::StockMoveRowRules)));
 
         // StockMoveLine service
         let stock_move_line_repository = Arc::new(StockMoveLineRepository::new(db_pool.clone()));
@@ -409,7 +409,7 @@ impl InventoryModuleBuilder {
 
         // PurchaseReceipt service
         let purchase_receipt_repository = Arc::new(PurchaseReceiptRepository::new(db_pool.clone()));
-        let purchase_receipt_service = Arc::new(PurchaseReceiptService::with_repository(purchase_receipt_repository.clone()));
+        let purchase_receipt_service = Arc::new(PurchaseReceiptService::with_repository(purchase_receipt_repository.clone()).with_guard(Arc::new(crate::application::service::PurchaseReceiptRowRules)));
 
         // PurchaseReceiptItem service
         let purchase_receipt_item_repository = Arc::new(PurchaseReceiptItemRepository::new(db_pool.clone()));
@@ -445,7 +445,7 @@ impl InventoryModuleBuilder {
 
         // StockReconciliation service
         let stock_reconciliation_repository = Arc::new(StockReconciliationRepository::new(db_pool.clone()));
-        let stock_reconciliation_service = Arc::new(StockReconciliationService::with_repository(stock_reconciliation_repository.clone()));
+        let stock_reconciliation_service = Arc::new(StockReconciliationService::with_repository(stock_reconciliation_repository.clone()).with_guard(Arc::new(crate::application::service::StockReconciliationRowRules)));
 
         // StockReconciliationItem service
         let stock_reconciliation_item_repository = Arc::new(StockReconciliationItemRepository::new(db_pool.clone()));

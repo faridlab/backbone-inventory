@@ -13,18 +13,21 @@ version: 2
 state_machines:
   - entity: PurchaseReceipt
     field: status
+    verbs: hand
     initial: draft
     states: [draft, submitted, cancelled]
     transitions:
       - { from: draft, to: submitted, on: submit }   # SLE in + Bin + asset post
   - entity: DeliveryNote
     field: status
+    verbs: hand
     initial: draft
     states: [draft, submitted, cancelled]
     transitions:
       - { from: draft, to: submitted, on: submit }   # SLE out + Bin + COGS post
   - entity: StockReconciliation
     field: status
+    verbs: hand
     initial: draft
     states: [draft, submitted, cancelled]
     transitions:
