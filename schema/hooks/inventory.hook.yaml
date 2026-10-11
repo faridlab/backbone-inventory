@@ -37,6 +37,7 @@ rules:
   - id: R1
     name: non_empty_document
     when: create
+    enforced_by: "src/application/service/inventory_receipt.rs::create_purchase_receipt, src/application/service/inventory_delivery.rs::create_delivery_note, src/application/service/inventory_transfer.rs::create_picking, src/application/service/inventory_transfer.rs::submit_transfer, src/application/service/inventory_reconciliation.rs::submit_reconciliation"
     assert: "count(lines) >= 1"
     error_code: empty_document
   - id: R2
@@ -52,11 +53,13 @@ rules:
   - id: R4
     name: distinct_transfer_warehouses
     when: submit
+    enforced_by: "src/application/service/inventory_transfer.rs::submit_transfer"
     assert: "from_warehouse_id != to_warehouse_id"
     error_code: same_warehouse
   - id: R5
     name: submit_once
     when: submit
+    enforced_by: "src/application/service/inventory_delivery.rs::submit_delivery_note, src/application/service/inventory_receipt.rs::submit_purchase_receipt_into"
     assert: "document.status == 'draft'"
     error_code: not_draft
   - id: R6

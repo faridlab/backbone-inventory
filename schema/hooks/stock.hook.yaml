@@ -72,6 +72,7 @@ rules:
   - id: R13
     name: view_location_no_stock
     when: write
+    enforced_by: "src/application/service/inventory_move_engine.rs::create_move"
     assert: "quant.location.usage != 'view'"
     error_code: quant_on_view_location
     enforcement: service
