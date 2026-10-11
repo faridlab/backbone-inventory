@@ -17,9 +17,5 @@ pub fn operation_type_validator() -> OperationTypeValidator {
     EntityValidator::new()
         .rule(RequiredString::new("name", |e: &OperationType| &e.name))
         .rule(RequiredString::new("sequence_code", |e: &OperationType| &e.sequence_code))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

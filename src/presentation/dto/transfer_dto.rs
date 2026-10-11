@@ -414,7 +414,7 @@ impl backbone_core::ApplyUpdateDto<UpdateTransferDto> for Transfer {
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to Transfer here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

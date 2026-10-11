@@ -32,5 +32,3 @@ pub type StorageCategoryCapacityService = GenericCrudService<
     StorageCategoryCapacityRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

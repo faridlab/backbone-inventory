@@ -72,5 +72,3 @@ pub use package_domain_policy::PackageDomainPolicy;
 pub use warehouse_domain_policy::WarehouseDomainPolicy;
 pub use stock_item_domain_policy::StockItemDomainPolicy;
 
-// <<< CUSTOM
-// END CUSTOM

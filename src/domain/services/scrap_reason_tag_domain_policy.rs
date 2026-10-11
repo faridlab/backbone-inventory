@@ -18,5 +18,3 @@ use crate::domain::entity::ScrapReasonTag;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type ScrapReasonTagDomainPolicy = PermitAllPolicy<ScrapReasonTag>;
 
-// <<< CUSTOM
-// END CUSTOM

@@ -17,9 +17,5 @@ pub fn picking_batch_validator() -> PickingBatchValidator {
     EntityValidator::new()
         .rule(RequiredString::new("name", |e: &PickingBatch| &e.name))
         .rule(OptionalNotBlank::new("note", |e: &PickingBatch| e.note.as_deref()))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

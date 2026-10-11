@@ -18,5 +18,3 @@ use crate::domain::entity::Location;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type LocationDomainPolicy = PermitAllPolicy<Location>;
 
-// <<< CUSTOM
-// END CUSTOM

@@ -32,5 +32,3 @@ pub type RouteRuleService = GenericCrudService<
     RouteRuleRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

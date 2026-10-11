@@ -24,8 +24,6 @@ pub mod application;
 pub mod presentation;
 pub mod seeders;
 pub mod exports;
-// <<< CUSTOM MODULES
-// END CUSTOM
 
 // Re-exports for convenience - Domain entities
 pub use domain::entity::*;
@@ -123,8 +121,6 @@ pub struct InventoryModule {
     pub(crate) package_service: Arc<PackageService>,
     pub(crate) warehouse_service: Arc<WarehouseService>,
     pub(crate) stock_item_service: Arc<StockItemService>,
-    // <<< CUSTOM FIELDS
-    // END CUSTOM
 }
 
 impl InventoryModule {
@@ -324,15 +320,11 @@ impl InventoryModule {
             .merge(create_stock_item_read_routes(self.stock_item_service.clone()))
     }
 
-    // <<< CUSTOM METHODS
-    // END CUSTOM
 }
 
 /// Builder for InventoryModule
 pub struct InventoryModuleBuilder {
     db_pool: Option<PgPool>,
-    // <<< CUSTOM BUILDER FIELDS
-    // END CUSTOM
 }
 
 impl InventoryModuleBuilder {
@@ -340,8 +332,6 @@ impl InventoryModuleBuilder {
     pub fn new() -> Self {
         Self {
             db_pool: None,
-            // <<< CUSTOM BUILDER DEFAULTS
-            // END CUSTOM
         }
     }
 
@@ -351,8 +341,6 @@ impl InventoryModuleBuilder {
         self
     }
 
-    // <<< CUSTOM - custom builder methods
-    // END CUSTOM
 
     /// Build the module with configured dependencies
     pub fn build(self) -> anyhow::Result<InventoryModule> {
@@ -495,8 +483,6 @@ impl InventoryModuleBuilder {
         let stock_item_repository = Arc::new(StockItemRepository::new(db_pool.clone()));
         let stock_item_service = Arc::new(StockItemService::with_repository(stock_item_repository.clone()));
 
-        // <<< CUSTOM
-        // END CUSTOM
 
         Ok(InventoryModule {
             picking_batch_service,
@@ -533,8 +519,6 @@ impl InventoryModuleBuilder {
             package_service,
             warehouse_service,
             stock_item_service,
-            // <<< CUSTOM
-            // END CUSTOM
         })
     }
 }

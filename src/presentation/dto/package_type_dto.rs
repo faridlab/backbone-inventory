@@ -321,7 +321,7 @@ impl backbone_core::ApplyUpdateDto<UpdatePackageTypeDto> for PackageType {
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to PackageType here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

@@ -235,7 +235,7 @@ impl backbone_core::ApplyUpdateDto<UpdateScrapReasonTagDto> for ScrapReasonTag {
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to ScrapReasonTag here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

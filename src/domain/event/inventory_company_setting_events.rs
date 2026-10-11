@@ -11,8 +11,6 @@ use crate::domain::entity::InventoryCompanySetting;
 /// enum containing a `Crud(CrudEvent<InventoryCompanySetting>)` variant.
 pub type InventoryCompanySettingEvent = CrudEvent<InventoryCompanySetting>;
 
-// <<< CUSTOM
-// END CUSTOM
 
 use backbone_messaging::{CrudEventPublisher, NoOpCrudEventPublisher};
 use std::sync::Arc;

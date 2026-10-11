@@ -15,10 +15,6 @@ pub type StockReconciliationItemValidator = EntityValidator<StockReconciliationI
 /// Build a validator for StockReconciliationItem with all schema-defined field rules.
 pub fn stock_reconciliation_item_validator() -> StockReconciliationItemValidator {
     EntityValidator::new()
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
         // No schema-derived rules — add custom rules above.
 }
 
-// <<< CUSTOM
-// END CUSTOM

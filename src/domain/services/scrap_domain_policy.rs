@@ -18,5 +18,3 @@ use crate::domain::entity::Scrap;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type ScrapDomainPolicy = PermitAllPolicy<Scrap>;
 
-// <<< CUSTOM
-// END CUSTOM

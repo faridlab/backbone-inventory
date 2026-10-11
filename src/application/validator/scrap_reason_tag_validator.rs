@@ -16,9 +16,5 @@ pub type ScrapReasonTagValidator = EntityValidator<ScrapReasonTag>;
 pub fn scrap_reason_tag_validator() -> ScrapReasonTagValidator {
     EntityValidator::new()
         .rule(RequiredString::new("name", |e: &ScrapReasonTag| &e.name))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

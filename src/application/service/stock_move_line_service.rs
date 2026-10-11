@@ -32,5 +32,3 @@ pub type StockMoveLineService = GenericCrudService<
     StockMoveLineRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

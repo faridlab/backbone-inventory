@@ -32,5 +32,3 @@ pub type PackageTypeService = GenericCrudService<
     PackageTypeRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

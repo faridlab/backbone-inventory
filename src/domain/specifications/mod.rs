@@ -41,5 +41,3 @@ pub mod package_specification;
 pub mod warehouse_specification;
 pub mod stock_item_specification;
 
-// <<< CUSTOM
-// END CUSTOM

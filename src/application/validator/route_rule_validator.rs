@@ -16,9 +16,5 @@ pub type RouteRuleValidator = EntityValidator<RouteRule>;
 pub fn route_rule_validator() -> RouteRuleValidator {
     EntityValidator::new()
         .rule(RequiredString::new("name", |e: &RouteRule| &e.name))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

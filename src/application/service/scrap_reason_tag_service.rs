@@ -32,5 +32,3 @@ pub type ScrapReasonTagService = GenericCrudService<
     ScrapReasonTagRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

@@ -187,3 +187,4 @@ pub fn create_protected_transfer_routes<A: AuthMiddleware + Send + Sync + 'stati
             }
         }))
 }
+

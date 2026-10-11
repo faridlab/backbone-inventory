@@ -15,10 +15,6 @@ pub type StockEntryItemValidator = EntityValidator<StockEntryItem>;
 /// Build a validator for StockEntryItem with all schema-defined field rules.
 pub fn stock_entry_item_validator() -> StockEntryItemValidator {
     EntityValidator::new()
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
         // No schema-derived rules — add custom rules above.
 }
 
-// <<< CUSTOM
-// END CUSTOM

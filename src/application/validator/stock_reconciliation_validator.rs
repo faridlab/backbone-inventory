@@ -16,9 +16,5 @@ pub type StockReconciliationValidator = EntityValidator<StockReconciliation>;
 pub fn stock_reconciliation_validator() -> StockReconciliationValidator {
     EntityValidator::new()
         .rule(RequiredString::new("recon_number", |e: &StockReconciliation| &e.recon_number))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

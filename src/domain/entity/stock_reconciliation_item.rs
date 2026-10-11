@@ -162,8 +162,6 @@ impl StockReconciliationItem {
         }
     }
 
-    // <<< CUSTOM METHODS START >>>
-    // <<< CUSTOM METHODS END >>>
 }
 
 impl super::Entity for StockReconciliationItem {

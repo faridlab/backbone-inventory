@@ -17,9 +17,5 @@ pub fn scrap_validator() -> ScrapValidator {
     EntityValidator::new()
         .rule(RequiredString::new("name", |e: &Scrap| &e.name))
         .rule(OptionalNotBlank::new("origin", |e: &Scrap| e.origin.as_deref()))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

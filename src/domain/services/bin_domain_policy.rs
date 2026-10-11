@@ -18,5 +18,3 @@ use crate::domain::entity::Bin;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type BinDomainPolicy = PermitAllPolicy<Bin>;
 
-// <<< CUSTOM
-// END CUSTOM

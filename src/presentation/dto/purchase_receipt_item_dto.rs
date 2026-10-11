@@ -281,7 +281,7 @@ impl backbone_core::ApplyUpdateDto<UpdatePurchaseReceiptItemDto> for PurchaseRec
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to PurchaseReceiptItem here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

@@ -32,5 +32,3 @@ pub type PurchaseReceiptService = GenericCrudService<
     PurchaseReceiptRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

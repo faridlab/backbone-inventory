@@ -290,7 +290,7 @@ impl backbone_core::ApplyUpdateDto<UpdateLotDto> for Lot {
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to Lot here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

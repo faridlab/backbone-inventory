@@ -187,3 +187,4 @@ pub fn create_protected_stock_entry_routes<A: AuthMiddleware + Send + Sync + 'st
             }
         }))
 }
+

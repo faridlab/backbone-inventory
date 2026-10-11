@@ -32,5 +32,3 @@ pub type PickingBatchService = GenericCrudService<
     PickingBatchRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

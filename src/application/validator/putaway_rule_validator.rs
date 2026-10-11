@@ -14,10 +14,6 @@ pub type PutawayRuleValidator = EntityValidator<PutawayRule>;
 /// Build a validator for PutawayRule with all schema-defined field rules.
 pub fn putaway_rule_validator() -> PutawayRuleValidator {
     EntityValidator::new()
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
         // No schema-derived rules — add custom rules above.
 }
 
-// <<< CUSTOM
-// END CUSTOM

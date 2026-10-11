@@ -18,5 +18,3 @@ use crate::domain::entity::OperationType;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type OperationTypeDomainPolicy = PermitAllPolicy<OperationType>;
 
-// <<< CUSTOM
-// END CUSTOM

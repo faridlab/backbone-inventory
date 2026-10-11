@@ -304,7 +304,7 @@ impl backbone_core::ApplyUpdateDto<UpdatePickingBatchDto> for PickingBatch {
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to PickingBatch here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

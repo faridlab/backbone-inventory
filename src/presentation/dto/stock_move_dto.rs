@@ -518,7 +518,7 @@ impl backbone_core::ApplyUpdateDto<UpdateStockMoveDto> for StockMove {
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to StockMove here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

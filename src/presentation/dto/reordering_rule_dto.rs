@@ -403,7 +403,7 @@ impl backbone_core::ApplyUpdateDto<UpdateReorderingRuleDto> for ReorderingRule {
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to ReorderingRule here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

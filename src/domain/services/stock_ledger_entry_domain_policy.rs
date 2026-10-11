@@ -18,5 +18,3 @@ use crate::domain::entity::StockLedgerEntry;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type StockLedgerEntryDomainPolicy = PermitAllPolicy<StockLedgerEntry>;
 
-// <<< CUSTOM
-// END CUSTOM

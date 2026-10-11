@@ -187,3 +187,4 @@ pub fn create_protected_delivery_note_item_routes<A: AuthMiddleware + Send + Syn
             }
         }))
 }
+

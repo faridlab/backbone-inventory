@@ -11,8 +11,6 @@ use crate::domain::entity::ReorderingRule;
 /// enum containing a `Crud(CrudEvent<ReorderingRule>)` variant.
 pub type ReorderingRuleEvent = CrudEvent<ReorderingRule>;
 
-// <<< CUSTOM
-// END CUSTOM
 
 use backbone_messaging::{CrudEventPublisher, NoOpCrudEventPublisher};
 use std::sync::Arc;

@@ -11,8 +11,6 @@ use crate::domain::entity::Transfer;
 /// enum containing a `Crud(CrudEvent<Transfer>)` variant.
 pub type TransferEvent = CrudEvent<Transfer>;
 
-// <<< CUSTOM
-// END CUSTOM
 
 use backbone_messaging::{CrudEventPublisher, NoOpCrudEventPublisher};
 use std::sync::Arc;

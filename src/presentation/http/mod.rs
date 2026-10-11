@@ -40,8 +40,6 @@ pub mod package_handler;
 pub mod warehouse_handler;
 pub mod stock_item_handler;
 
-// <<< CUSTOM
-// END CUSTOM
 
 // Re-exports
 pub use picking_batch_handler::{create_picking_batch_routes, create_picking_batch_read_routes, create_picking_batch_write_routes};
@@ -78,8 +76,6 @@ pub use lot_handler::{create_lot_routes, create_lot_read_routes, create_lot_writ
 pub use package_handler::{create_package_routes, create_package_read_routes, create_package_write_routes};
 pub use warehouse_handler::{create_warehouse_routes, create_warehouse_read_routes, create_warehouse_write_routes};
 pub use stock_item_handler::{create_stock_item_routes, create_stock_item_read_routes, create_stock_item_write_routes};
-// <<< CUSTOM
-// END CUSTOM
 
 // This directory's extension (hand-written; ADR-0031).
 include!("mod.ext.rs");

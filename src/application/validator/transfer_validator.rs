@@ -18,9 +18,5 @@ pub fn transfer_validator() -> TransferValidator {
         .rule(RequiredString::new("name", |e: &Transfer| &e.name))
         .rule(OptionalNotBlank::new("origin", |e: &Transfer| e.origin.as_deref()))
         .rule(OptionalNotBlank::new("note", |e: &Transfer| e.note.as_deref()))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

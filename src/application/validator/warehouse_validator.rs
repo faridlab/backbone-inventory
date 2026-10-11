@@ -17,9 +17,5 @@ pub fn warehouse_validator() -> WarehouseValidator {
     EntityValidator::new()
         .rule(RequiredString::new("code", |e: &Warehouse| &e.code))
         .rule(RequiredString::new("name", |e: &Warehouse| &e.name))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

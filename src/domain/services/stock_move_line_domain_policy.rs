@@ -18,5 +18,3 @@ use crate::domain::entity::StockMoveLine;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type StockMoveLineDomainPolicy = PermitAllPolicy<StockMoveLine>;
 
-// <<< CUSTOM
-// END CUSTOM

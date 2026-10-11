@@ -18,5 +18,3 @@ use crate::domain::entity::Quant;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type QuantDomainPolicy = PermitAllPolicy<Quant>;
 
-// <<< CUSTOM
-// END CUSTOM

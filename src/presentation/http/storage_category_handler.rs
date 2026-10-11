@@ -187,3 +187,4 @@ pub fn create_protected_storage_category_routes<A: AuthMiddleware + Send + Sync 
             }
         }))
 }
+

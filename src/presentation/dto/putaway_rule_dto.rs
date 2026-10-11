@@ -318,7 +318,7 @@ impl backbone_core::ApplyUpdateDto<UpdatePutawayRuleDto> for PutawayRule {
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to PutawayRule here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

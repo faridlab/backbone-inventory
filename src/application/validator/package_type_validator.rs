@@ -17,9 +17,5 @@ pub fn package_type_validator() -> PackageTypeValidator {
     EntityValidator::new()
         .rule(RequiredString::new("name", |e: &PackageType| &e.name))
         .rule(OptionalNotBlank::new("barcode", |e: &PackageType| e.barcode.as_deref()))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

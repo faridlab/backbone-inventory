@@ -32,5 +32,3 @@ pub type PutawayRuleService = GenericCrudService<
     PutawayRuleRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

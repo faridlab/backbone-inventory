@@ -32,5 +32,3 @@ pub type ScrapService = GenericCrudService<
     ScrapRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

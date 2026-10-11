@@ -32,5 +32,3 @@ pub type LandedCostService = GenericCrudService<
     LandedCostRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

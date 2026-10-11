@@ -16,9 +16,5 @@ pub type LandedCostLineValidator = EntityValidator<LandedCostLine>;
 pub fn landed_cost_line_validator() -> LandedCostLineValidator {
     EntityValidator::new()
         .rule(RequiredString::new("name", |e: &LandedCostLine| &e.name))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

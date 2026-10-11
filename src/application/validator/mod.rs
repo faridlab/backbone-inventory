@@ -75,5 +75,3 @@ pub use package_validator::{PackageValidator, package_validator};
 pub use warehouse_validator::{WarehouseValidator, warehouse_validator};
 pub use stock_item_validator::{StockItemValidator, stock_item_validator};
 
-// <<< CUSTOM
-// END CUSTOM

@@ -276,7 +276,7 @@ impl backbone_core::ApplyUpdateDto<UpdateLandedCostLineDto> for LandedCostLine {
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to LandedCostLine here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

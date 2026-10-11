@@ -18,5 +18,3 @@ use crate::domain::entity::DeliveryNote;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type DeliveryNoteDomainPolicy = PermitAllPolicy<DeliveryNote>;
 
-// <<< CUSTOM
-// END CUSTOM

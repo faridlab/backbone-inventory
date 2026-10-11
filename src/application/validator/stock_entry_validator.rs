@@ -17,9 +17,5 @@ pub fn stock_entry_validator() -> StockEntryValidator {
     EntityValidator::new()
         .rule(RequiredString::new("entry_number", |e: &StockEntry| &e.entry_number))
         .rule(OptionalNotBlank::new("notes", |e: &StockEntry| e.notes.as_deref()))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

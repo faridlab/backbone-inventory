@@ -32,5 +32,3 @@ pub type LocationService = GenericCrudService<
     LocationRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

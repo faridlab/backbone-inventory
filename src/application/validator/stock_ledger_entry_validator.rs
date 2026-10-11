@@ -16,9 +16,5 @@ pub type StockLedgerEntryValidator = EntityValidator<StockLedgerEntry>;
 pub fn stock_ledger_entry_validator() -> StockLedgerEntryValidator {
     EntityValidator::new()
         .rule(RequiredString::new("voucher_no", |e: &StockLedgerEntry| &e.voucher_no))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

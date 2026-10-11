@@ -18,5 +18,3 @@ use crate::domain::entity::InventoryCompanySetting;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type InventoryCompanySettingDomainPolicy = PermitAllPolicy<InventoryCompanySetting>;
 
-// <<< CUSTOM
-// END CUSTOM

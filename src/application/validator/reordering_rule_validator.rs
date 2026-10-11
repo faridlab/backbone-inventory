@@ -16,9 +16,5 @@ pub type ReorderingRuleValidator = EntityValidator<ReorderingRule>;
 pub fn reordering_rule_validator() -> ReorderingRuleValidator {
     EntityValidator::new()
         .rule(RequiredString::new("name", |e: &ReorderingRule| &e.name))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

@@ -32,5 +32,3 @@ pub type QuantService = GenericCrudService<
     QuantRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

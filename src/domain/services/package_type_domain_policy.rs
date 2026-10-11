@@ -18,5 +18,3 @@ use crate::domain::entity::PackageType;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type PackageTypeDomainPolicy = PermitAllPolicy<PackageType>;
 
-// <<< CUSTOM
-// END CUSTOM

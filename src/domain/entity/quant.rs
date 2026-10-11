@@ -248,8 +248,6 @@ impl Quant {
         }
     }
 
-    // <<< CUSTOM METHODS START >>>
-    // <<< CUSTOM METHODS END >>>
 }
 
 impl super::Entity for Quant {

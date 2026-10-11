@@ -18,5 +18,3 @@ use crate::domain::entity::ReorderingRule;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type ReorderingRuleDomainPolicy = PermitAllPolicy<ReorderingRule>;
 
-// <<< CUSTOM
-// END CUSTOM

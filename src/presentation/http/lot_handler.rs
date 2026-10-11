@@ -187,3 +187,4 @@ pub fn create_protected_lot_routes<A: AuthMiddleware + Send + Sync + 'static>(
             }
         }))
 }
+

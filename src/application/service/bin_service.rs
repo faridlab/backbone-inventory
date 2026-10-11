@@ -32,5 +32,3 @@ pub type BinService = GenericCrudService<
     BinRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

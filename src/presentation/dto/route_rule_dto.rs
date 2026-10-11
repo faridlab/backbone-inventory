@@ -377,7 +377,7 @@ impl backbone_core::ApplyUpdateDto<UpdateRouteRuleDto> for RouteRule {
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to RouteRule here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

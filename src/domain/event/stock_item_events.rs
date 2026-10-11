@@ -11,8 +11,6 @@ use crate::domain::entity::StockItem;
 /// enum containing a `Crud(CrudEvent<StockItem>)` variant.
 pub type StockItemEvent = CrudEvent<StockItem>;
 
-// <<< CUSTOM
-// END CUSTOM
 
 use backbone_messaging::{CrudEventPublisher, NoOpCrudEventPublisher};
 use std::sync::Arc;

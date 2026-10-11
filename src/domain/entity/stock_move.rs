@@ -308,8 +308,6 @@ impl StockMove {
         }
     }
 
-    // <<< CUSTOM METHODS START >>>
-    // <<< CUSTOM METHODS END >>>
 }
 
 impl super::Entity for StockMove {

@@ -378,7 +378,7 @@ impl backbone_core::ApplyUpdateDto<UpdateLocationDto> for Location {
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to Location here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

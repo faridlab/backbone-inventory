@@ -32,5 +32,3 @@ pub type TransferService = GenericCrudService<
     TransferRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

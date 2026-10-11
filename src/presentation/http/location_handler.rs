@@ -187,3 +187,4 @@ pub fn create_protected_location_routes<A: AuthMiddleware + Send + Sync + 'stati
             }
         }))
 }
+

@@ -261,7 +261,7 @@ impl backbone_core::ApplyUpdateDto<UpdateStorageCategoryDto> for StorageCategory
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to StorageCategory here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

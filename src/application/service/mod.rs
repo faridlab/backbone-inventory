@@ -42,8 +42,6 @@ pub mod package_service;
 pub mod warehouse_service;
 pub mod stock_item_service;
 
-// <<< CUSTOM
-// END CUSTOM
 
 pub use picking_batch_service::PickingBatchService;
 pub use delivery_note_service::DeliveryNoteService;
@@ -79,8 +77,6 @@ pub use lot_service::LotService;
 pub use package_service::PackageService;
 pub use warehouse_service::WarehouseService;
 pub use stock_item_service::StockItemService;
-// <<< CUSTOM
-// END CUSTOM
 
 // This directory's extension (hand-written; ADR-0031).
 include!("mod.ext.rs");

@@ -18,5 +18,3 @@ use crate::domain::entity::PurchaseReceiptItem;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type PurchaseReceiptItemDomainPolicy = PermitAllPolicy<PurchaseReceiptItem>;
 
-// <<< CUSTOM
-// END CUSTOM

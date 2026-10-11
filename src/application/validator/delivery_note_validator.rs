@@ -17,9 +17,5 @@ pub fn delivery_note_validator() -> DeliveryNoteValidator {
     EntityValidator::new()
         .rule(RequiredString::new("delivery_number", |e: &DeliveryNote| &e.delivery_number))
         .rule(OptionalNotBlank::new("notes", |e: &DeliveryNote| e.notes.as_deref()))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

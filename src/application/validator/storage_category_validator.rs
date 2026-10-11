@@ -16,9 +16,5 @@ pub type StorageCategoryValidator = EntityValidator<StorageCategory>;
 pub fn storage_category_validator() -> StorageCategoryValidator {
     EntityValidator::new()
         .rule(RequiredString::new("name", |e: &StorageCategory| &e.name))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

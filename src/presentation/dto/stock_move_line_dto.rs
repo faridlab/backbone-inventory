@@ -380,7 +380,7 @@ impl backbone_core::ApplyUpdateDto<UpdateStockMoveLineDto> for StockMoveLine {
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to StockMoveLine here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

@@ -18,9 +18,5 @@ pub fn lot_validator() -> LotValidator {
         .rule(RequiredString::new("name", |e: &Lot| &e.name))
         .rule(OptionalNotBlank::new("reference", |e: &Lot| e.reference.as_deref()))
         .rule(OptionalNotBlank::new("note", |e: &Lot| e.note.as_deref()))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

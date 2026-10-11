@@ -187,3 +187,4 @@ pub fn create_protected_storage_category_capacity_routes<A: AuthMiddleware + Sen
             }
         }))
 }
+

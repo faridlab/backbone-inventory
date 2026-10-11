@@ -15,10 +15,6 @@ pub type DeliveryNoteItemValidator = EntityValidator<DeliveryNoteItem>;
 /// Build a validator for DeliveryNoteItem with all schema-defined field rules.
 pub fn delivery_note_item_validator() -> DeliveryNoteItemValidator {
     EntityValidator::new()
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
         // No schema-derived rules — add custom rules above.
 }
 
-// <<< CUSTOM
-// END CUSTOM

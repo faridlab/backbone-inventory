@@ -140,5 +140,3 @@ pub use warehouse_event_handlers::WarehouseEventHandler;
 pub use stock_item_events::{StockItemEvent, StockItemEventPublisher, NoopStockItemEventPublisher};
 pub use stock_item_event_handlers::StockItemEventHandler;
 
-// <<< CUSTOM
-// END CUSTOM

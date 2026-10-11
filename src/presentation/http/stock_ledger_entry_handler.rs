@@ -188,3 +188,4 @@ pub fn create_protected_stock_ledger_entry_routes<A: AuthMiddleware + Send + Syn
             }
         }))
 }
+

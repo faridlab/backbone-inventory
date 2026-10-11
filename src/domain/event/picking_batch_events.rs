@@ -11,8 +11,6 @@ use crate::domain::entity::PickingBatch;
 /// enum containing a `Crud(CrudEvent<PickingBatch>)` variant.
 pub type PickingBatchEvent = CrudEvent<PickingBatch>;
 
-// <<< CUSTOM
-// END CUSTOM
 
 use backbone_messaging::{CrudEventPublisher, NoOpCrudEventPublisher};
 use std::sync::Arc;

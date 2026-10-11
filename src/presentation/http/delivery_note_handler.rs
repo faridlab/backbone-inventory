@@ -188,3 +188,4 @@ pub fn create_protected_delivery_note_routes<A: AuthMiddleware + Send + Sync + '
             }
         }))
 }
+

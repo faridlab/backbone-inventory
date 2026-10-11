@@ -19,9 +19,5 @@ pub fn location_validator() -> LocationValidator {
         .rule(RequiredString::new("complete_name", |e: &Location| &e.complete_name))
         .rule(RequiredString::new("parent_path", |e: &Location| &e.parent_path))
         .rule(OptionalNotBlank::new("barcode", |e: &Location| e.barcode.as_deref()))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

@@ -18,9 +18,5 @@ pub fn package_validator() -> PackageValidator {
         .rule(RequiredString::new("name", |e: &Package| &e.name))
         .rule(RequiredString::new("complete_name", |e: &Package| &e.complete_name))
         .rule(RequiredString::new("parent_path", |e: &Package| &e.parent_path))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

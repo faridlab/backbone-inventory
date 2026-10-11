@@ -32,5 +32,3 @@ pub type DeliveryNoteItemService = GenericCrudService<
     DeliveryNoteItemRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

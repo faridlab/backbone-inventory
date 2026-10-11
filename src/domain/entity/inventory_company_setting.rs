@@ -164,8 +164,6 @@ impl InventoryCompanySetting {
         }
     }
 
-    // <<< CUSTOM METHODS START >>>
-    // <<< CUSTOM METHODS END >>>
 }
 
 impl super::Entity for InventoryCompanySetting {

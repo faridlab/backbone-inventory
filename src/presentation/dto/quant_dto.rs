@@ -377,7 +377,7 @@ impl backbone_core::ApplyUpdateDto<UpdateQuantDto> for Quant {
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to Quant here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

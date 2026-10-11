@@ -11,8 +11,6 @@ use crate::domain::entity::ScrapReasonTag;
 /// enum containing a `Crud(CrudEvent<ScrapReasonTag>)` variant.
 pub type ScrapReasonTagEvent = CrudEvent<ScrapReasonTag>;
 
-// <<< CUSTOM
-// END CUSTOM
 
 use backbone_messaging::{CrudEventPublisher, NoOpCrudEventPublisher};
 use std::sync::Arc;

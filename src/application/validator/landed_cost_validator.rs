@@ -18,9 +18,5 @@ pub fn landed_cost_validator() -> LandedCostValidator {
         .rule(RequiredString::new("lc_number", |e: &LandedCost| &e.lc_number))
         .rule(RequiredString::new("currency", |e: &LandedCost| &e.currency))
         .rule(OptionalNotBlank::new("notes", |e: &LandedCost| e.notes.as_deref()))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

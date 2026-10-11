@@ -396,7 +396,7 @@ impl backbone_core::ApplyUpdateDto<UpdateOperationTypeDto> for OperationType {
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to OperationType here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

@@ -18,5 +18,3 @@ use crate::domain::entity::StorageCategoryCapacity;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type StorageCategoryCapacityDomainPolicy = PermitAllPolicy<StorageCategoryCapacity>;
 
-// <<< CUSTOM
-// END CUSTOM

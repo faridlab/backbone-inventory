@@ -32,5 +32,3 @@ pub type WarehouseService = GenericCrudService<
     WarehouseRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

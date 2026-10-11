@@ -187,3 +187,4 @@ pub fn create_protected_package_type_routes<A: AuthMiddleware + Send + Sync + 's
             }
         }))
 }
+

@@ -18,5 +18,3 @@ use crate::domain::entity::PickingBatch;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type PickingBatchDomainPolicy = PermitAllPolicy<PickingBatch>;
 
-// <<< CUSTOM
-// END CUSTOM

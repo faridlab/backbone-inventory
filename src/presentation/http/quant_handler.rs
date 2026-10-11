@@ -188,3 +188,4 @@ pub fn create_protected_quant_routes<A: AuthMiddleware + Send + Sync + 'static>(
             }
         }))
 }
+

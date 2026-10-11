@@ -18,5 +18,3 @@ use crate::domain::entity::StockReconciliation;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type StockReconciliationDomainPolicy = PermitAllPolicy<StockReconciliation>;
 
-// <<< CUSTOM
-// END CUSTOM

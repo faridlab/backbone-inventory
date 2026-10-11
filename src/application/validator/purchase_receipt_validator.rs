@@ -18,9 +18,5 @@ pub fn purchase_receipt_validator() -> PurchaseReceiptValidator {
         .rule(RequiredString::new("receipt_number", |e: &PurchaseReceipt| &e.receipt_number))
         .rule(RequiredString::new("currency", |e: &PurchaseReceipt| &e.currency))
         .rule(OptionalNotBlank::new("notes", |e: &PurchaseReceipt| e.notes.as_deref()))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

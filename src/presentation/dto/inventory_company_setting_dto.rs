@@ -258,7 +258,7 @@ impl backbone_core::ApplyUpdateDto<UpdateInventoryCompanySettingDto> for Invento
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to InventoryCompanySetting here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

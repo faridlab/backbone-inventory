@@ -32,5 +32,3 @@ pub type ReorderingRuleService = GenericCrudService<
     ReorderingRuleRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

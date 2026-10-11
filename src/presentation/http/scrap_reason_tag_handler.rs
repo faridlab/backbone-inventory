@@ -186,3 +186,4 @@ pub fn create_protected_scrap_reason_tag_routes<A: AuthMiddleware + Send + Sync 
             }
         }))
 }
+

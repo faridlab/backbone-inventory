@@ -11,8 +11,6 @@ use crate::domain::entity::PutawayRule;
 /// enum containing a `Crud(CrudEvent<PutawayRule>)` variant.
 pub type PutawayRuleEvent = CrudEvent<PutawayRule>;
 
-// <<< CUSTOM
-// END CUSTOM
 
 use backbone_messaging::{CrudEventPublisher, NoOpCrudEventPublisher};
 use std::sync::Arc;

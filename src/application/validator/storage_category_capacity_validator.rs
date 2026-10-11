@@ -14,10 +14,6 @@ pub type StorageCategoryCapacityValidator = EntityValidator<StorageCategoryCapac
 /// Build a validator for StorageCategoryCapacity with all schema-defined field rules.
 pub fn storage_category_capacity_validator() -> StorageCategoryCapacityValidator {
     EntityValidator::new()
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
         // No schema-derived rules — add custom rules above.
 }
 
-// <<< CUSTOM
-// END CUSTOM

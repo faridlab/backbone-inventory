@@ -188,3 +188,4 @@ pub fn create_protected_stock_move_line_routes<A: AuthMiddleware + Send + Sync +
             }
         }))
 }
+

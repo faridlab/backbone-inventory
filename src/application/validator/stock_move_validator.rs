@@ -17,9 +17,5 @@ pub fn stock_move_validator() -> StockMoveValidator {
     EntityValidator::new()
         .rule(RequiredString::new("name", |e: &StockMove| &e.name))
         .rule(OptionalNotBlank::new("origin", |e: &StockMove| e.origin.as_deref()))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

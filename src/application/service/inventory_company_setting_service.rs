@@ -32,5 +32,3 @@ pub type InventoryCompanySettingService = GenericCrudService<
     InventoryCompanySettingRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

@@ -18,5 +18,3 @@ use crate::domain::entity::LandedCostLine;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type LandedCostLineDomainPolicy = PermitAllPolicy<LandedCostLine>;
 
-// <<< CUSTOM
-// END CUSTOM

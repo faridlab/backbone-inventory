@@ -18,5 +18,3 @@ use crate::domain::entity::RouteRule;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type RouteRuleDomainPolicy = PermitAllPolicy<RouteRule>;
 
-// <<< CUSTOM
-// END CUSTOM

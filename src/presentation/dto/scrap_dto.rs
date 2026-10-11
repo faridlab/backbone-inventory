@@ -386,7 +386,7 @@ impl backbone_core::ApplyUpdateDto<UpdateScrapDto> for Scrap {
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to Scrap here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

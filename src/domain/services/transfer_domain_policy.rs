@@ -18,5 +18,3 @@ use crate::domain::entity::Transfer;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type TransferDomainPolicy = PermitAllPolicy<Transfer>;
 
-// <<< CUSTOM
-// END CUSTOM

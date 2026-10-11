@@ -15,10 +15,6 @@ pub type StockMoveLineValidator = EntityValidator<StockMoveLine>;
 /// Build a validator for StockMoveLine with all schema-defined field rules.
 pub fn stock_move_line_validator() -> StockMoveLineValidator {
     EntityValidator::new()
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
         // No schema-derived rules — add custom rules above.
 }
 
-// <<< CUSTOM
-// END CUSTOM

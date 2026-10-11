@@ -32,5 +32,3 @@ pub type RouteService = GenericCrudService<
     RouteRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

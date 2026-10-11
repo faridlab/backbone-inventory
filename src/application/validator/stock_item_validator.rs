@@ -16,9 +16,5 @@ pub type StockItemValidator = EntityValidator<StockItem>;
 pub fn stock_item_validator() -> StockItemValidator {
     EntityValidator::new()
         .rule(RequiredString::new("stock_uom", |e: &StockItem| &e.stock_uom))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

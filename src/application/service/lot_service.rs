@@ -32,5 +32,3 @@ pub type LotService = GenericCrudService<
     LotRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

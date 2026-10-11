@@ -32,5 +32,3 @@ pub type StockEntryService = GenericCrudService<
     StockEntryRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

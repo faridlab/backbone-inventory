@@ -32,5 +32,3 @@ pub type LandedCostLineService = GenericCrudService<
     LandedCostLineRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

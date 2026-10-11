@@ -15,10 +15,6 @@ pub type PurchaseReceiptItemValidator = EntityValidator<PurchaseReceiptItem>;
 /// Build a validator for PurchaseReceiptItem with all schema-defined field rules.
 pub fn purchase_receipt_item_validator() -> PurchaseReceiptItemValidator {
     EntityValidator::new()
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
         // No schema-derived rules — add custom rules above.
 }
 
-// <<< CUSTOM
-// END CUSTOM
