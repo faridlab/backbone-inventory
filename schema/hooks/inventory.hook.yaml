@@ -39,39 +39,50 @@ state_machines:
 rules:
   - id: R1
     name: non_empty_document
+    entity: PurchaseReceipt
     when: create
     enforced_by: "src/application/service/inventory_receipt.rs::create_purchase_receipt, src/application/service/inventory_delivery.rs::create_delivery_note, src/application/service/inventory_transfer.rs::create_picking, src/application/service/inventory_transfer.rs::submit_transfer, src/application/service/inventory_reconciliation.rs::submit_reconciliation"
     assert: "count(lines) >= 1"
     error_code: empty_document
   - id: R2
     name: non_negative
+    entity: PurchaseReceiptItem
+    enforced_by: "src/application/service/inventory_receipt.rs::create_purchase_receipt, src/application/service/inventory_delivery.rs::create_delivery_note, src/application/service/inventory_transfer.rs::submit_transfer, src/application/service/inventory_transfer.rs::create_picking, src/application/service/inventory_reconciliation.rs::submit_reconciliation, src/application/service/inventory_move_engine.rs::create_move"
     when: create
     assert: "line.quantity >= 0 AND line.rate >= 0"
     error_code: negative_quantity
   - id: R3
     name: sufficient_stock
+    entity: DeliveryNote
+    enforced_by: "src/application/service/inventory_delivery.rs::submit_delivery_note, src/application/service/inventory_transfer.rs::submit_transfer, src/application/service/inventory_move_engine.rs::action_done, src/application/service/inventory_move_engine.rs::mint_move_valuation"
     when: submit
     assert: "outgoing line.quantity <= bin.actual_qty"
     error_code: insufficient_stock
   - id: R4
     name: distinct_transfer_warehouses
+    entity: StockEntry
     when: submit
     enforced_by: "src/application/service/inventory_transfer.rs::submit_transfer"
     assert: "from_warehouse_id != to_warehouse_id"
     error_code: same_warehouse
   - id: R5
     name: submit_once
+    entity: PurchaseReceipt
     when: submit
     enforced_by: "src/application/service/inventory_delivery.rs::submit_delivery_note, src/application/service/inventory_receipt.rs::submit_purchase_receipt_into"
     assert: "document.status == 'draft'"
     error_code: not_draft
   - id: R6
     name: moving_average
+    entity: StockLedgerEntry
+    enforced_by: "src/application/service/inventory_move_engine.rs::mint_move_valuation"
     when: submit
     assert: "receipt blends rate = value/qty; outflow keeps rate, cogs = qty*rate"
     error_code: null
   - id: R7
     name: balanced_post
+    entity: StockMove
+    justification: "NOT ENFORCED in a release build: every posting envelope is balanced by construction, and the only check is a debug_assert! in inventory_write_service.rs emit_and_reconcile and inventory_move_engine.rs action_done, which release builds compile out."
     when: submit
     assert: "sum(lines.debit) == sum(lines.credit)"
     error_code: unbalanced

@@ -51,6 +51,7 @@ rules:
   # -- reservation triangle (T2) ------------------------------------------------
   - id: T2
     name: quant_reserved_authoritative
+    entity: Quant
     when: reserve, unreserve, validate
     assert: "stock_move_line.quantity mirrors quant.reserved_quantity; move.state is the aggregate of its lines — never independent counters"
     error_code: null
@@ -58,6 +59,7 @@ rules:
     justification: "One number, two places: the reservation lives on the quant and the move line mirrors it, and the move's state is derived from its lines. A constraint sees one row at a time, so it cannot hold two tables in agreement; the engine keeps them in step inside the transaction that moves the stock, which is the only place both are known."
   - id: T2-avail
     name: available_is_read
+    entity: Quant
     when: always
     assert: "quant.available_quantity == quant.quantity - quant.reserved_quantity (stored compute; never hand-written)"
     error_code: available_mismatch
@@ -66,12 +68,15 @@ rules:
   # -- quant invariants ----------------------------------------------------------
   - id: R12
     name: one_quant_per_dimension
+    entity: Quant
+    justification: "PARTLY: the unique index idx_stock_quants_item_id_location_id_lot_id_package_id_owner_id does not dedup NULL dimensions, and stock_adjustment_repository.rs init_quant inserts without the advisory lock lock_or_init takes."
     when: write
     assert: "exactly one quant per (item, location, lot, package, owner) — NULL dimensions dedup in the engine, not in the table"
     error_code: duplicate_quant
     enforcement: both
   - id: R13
     name: view_location_no_stock
+    entity: Quant
     when: write
     enforced_by: "src/application/service/inventory_move_engine.rs::create_move"
     assert: "quant.location.usage != 'view'"
@@ -80,6 +85,8 @@ rules:
     justification: "A view location is a folder in the location tree, not a place goods can sit, and whether a location is one is a property of the LOCATION row, not of the quant being written. Enforcing it in the database means a trigger that joins to the tree on every quant write, on the hottest table in the module."
   - id: R24
     name: no_count_while_reserved
+    entity: Quant
+    enforced_by: "src/application/service/inventory_reconciliation.rs::check_countable"
     when: apply_inventory
     assert: "quant.reserved_quantity == 0 when staging/applying an inventory count"
     error_code: quant_reserved
@@ -87,6 +94,7 @@ rules:
     justification: "Cross-row: the count is refused because OTHER documents hold reservations on the same quant. The verb reads that state at the moment it stages the count, and refuses with a message the counter can act on, which a constraint violation on an unrelated row would not give them."
   - id: T5
     name: serial_unique
+    entity: Quant
     when: write
     assert: "a serial-tracked lot appears on at most one quant with quantity > 0 (sn_duplicated flags the attempt)"
     error_code: sn_duplicated
@@ -95,6 +103,8 @@ rules:
   # -- move lifecycle guards ------------------------------------------------------
   - id: R9
     name: location_change_required
+    entity: StockMove
+    enforced_by: "src/application/service/inventory_move_engine.rs::create_move, src/application/service/inventory_transfer.rs::create_picking"
     when: validate
     assert: "move.location_id != move.location_dest_id (a move with identical src/dest is a no-op and is rejected)"
     error_code: same_location
@@ -102,6 +112,7 @@ rules:
     justification: "A move from a place to itself is a no-op, and rejecting it is about the request rather than the record: the engine refuses before any row exists, so the caller learns their document is wrong instead of finding an inert move in the estate."
   - id: R19
     name: cancel_propagates_through_chain
+    entity: StockMove
     when: cancel
     assert: "cancelling a move with move_dest_ids and propagate_cancel propagates the cancellation downstream (never into done moves)"
     error_code: null
@@ -109,6 +120,7 @@ rules:
     justification: "Propagation walks a chain of linked moves and stops at the ones already done. That is a traversal with a rule about where to stop, not a predicate over a row, and a trigger doing it would recurse through the chain on every cancellation."
   - id: T6
     name: done_moves_immutable
+    entity: StockMove
     when: update
     assert: "no field of a done move is edited; corrections are reversal moves (returns)"
     error_code: done_move_immutable
@@ -116,6 +128,7 @@ rules:
     justification: "The rule names a CORRECTION POLICY, not a column: a done move is never edited, and a mistake is fixed by a reversal move that leaves both facts on record. A database guard could freeze the row, and the module does keep one, but the policy this rule states is what the service offers instead of an edit."
   - id: R23
     name: validate_requires_reserved_or_forced
+    entity: StockMove
     when: validate
     assert: "outgoing moves validate from assigned, or forced from confirmed with an explicit backorder policy decision"
     error_code: not_reserved
@@ -128,24 +141,32 @@ rules:
   # tests see a globally-unique grain; a decorated host sees it per org unit).
   - id: R3
     name: transfer_name_unique
+    entity: Transfer
+    justification: "Owned by the composing service: the module's index was dropped with tenancy (20260913060000_strip_tenancy); serpa's tenancy posture installs uq_transfers_org_unit_id_name."
     when: create
     assert: "transfer name unique — carried by the unique index on transfers (org-scoped by the decorator)"
     error_code: transfer_name_exists
     enforcement: db
   - id: R4
     name: location_barcode_unique
+    entity: Location
+    justification: "Owned by the composing service: serpa's tenancy posture installs uq_locations_org_unit_id_barcode."
     when: create, update
     assert: "location barcode unique — carried by the unique index on locations (org-scoped by the decorator)"
     error_code: barcode_exists
     enforcement: db
   - id: R5
     name: lot_name_unique_per_item
+    entity: Lot
+    justification: "Owned by the composing service: serpa's tenancy posture installs uq_lots_org_unit_id_name_item_id."
     when: create
     assert: "lot (name, item) unique — carried by the unique index on lots (org-scoped by the decorator)"
     error_code: lot_name_exists
     enforcement: db
   - id: R6
     name: orderpoint_unique_per_item_location
+    entity: ReorderingRule
+    justification: "Owned by the composing service: serpa's tenancy posture installs uq_reordering_rules_org_unit_id_item_id_location_id; procurement_service.rs create_orderpoint pre-checks without a lock."
     when: create
     assert: "reordering rule (item, location) unique — carried by the unique index on reordering_rules (org-scoped by the decorator)"
     error_code: orderpoint_exists
@@ -155,12 +176,16 @@ rules:
   # remain — the org fence subsumes them. The R13 view-guard survives as R13-rule.)
   - id: R13-rule
     name: rule_dest_not_view
+    entity: RouteRule
+    enforced_by: "src/application/service/procurement_service.rs::check_rule_destination, migrations/20260913060000_strip_tenancy.up.sql::route_rule_company_consistency"
     when: create, update
     assert: "rule.location_dest_id.usage != 'view' (rules never push INTO a view location)"
     error_code: rule_dest_is_view
     enforcement: both
   - id: R1
     name: warehouse_code_name_unique
+    entity: Warehouse
+    justification: "Owned by the composing service: serpa's tenancy posture installs uq_warehouses_org_unit_id_code and uq_warehouses_org_unit_id_name."
     when: create
     assert: "warehouse code and name unique — carried by the unique indexes on warehouses (org-scoped by the decorator)"
     error_code: warehouse_name_exists
