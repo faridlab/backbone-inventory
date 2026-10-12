@@ -1,0 +1,26 @@
+# The rule ratchet (schema doctor): these counts may only go down. Regenerate with
+# `metaphor schema rules . --update-baseline` after enforcing a rule.
+unenforced: 19
+warnings: 23
+machines_without_verbs: 0
+untested_rule_ids: 12
+unenforced_rules:
+- 'inventory.hook.yaml: balanced_post'
+- 'inventory.hook.yaml: moving_average'
+- 'inventory.hook.yaml: non_negative'
+- 'inventory.hook.yaml: sufficient_stock'
+- 'stock.hook.yaml: available_is_read'
+- 'stock.hook.yaml: cancel_propagates_through_chain'
+- 'stock.hook.yaml: done_moves_immutable'
+- 'stock.hook.yaml: location_barcode_unique'
+- 'stock.hook.yaml: location_change_required'
+- 'stock.hook.yaml: lot_name_unique_per_item'
+- 'stock.hook.yaml: no_count_while_reserved'
+- 'stock.hook.yaml: one_quant_per_dimension'
+- 'stock.hook.yaml: orderpoint_unique_per_item_location'
+- 'stock.hook.yaml: quant_reserved_authoritative'
+- 'stock.hook.yaml: rule_dest_not_view'
+- 'stock.hook.yaml: serial_unique'
+- 'stock.hook.yaml: transfer_name_unique'
+- 'stock.hook.yaml: validate_requires_reserved_or_forced'
+- 'stock.hook.yaml: warehouse_code_name_unique'
