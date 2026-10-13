@@ -56,7 +56,7 @@ impl backbone_core::write_guard::WriteGuard<LandedCost> for LandedCostRowRules {
         };
         let row = &row;
         let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
-        let mut shadow = Vec::new();
+        let shadow = Vec::new();
         let mut refuse = Vec::new();
         // `lc_number_required` (@required on LandedCost.lc_number)
         if (create || (update && r::changed(old.as_ref(), row, &["lc_number"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "lc_number")), r::not(r::is_empty(r::trim(r::field(row, "lc_number")))))) {
@@ -64,7 +64,7 @@ impl backbone_core::write_guard::WriteGuard<LandedCost> for LandedCostRowRules {
         }
         // `lc_number_max_length` (@max(40) on LandedCost.lc_number)
         if (create || (update && r::changed(old.as_ref(), row, &["lc_number"]))) && !r::holds(&r::le(r::length(r::field(row, "lc_number")), r::Val::Num(40.0_f64))) {
-            shadow.push(Violation::new("lc_number", "max_length", "lc_number must be at most 40 characters").with_param("max", 40_i64));
+            refuse.push(Violation::new("lc_number", "max_length", "lc_number must be at most 40 characters").with_param("max", 40_i64));
         }
         // `target_receipt_id_required` (@required on LandedCost.target_receipt_id)
         if (create || (update && r::changed(old.as_ref(), row, &["target_receipt_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "target_receipt_id")), r::not(r::is_empty(r::trim(r::field(row, "target_receipt_id")))))) {
@@ -72,11 +72,11 @@ impl backbone_core::write_guard::WriteGuard<LandedCost> for LandedCostRowRules {
         }
         // `currency_max_length` (@max(3) on LandedCost.currency)
         if (create || (update && r::changed(old.as_ref(), row, &["currency"]))) && !r::holds(&r::le(r::length(r::field(row, "currency")), r::Val::Num(3.0_f64))) {
-            shadow.push(Violation::new("currency", "max_length", "currency must be at most 3 characters").with_param("max", 3_i64));
+            refuse.push(Violation::new("currency", "max_length", "currency must be at most 3 characters").with_param("max", 3_i64));
         }
         // `notes_max_length` (@max(1000) on LandedCost.notes)
         if (create || (update && r::changed(old.as_ref(), row, &["notes"]))) && !r::holds(&r::le(r::length(r::field(row, "notes")), r::Val::Num(1000.0_f64))) {
-            shadow.push(Violation::new("notes", "max_length", "notes must be at most 1000 characters").with_param("max", 1000_i64));
+            refuse.push(Violation::new("notes", "max_length", "notes must be at most 1000 characters").with_param("max", 1000_i64));
         }
         GuardOutcome { refuse, shadow }
     }

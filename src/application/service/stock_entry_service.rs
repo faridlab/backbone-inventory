@@ -56,7 +56,7 @@ impl backbone_core::write_guard::WriteGuard<StockEntry> for StockEntryRowRules {
         };
         let row = &row;
         let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
-        let mut shadow = Vec::new();
+        let shadow = Vec::new();
         let mut refuse = Vec::new();
         // `entry_number_required` (@required on StockEntry.entry_number)
         if (create || (update && r::changed(old.as_ref(), row, &["entry_number"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "entry_number")), r::not(r::is_empty(r::trim(r::field(row, "entry_number")))))) {
@@ -64,11 +64,11 @@ impl backbone_core::write_guard::WriteGuard<StockEntry> for StockEntryRowRules {
         }
         // `entry_number_max_length` (@max(40) on StockEntry.entry_number)
         if (create || (update && r::changed(old.as_ref(), row, &["entry_number"]))) && !r::holds(&r::le(r::length(r::field(row, "entry_number")), r::Val::Num(40.0_f64))) {
-            shadow.push(Violation::new("entry_number", "max_length", "entry_number must be at most 40 characters").with_param("max", 40_i64));
+            refuse.push(Violation::new("entry_number", "max_length", "entry_number must be at most 40 characters").with_param("max", 40_i64));
         }
         // `notes_max_length` (@max(1000) on StockEntry.notes)
         if (create || (update && r::changed(old.as_ref(), row, &["notes"]))) && !r::holds(&r::le(r::length(r::field(row, "notes")), r::Val::Num(1000.0_f64))) {
-            shadow.push(Violation::new("notes", "max_length", "notes must be at most 1000 characters").with_param("max", 1000_i64));
+            refuse.push(Violation::new("notes", "max_length", "notes must be at most 1000 characters").with_param("max", 1000_i64));
         }
         GuardOutcome { refuse, shadow }
     }

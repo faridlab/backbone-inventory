@@ -56,7 +56,7 @@ impl backbone_core::write_guard::WriteGuard<OperationType> for OperationTypeRowR
         };
         let row = &row;
         let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
-        let mut shadow = Vec::new();
+        let shadow = Vec::new();
         let mut refuse = Vec::new();
         // `name_required` (@required on OperationType.name)
         if (create || (update && r::changed(old.as_ref(), row, &["name"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "name")), r::not(r::is_empty(r::trim(r::field(row, "name")))))) {
@@ -64,7 +64,7 @@ impl backbone_core::write_guard::WriteGuard<OperationType> for OperationTypeRowR
         }
         // `name_max_length` (@max(150) on OperationType.name)
         if (create || (update && r::changed(old.as_ref(), row, &["name"]))) && !r::holds(&r::le(r::length(r::field(row, "name")), r::Val::Num(150.0_f64))) {
-            shadow.push(Violation::new("name", "max_length", "name must be at most 150 characters").with_param("max", 150_i64));
+            refuse.push(Violation::new("name", "max_length", "name must be at most 150 characters").with_param("max", 150_i64));
         }
         // `sequence_code_required` (@required on OperationType.sequence_code)
         if (create || (update && r::changed(old.as_ref(), row, &["sequence_code"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "sequence_code")), r::not(r::is_empty(r::trim(r::field(row, "sequence_code")))))) {
@@ -72,7 +72,7 @@ impl backbone_core::write_guard::WriteGuard<OperationType> for OperationTypeRowR
         }
         // `sequence_code_max_length` (@max(10) on OperationType.sequence_code)
         if (create || (update && r::changed(old.as_ref(), row, &["sequence_code"]))) && !r::holds(&r::le(r::length(r::field(row, "sequence_code")), r::Val::Num(10.0_f64))) {
-            shadow.push(Violation::new("sequence_code", "max_length", "sequence_code must be at most 10 characters").with_param("max", 10_i64));
+            refuse.push(Violation::new("sequence_code", "max_length", "sequence_code must be at most 10 characters").with_param("max", 10_i64));
         }
         // `default_location_src_id_required` (@required on OperationType.default_location_src_id)
         if (create || (update && r::changed(old.as_ref(), row, &["default_location_src_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "default_location_src_id")), r::not(r::is_empty(r::trim(r::field(row, "default_location_src_id")))))) {

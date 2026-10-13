@@ -56,7 +56,7 @@ impl backbone_core::write_guard::WriteGuard<Bin> for BinRowRules {
         };
         let row = &row;
         let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
-        let mut shadow = Vec::new();
+        let shadow = Vec::new();
         let mut refuse = Vec::new();
         // `item_id_required` (@required on Bin.item_id)
         if (create || (update && r::changed(old.as_ref(), row, &["item_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "item_id")), r::not(r::is_empty(r::trim(r::field(row, "item_id")))))) {
@@ -68,11 +68,11 @@ impl backbone_core::write_guard::WriteGuard<Bin> for BinRowRules {
         }
         // `reserved_qty_non_negative` (@non_negative on Bin.reserved_qty)
         if (create || (update && r::changed(old.as_ref(), row, &["reserved_qty"]))) && !r::holds(&r::ge(r::field(row, "reserved_qty"), r::Val::Num(0.0_f64))) {
-            shadow.push(Violation::new("reserved_qty", "non_negative", "reserved_qty must not be negative"));
+            refuse.push(Violation::new("reserved_qty", "non_negative", "reserved_qty must not be negative"));
         }
         // `valuation_rate_non_negative` (@non_negative on Bin.valuation_rate)
         if (create || (update && r::changed(old.as_ref(), row, &["valuation_rate"]))) && !r::holds(&r::ge(r::field(row, "valuation_rate"), r::Val::Num(0.0_f64))) {
-            shadow.push(Violation::new("valuation_rate", "non_negative", "valuation_rate must not be negative"));
+            refuse.push(Violation::new("valuation_rate", "non_negative", "valuation_rate must not be negative"));
         }
         GuardOutcome { refuse, shadow }
     }

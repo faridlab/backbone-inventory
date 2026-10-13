@@ -56,7 +56,7 @@ impl backbone_core::write_guard::WriteGuard<StockLedgerEntry> for StockLedgerEnt
         };
         let row = &row;
         let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
-        let mut shadow = Vec::new();
+        let shadow = Vec::new();
         let mut refuse = Vec::new();
         // `item_id_required` (@required on StockLedgerEntry.item_id)
         if (create || (update && r::changed(old.as_ref(), row, &["item_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "item_id")), r::not(r::is_empty(r::trim(r::field(row, "item_id")))))) {
@@ -68,11 +68,11 @@ impl backbone_core::write_guard::WriteGuard<StockLedgerEntry> for StockLedgerEnt
         }
         // `incoming_rate_non_negative` (@non_negative on StockLedgerEntry.incoming_rate)
         if (create || (update && r::changed(old.as_ref(), row, &["incoming_rate"]))) && !r::holds(&r::ge(r::field(row, "incoming_rate"), r::Val::Num(0.0_f64))) {
-            shadow.push(Violation::new("incoming_rate", "non_negative", "incoming_rate must not be negative"));
+            refuse.push(Violation::new("incoming_rate", "non_negative", "incoming_rate must not be negative"));
         }
         // `valuation_rate_non_negative` (@non_negative on StockLedgerEntry.valuation_rate)
         if (create || (update && r::changed(old.as_ref(), row, &["valuation_rate"]))) && !r::holds(&r::ge(r::field(row, "valuation_rate"), r::Val::Num(0.0_f64))) {
-            shadow.push(Violation::new("valuation_rate", "non_negative", "valuation_rate must not be negative"));
+            refuse.push(Violation::new("valuation_rate", "non_negative", "valuation_rate must not be negative"));
         }
         // `voucher_id_required` (@required on StockLedgerEntry.voucher_id)
         if (create || (update && r::changed(old.as_ref(), row, &["voucher_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "voucher_id")), r::not(r::is_empty(r::trim(r::field(row, "voucher_id")))))) {
@@ -82,9 +82,9 @@ impl backbone_core::write_guard::WriteGuard<StockLedgerEntry> for StockLedgerEnt
         if (create || (update && r::changed(old.as_ref(), row, &["voucher_no"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "voucher_no")), r::not(r::is_empty(r::trim(r::field(row, "voucher_no")))))) {
             refuse.push(Violation::new("voucher_no", "required", "voucher_no is required"));
         }
-        // `voucher_no_max_length` (@max(40) on StockLedgerEntry.voucher_no)
-        if (create || (update && r::changed(old.as_ref(), row, &["voucher_no"]))) && !r::holds(&r::le(r::length(r::field(row, "voucher_no")), r::Val::Num(40.0_f64))) {
-            shadow.push(Violation::new("voucher_no", "max_length", "voucher_no must be at most 40 characters").with_param("max", 40_i64));
+        // `voucher_no_max_length` (@max(120) on StockLedgerEntry.voucher_no)
+        if (create || (update && r::changed(old.as_ref(), row, &["voucher_no"]))) && !r::holds(&r::le(r::length(r::field(row, "voucher_no")), r::Val::Num(120.0_f64))) {
+            refuse.push(Violation::new("voucher_no", "max_length", "voucher_no must be at most 120 characters").with_param("max", 120_i64));
         }
         GuardOutcome { refuse, shadow }
     }

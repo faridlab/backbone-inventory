@@ -56,7 +56,7 @@ impl backbone_core::write_guard::WriteGuard<LandedCostLine> for LandedCostLineRo
         };
         let row = &row;
         let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
-        let mut shadow = Vec::new();
+        let shadow = Vec::new();
         let mut refuse = Vec::new();
         // `lc_id_required` (@required on LandedCostLine.lc_id)
         if (create || (update && r::changed(old.as_ref(), row, &["lc_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "lc_id")), r::not(r::is_empty(r::trim(r::field(row, "lc_id")))))) {
@@ -68,7 +68,7 @@ impl backbone_core::write_guard::WriteGuard<LandedCostLine> for LandedCostLineRo
         }
         // `name_max_length` (@max(150) on LandedCostLine.name)
         if (create || (update && r::changed(old.as_ref(), row, &["name"]))) && !r::holds(&r::le(r::length(r::field(row, "name")), r::Val::Num(150.0_f64))) {
-            shadow.push(Violation::new("name", "max_length", "name must be at most 150 characters").with_param("max", 150_i64));
+            refuse.push(Violation::new("name", "max_length", "name must be at most 150 characters").with_param("max", 150_i64));
         }
         // `account_id_required` (@required on LandedCostLine.account_id)
         if (create || (update && r::changed(old.as_ref(), row, &["account_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "account_id")), r::not(r::is_empty(r::trim(r::field(row, "account_id")))))) {

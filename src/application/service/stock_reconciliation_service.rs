@@ -68,7 +68,7 @@ impl backbone_core::write_guard::WriteGuard<StockReconciliation> for StockReconc
         }
         // `recon_number_max_length` (@max(40) on StockReconciliation.recon_number)
         if (create || (update && r::changed(old.as_ref(), row, &["recon_number"]))) && !r::holds(&r::le(r::length(r::field(row, "recon_number")), r::Val::Num(40.0_f64))) {
-            shadow.push(Violation::new("recon_number", "max_length", "recon_number must be at most 40 characters").with_param("max", 40_i64));
+            refuse.push(Violation::new("recon_number", "max_length", "recon_number must be at most 40 characters").with_param("max", 40_i64));
         }
         // `warehouse_id_required` (@required on StockReconciliation.warehouse_id)
         if (create || (update && r::changed(old.as_ref(), row, &["warehouse_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "warehouse_id")), r::not(r::is_empty(r::trim(r::field(row, "warehouse_id")))))) {

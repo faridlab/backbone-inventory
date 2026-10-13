@@ -68,7 +68,7 @@ impl backbone_core::write_guard::WriteGuard<PurchaseReceipt> for PurchaseReceipt
         }
         // `receipt_number_max_length` (@max(40) on PurchaseReceipt.receipt_number)
         if (create || (update && r::changed(old.as_ref(), row, &["receipt_number"]))) && !r::holds(&r::le(r::length(r::field(row, "receipt_number")), r::Val::Num(40.0_f64))) {
-            shadow.push(Violation::new("receipt_number", "max_length", "receipt_number must be at most 40 characters").with_param("max", 40_i64));
+            refuse.push(Violation::new("receipt_number", "max_length", "receipt_number must be at most 40 characters").with_param("max", 40_i64));
         }
         // `supplier_id_required` (@required on PurchaseReceipt.supplier_id)
         if (create || (update && r::changed(old.as_ref(), row, &["supplier_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "supplier_id")), r::not(r::is_empty(r::trim(r::field(row, "supplier_id")))))) {
@@ -80,11 +80,11 @@ impl backbone_core::write_guard::WriteGuard<PurchaseReceipt> for PurchaseReceipt
         }
         // `currency_max_length` (@max(3) on PurchaseReceipt.currency)
         if (create || (update && r::changed(old.as_ref(), row, &["currency"]))) && !r::holds(&r::le(r::length(r::field(row, "currency")), r::Val::Num(3.0_f64))) {
-            shadow.push(Violation::new("currency", "max_length", "currency must be at most 3 characters").with_param("max", 3_i64));
+            refuse.push(Violation::new("currency", "max_length", "currency must be at most 3 characters").with_param("max", 3_i64));
         }
         // `total_value_non_negative` (@non_negative on PurchaseReceipt.total_value)
         if (create || (update && r::changed(old.as_ref(), row, &["total_value"]))) && !r::holds(&r::ge(r::field(row, "total_value"), r::Val::Num(0.0_f64))) {
-            shadow.push(Violation::new("total_value", "non_negative", "total_value must not be negative"));
+            refuse.push(Violation::new("total_value", "non_negative", "total_value must not be negative"));
         }
         // `inventory_account_id_required` (@required on PurchaseReceipt.inventory_account_id)
         if (create || (update && r::changed(old.as_ref(), row, &["inventory_account_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "inventory_account_id")), r::not(r::is_empty(r::trim(r::field(row, "inventory_account_id")))))) {
@@ -96,7 +96,7 @@ impl backbone_core::write_guard::WriteGuard<PurchaseReceipt> for PurchaseReceipt
         }
         // `notes_max_length` (@max(1000) on PurchaseReceipt.notes)
         if (create || (update && r::changed(old.as_ref(), row, &["notes"]))) && !r::holds(&r::le(r::length(r::field(row, "notes")), r::Val::Num(1000.0_f64))) {
-            shadow.push(Violation::new("notes", "max_length", "notes must be at most 1000 characters").with_param("max", 1000_i64));
+            refuse.push(Violation::new("notes", "max_length", "notes must be at most 1000 characters").with_param("max", 1000_i64));
         }
         GuardOutcome { refuse, shadow }
     }

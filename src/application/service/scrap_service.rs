@@ -56,15 +56,15 @@ impl backbone_core::write_guard::WriteGuard<Scrap> for ScrapRowRules {
         };
         let row = &row;
         let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
-        let mut shadow = Vec::new();
+        let shadow = Vec::new();
         let mut refuse = Vec::new();
         // `name_max_length` (@max(40) on Scrap.name)
         if (create || (update && r::changed(old.as_ref(), row, &["name"]))) && !r::holds(&r::le(r::length(r::field(row, "name")), r::Val::Num(40.0_f64))) {
-            shadow.push(Violation::new("name", "max_length", "name must be at most 40 characters").with_param("max", 40_i64));
+            refuse.push(Violation::new("name", "max_length", "name must be at most 40 characters").with_param("max", 40_i64));
         }
         // `origin_max_length` (@max(200) on Scrap.origin)
         if (create || (update && r::changed(old.as_ref(), row, &["origin"]))) && !r::holds(&r::le(r::length(r::field(row, "origin")), r::Val::Num(200.0_f64))) {
-            shadow.push(Violation::new("origin", "max_length", "origin must be at most 200 characters").with_param("max", 200_i64));
+            refuse.push(Violation::new("origin", "max_length", "origin must be at most 200 characters").with_param("max", 200_i64));
         }
         // `item_id_required` (@required on Scrap.item_id)
         if (create || (update && r::changed(old.as_ref(), row, &["item_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "item_id")), r::not(r::is_empty(r::trim(r::field(row, "item_id")))))) {

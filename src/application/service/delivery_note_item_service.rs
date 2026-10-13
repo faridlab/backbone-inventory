@@ -56,7 +56,7 @@ impl backbone_core::write_guard::WriteGuard<DeliveryNoteItem> for DeliveryNoteIt
         };
         let row = &row;
         let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
-        let mut shadow = Vec::new();
+        let shadow = Vec::new();
         let mut refuse = Vec::new();
         // `delivery_id_required` (@required on DeliveryNoteItem.delivery_id)
         if (create || (update && r::changed(old.as_ref(), row, &["delivery_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "delivery_id")), r::not(r::is_empty(r::trim(r::field(row, "delivery_id")))))) {
@@ -68,15 +68,15 @@ impl backbone_core::write_guard::WriteGuard<DeliveryNoteItem> for DeliveryNoteIt
         }
         // `quantity_non_negative` (@non_negative on DeliveryNoteItem.quantity)
         if (create || (update && r::changed(old.as_ref(), row, &["quantity"]))) && !r::holds(&r::ge(r::field(row, "quantity"), r::Val::Num(0.0_f64))) {
-            shadow.push(Violation::new("quantity", "non_negative", "quantity must not be negative"));
+            refuse.push(Violation::new("quantity", "non_negative", "quantity must not be negative"));
         }
         // `valuation_rate_non_negative` (@non_negative on DeliveryNoteItem.valuation_rate)
         if (create || (update && r::changed(old.as_ref(), row, &["valuation_rate"]))) && !r::holds(&r::ge(r::field(row, "valuation_rate"), r::Val::Num(0.0_f64))) {
-            shadow.push(Violation::new("valuation_rate", "non_negative", "valuation_rate must not be negative"));
+            refuse.push(Violation::new("valuation_rate", "non_negative", "valuation_rate must not be negative"));
         }
         // `cogs_amount_non_negative` (@non_negative on DeliveryNoteItem.cogs_amount)
         if (create || (update && r::changed(old.as_ref(), row, &["cogs_amount"]))) && !r::holds(&r::ge(r::field(row, "cogs_amount"), r::Val::Num(0.0_f64))) {
-            shadow.push(Violation::new("cogs_amount", "non_negative", "cogs_amount must not be negative"));
+            refuse.push(Violation::new("cogs_amount", "non_negative", "cogs_amount must not be negative"));
         }
         GuardOutcome { refuse, shadow }
     }

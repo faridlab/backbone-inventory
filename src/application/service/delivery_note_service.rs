@@ -68,7 +68,7 @@ impl backbone_core::write_guard::WriteGuard<DeliveryNote> for DeliveryNoteRowRul
         }
         // `delivery_number_max_length` (@max(40) on DeliveryNote.delivery_number)
         if (create || (update && r::changed(old.as_ref(), row, &["delivery_number"]))) && !r::holds(&r::le(r::length(r::field(row, "delivery_number")), r::Val::Num(40.0_f64))) {
-            shadow.push(Violation::new("delivery_number", "max_length", "delivery_number must be at most 40 characters").with_param("max", 40_i64));
+            refuse.push(Violation::new("delivery_number", "max_length", "delivery_number must be at most 40 characters").with_param("max", 40_i64));
         }
         // `customer_id_required` (@required on DeliveryNote.customer_id)
         if (create || (update && r::changed(old.as_ref(), row, &["customer_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "customer_id")), r::not(r::is_empty(r::trim(r::field(row, "customer_id")))))) {
@@ -80,7 +80,7 @@ impl backbone_core::write_guard::WriteGuard<DeliveryNote> for DeliveryNoteRowRul
         }
         // `total_cogs_non_negative` (@non_negative on DeliveryNote.total_cogs)
         if (create || (update && r::changed(old.as_ref(), row, &["total_cogs"]))) && !r::holds(&r::ge(r::field(row, "total_cogs"), r::Val::Num(0.0_f64))) {
-            shadow.push(Violation::new("total_cogs", "non_negative", "total_cogs must not be negative"));
+            refuse.push(Violation::new("total_cogs", "non_negative", "total_cogs must not be negative"));
         }
         // `cogs_account_id_required` (@required on DeliveryNote.cogs_account_id)
         if (create || (update && r::changed(old.as_ref(), row, &["cogs_account_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "cogs_account_id")), r::not(r::is_empty(r::trim(r::field(row, "cogs_account_id")))))) {
@@ -92,7 +92,7 @@ impl backbone_core::write_guard::WriteGuard<DeliveryNote> for DeliveryNoteRowRul
         }
         // `notes_max_length` (@max(1000) on DeliveryNote.notes)
         if (create || (update && r::changed(old.as_ref(), row, &["notes"]))) && !r::holds(&r::le(r::length(r::field(row, "notes")), r::Val::Num(1000.0_f64))) {
-            shadow.push(Violation::new("notes", "max_length", "notes must be at most 1000 characters").with_param("max", 1000_i64));
+            refuse.push(Violation::new("notes", "max_length", "notes must be at most 1000 characters").with_param("max", 1000_i64));
         }
         GuardOutcome { refuse, shadow }
     }

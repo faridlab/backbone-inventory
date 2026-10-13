@@ -56,7 +56,7 @@ impl backbone_core::write_guard::WriteGuard<StockReconciliationItem> for StockRe
         };
         let row = &row;
         let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
-        let mut shadow = Vec::new();
+        let shadow = Vec::new();
         let mut refuse = Vec::new();
         // `reconciliation_id_required` (@required on StockReconciliationItem.reconciliation_id)
         if (create || (update && r::changed(old.as_ref(), row, &["reconciliation_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "reconciliation_id")), r::not(r::is_empty(r::trim(r::field(row, "reconciliation_id")))))) {
@@ -68,11 +68,11 @@ impl backbone_core::write_guard::WriteGuard<StockReconciliationItem> for StockRe
         }
         // `counted_qty_non_negative` (@non_negative on StockReconciliationItem.counted_qty)
         if (create || (update && r::changed(old.as_ref(), row, &["counted_qty"]))) && !r::holds(&r::ge(r::field(row, "counted_qty"), r::Val::Num(0.0_f64))) {
-            shadow.push(Violation::new("counted_qty", "non_negative", "counted_qty must not be negative"));
+            refuse.push(Violation::new("counted_qty", "non_negative", "counted_qty must not be negative"));
         }
         // `counted_rate_non_negative` (@non_negative on StockReconciliationItem.counted_rate)
         if (create || (update && r::changed(old.as_ref(), row, &["counted_rate"]))) && !r::holds(&r::ge(r::field(row, "counted_rate"), r::Val::Num(0.0_f64))) {
-            shadow.push(Violation::new("counted_rate", "non_negative", "counted_rate must not be negative"));
+            refuse.push(Violation::new("counted_rate", "non_negative", "counted_rate must not be negative"));
         }
         GuardOutcome { refuse, shadow }
     }
