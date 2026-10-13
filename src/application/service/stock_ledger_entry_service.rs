@@ -32,3 +32,61 @@ pub type StockLedgerEntryService = GenericCrudService<
     StockLedgerEntryRepository,
 >;
 
+/// The rules the schema declares for StockLedgerEntry, checked against the row a create or update
+/// would store. The generated build attaches it to [`StockLedgerEntryService`]. A refusing rule's
+/// break answers 422; a rule in shadow is logged under `backbone::write_guard` and the
+/// write goes ahead.
+pub struct StockLedgerEntryRowRules;
+
+#[async_trait::async_trait]
+impl backbone_core::write_guard::WriteGuard<StockLedgerEntry> for StockLedgerEntryRowRules {
+    async fn check(
+        &self,
+        ctx: &backbone_core::write_guard::WriteCtx<'_, StockLedgerEntry>,
+    ) -> backbone_core::write_guard::GuardOutcome {
+        use backbone_core::row_rule as r;
+        use backbone_core::violation::Violation;
+        use backbone_core::write_guard::{GuardOutcome, WriteKind};
+        let (create, update) = (ctx.kind == WriteKind::Create, ctx.kind == WriteKind::Update);
+        let Some(after) = ctx.after.filter(|_| create || update) else {
+            return GuardOutcome::allow();
+        };
+        let Ok(row) = serde_json::to_value(after) else {
+            return GuardOutcome::allow();
+        };
+        let row = &row;
+        let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
+        let mut shadow = Vec::new();
+        let mut refuse = Vec::new();
+        // `item_id_required` (@required on StockLedgerEntry.item_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["item_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "item_id")), r::not(r::is_empty(r::trim(r::field(row, "item_id")))))) {
+            refuse.push(Violation::new("item_id", "required", "item_id is required"));
+        }
+        // `warehouse_id_required` (@required on StockLedgerEntry.warehouse_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["warehouse_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "warehouse_id")), r::not(r::is_empty(r::trim(r::field(row, "warehouse_id")))))) {
+            refuse.push(Violation::new("warehouse_id", "required", "warehouse_id is required"));
+        }
+        // `incoming_rate_non_negative` (@non_negative on StockLedgerEntry.incoming_rate)
+        if (create || (update && r::changed(old.as_ref(), row, &["incoming_rate"]))) && !r::holds(&r::ge(r::field(row, "incoming_rate"), r::Val::Num(0.0_f64))) {
+            shadow.push(Violation::new("incoming_rate", "non_negative", "incoming_rate must not be negative"));
+        }
+        // `valuation_rate_non_negative` (@non_negative on StockLedgerEntry.valuation_rate)
+        if (create || (update && r::changed(old.as_ref(), row, &["valuation_rate"]))) && !r::holds(&r::ge(r::field(row, "valuation_rate"), r::Val::Num(0.0_f64))) {
+            shadow.push(Violation::new("valuation_rate", "non_negative", "valuation_rate must not be negative"));
+        }
+        // `voucher_id_required` (@required on StockLedgerEntry.voucher_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["voucher_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "voucher_id")), r::not(r::is_empty(r::trim(r::field(row, "voucher_id")))))) {
+            refuse.push(Violation::new("voucher_id", "required", "voucher_id is required"));
+        }
+        // `voucher_no_required` (@required on StockLedgerEntry.voucher_no)
+        if (create || (update && r::changed(old.as_ref(), row, &["voucher_no"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "voucher_no")), r::not(r::is_empty(r::trim(r::field(row, "voucher_no")))))) {
+            refuse.push(Violation::new("voucher_no", "required", "voucher_no is required"));
+        }
+        // `voucher_no_max_length` (@max(40) on StockLedgerEntry.voucher_no)
+        if (create || (update && r::changed(old.as_ref(), row, &["voucher_no"]))) && !r::holds(&r::le(r::length(r::field(row, "voucher_no")), r::Val::Num(40.0_f64))) {
+            shadow.push(Violation::new("voucher_no", "max_length", "voucher_no must be at most 40 characters").with_param("max", 40_i64));
+        }
+        GuardOutcome { refuse, shadow }
+    }
+}
+

@@ -32,3 +32,49 @@ pub type PackageService = GenericCrudService<
     PackageRepository,
 >;
 
+/// The rules the schema declares for Package, checked against the row a create or update
+/// would store. The generated build attaches it to [`PackageService`]. A refusing rule's
+/// break answers 422; a rule in shadow is logged under `backbone::write_guard` and the
+/// write goes ahead.
+pub struct PackageRowRules;
+
+#[async_trait::async_trait]
+impl backbone_core::write_guard::WriteGuard<Package> for PackageRowRules {
+    async fn check(
+        &self,
+        ctx: &backbone_core::write_guard::WriteCtx<'_, Package>,
+    ) -> backbone_core::write_guard::GuardOutcome {
+        use backbone_core::row_rule as r;
+        use backbone_core::violation::Violation;
+        use backbone_core::write_guard::{GuardOutcome, WriteKind};
+        let (create, update) = (ctx.kind == WriteKind::Create, ctx.kind == WriteKind::Update);
+        let Some(after) = ctx.after.filter(|_| create || update) else {
+            return GuardOutcome::allow();
+        };
+        let Ok(row) = serde_json::to_value(after) else {
+            return GuardOutcome::allow();
+        };
+        let row = &row;
+        let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
+        let mut shadow = Vec::new();
+        let mut refuse = Vec::new();
+        // `name_required` (@required on Package.name)
+        if (create || (update && r::changed(old.as_ref(), row, &["name"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "name")), r::not(r::is_empty(r::trim(r::field(row, "name")))))) {
+            refuse.push(Violation::new("name", "required", "name is required"));
+        }
+        // `name_max_length` (@max(150) on Package.name)
+        if (create || (update && r::changed(old.as_ref(), row, &["name"]))) && !r::holds(&r::le(r::length(r::field(row, "name")), r::Val::Num(150.0_f64))) {
+            shadow.push(Violation::new("name", "max_length", "name must be at most 150 characters").with_param("max", 150_i64));
+        }
+        // `complete_name_max_length` (@max(1000) on Package.complete_name)
+        if (create || (update && r::changed(old.as_ref(), row, &["complete_name"]))) && !r::holds(&r::le(r::length(r::field(row, "complete_name")), r::Val::Num(1000.0_f64))) {
+            shadow.push(Violation::new("complete_name", "max_length", "complete_name must be at most 1000 characters").with_param("max", 1000_i64));
+        }
+        // `parent_path_max_length` (@max(1000) on Package.parent_path)
+        if (create || (update && r::changed(old.as_ref(), row, &["parent_path"]))) && !r::holds(&r::le(r::length(r::field(row, "parent_path")), r::Val::Num(1000.0_f64))) {
+            shadow.push(Violation::new("parent_path", "max_length", "parent_path must be at most 1000 characters").with_param("max", 1000_i64));
+        }
+        GuardOutcome { refuse, shadow }
+    }
+}
+

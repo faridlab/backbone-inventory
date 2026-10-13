@@ -32,9 +32,10 @@ pub type StockReconciliationService = GenericCrudService<
     StockReconciliationRepository,
 >;
 
-/// The row rules the schema declares for StockReconciliation, checked against the row a create or
-/// update would store. The generated build attaches it to [`StockReconciliationService`]. Every rule
-/// runs in shadow: a break is logged under `backbone::write_guard` and the write goes ahead.
+/// The rules the schema declares for StockReconciliation, checked against the row a create or update
+/// would store. The generated build attaches it to [`StockReconciliationService`]. A refusing rule's
+/// break answers 422; a rule in shadow is logged under `backbone::write_guard` and the
+/// write goes ahead.
 pub struct StockReconciliationRowRules;
 
 #[async_trait::async_trait]
@@ -56,11 +57,32 @@ impl backbone_core::write_guard::WriteGuard<StockReconciliation> for StockReconc
         let row = &row;
         let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
         let mut shadow = Vec::new();
+        let mut refuse = Vec::new();
         // `status` belongs to a state machine: only its verbs move it
         if update && ctx.transition.is_none() && r::changed(old.as_ref(), row, &["status"]) {
             shadow.push(Violation::new("status", "state_field_verbs_only", "the state field moves only through its verbs"));
         }
-        GuardOutcome { refuse: Vec::new(), shadow }
+        // `recon_number_required` (@required on StockReconciliation.recon_number)
+        if (create || (update && r::changed(old.as_ref(), row, &["recon_number"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "recon_number")), r::not(r::is_empty(r::trim(r::field(row, "recon_number")))))) {
+            refuse.push(Violation::new("recon_number", "required", "recon_number is required"));
+        }
+        // `recon_number_max_length` (@max(40) on StockReconciliation.recon_number)
+        if (create || (update && r::changed(old.as_ref(), row, &["recon_number"]))) && !r::holds(&r::le(r::length(r::field(row, "recon_number")), r::Val::Num(40.0_f64))) {
+            shadow.push(Violation::new("recon_number", "max_length", "recon_number must be at most 40 characters").with_param("max", 40_i64));
+        }
+        // `warehouse_id_required` (@required on StockReconciliation.warehouse_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["warehouse_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "warehouse_id")), r::not(r::is_empty(r::trim(r::field(row, "warehouse_id")))))) {
+            refuse.push(Violation::new("warehouse_id", "required", "warehouse_id is required"));
+        }
+        // `inventory_account_id_required` (@required on StockReconciliation.inventory_account_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["inventory_account_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "inventory_account_id")), r::not(r::is_empty(r::trim(r::field(row, "inventory_account_id")))))) {
+            refuse.push(Violation::new("inventory_account_id", "required", "inventory_account_id is required"));
+        }
+        // `adjustment_account_id_required` (@required on StockReconciliation.adjustment_account_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["adjustment_account_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "adjustment_account_id")), r::not(r::is_empty(r::trim(r::field(row, "adjustment_account_id")))))) {
+            refuse.push(Violation::new("adjustment_account_id", "required", "adjustment_account_id is required"));
+        }
+        GuardOutcome { refuse, shadow }
     }
 }
 

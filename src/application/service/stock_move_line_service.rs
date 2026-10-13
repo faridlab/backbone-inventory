@@ -32,3 +32,53 @@ pub type StockMoveLineService = GenericCrudService<
     StockMoveLineRepository,
 >;
 
+/// The rules the schema declares for StockMoveLine, checked against the row a create or update
+/// would store. The generated build attaches it to [`StockMoveLineService`]. A refusing rule's
+/// break answers 422; a rule in shadow is logged under `backbone::write_guard` and the
+/// write goes ahead.
+pub struct StockMoveLineRowRules;
+
+#[async_trait::async_trait]
+impl backbone_core::write_guard::WriteGuard<StockMoveLine> for StockMoveLineRowRules {
+    async fn check(
+        &self,
+        ctx: &backbone_core::write_guard::WriteCtx<'_, StockMoveLine>,
+    ) -> backbone_core::write_guard::GuardOutcome {
+        use backbone_core::row_rule as r;
+        use backbone_core::violation::Violation;
+        use backbone_core::write_guard::{GuardOutcome, WriteKind};
+        let (create, update) = (ctx.kind == WriteKind::Create, ctx.kind == WriteKind::Update);
+        let Some(after) = ctx.after.filter(|_| create || update) else {
+            return GuardOutcome::allow();
+        };
+        let Ok(row) = serde_json::to_value(after) else {
+            return GuardOutcome::allow();
+        };
+        let row = &row;
+        let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
+        let mut shadow = Vec::new();
+        let mut refuse = Vec::new();
+        // `quantity_non_negative` (@non_negative on StockMoveLine.quantity)
+        if (create || (update && r::changed(old.as_ref(), row, &["quantity"]))) && !r::holds(&r::ge(r::field(row, "quantity"), r::Val::Num(0.0_f64))) {
+            shadow.push(Violation::new("quantity", "non_negative", "quantity must not be negative"));
+        }
+        // `move_id_required` (@required on StockMoveLine.move_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["move_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "move_id")), r::not(r::is_empty(r::trim(r::field(row, "move_id")))))) {
+            refuse.push(Violation::new("move_id", "required", "move_id is required"));
+        }
+        // `location_id_required` (@required on StockMoveLine.location_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["location_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "location_id")), r::not(r::is_empty(r::trim(r::field(row, "location_id")))))) {
+            refuse.push(Violation::new("location_id", "required", "location_id is required"));
+        }
+        // `location_dest_id_required` (@required on StockMoveLine.location_dest_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["location_dest_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "location_dest_id")), r::not(r::is_empty(r::trim(r::field(row, "location_dest_id")))))) {
+            refuse.push(Violation::new("location_dest_id", "required", "location_dest_id is required"));
+        }
+        // `item_id_required` (@required on StockMoveLine.item_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["item_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "item_id")), r::not(r::is_empty(r::trim(r::field(row, "item_id")))))) {
+            refuse.push(Violation::new("item_id", "required", "item_id is required"));
+        }
+        GuardOutcome { refuse, shadow }
+    }
+}
+

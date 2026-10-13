@@ -32,3 +32,53 @@ pub type StockItemService = GenericCrudService<
     StockItemRepository,
 >;
 
+/// The rules the schema declares for StockItem, checked against the row a create or update
+/// would store. The generated build attaches it to [`StockItemService`]. A refusing rule's
+/// break answers 422; a rule in shadow is logged under `backbone::write_guard` and the
+/// write goes ahead.
+pub struct StockItemRowRules;
+
+#[async_trait::async_trait]
+impl backbone_core::write_guard::WriteGuard<StockItem> for StockItemRowRules {
+    async fn check(
+        &self,
+        ctx: &backbone_core::write_guard::WriteCtx<'_, StockItem>,
+    ) -> backbone_core::write_guard::GuardOutcome {
+        use backbone_core::row_rule as r;
+        use backbone_core::violation::Violation;
+        use backbone_core::write_guard::{GuardOutcome, WriteKind};
+        let (create, update) = (ctx.kind == WriteKind::Create, ctx.kind == WriteKind::Update);
+        let Some(after) = ctx.after.filter(|_| create || update) else {
+            return GuardOutcome::allow();
+        };
+        let Ok(row) = serde_json::to_value(after) else {
+            return GuardOutcome::allow();
+        };
+        let row = &row;
+        let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
+        let mut shadow = Vec::new();
+        let mut refuse = Vec::new();
+        // `item_id_required` (@required on StockItem.item_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["item_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "item_id")), r::not(r::is_empty(r::trim(r::field(row, "item_id")))))) {
+            refuse.push(Violation::new("item_id", "required", "item_id is required"));
+        }
+        // `stock_uom_required` (@required on StockItem.stock_uom)
+        if (create || (update && r::changed(old.as_ref(), row, &["stock_uom"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "stock_uom")), r::not(r::is_empty(r::trim(r::field(row, "stock_uom")))))) {
+            refuse.push(Violation::new("stock_uom", "required", "stock_uom is required"));
+        }
+        // `stock_uom_max_length` (@max(20) on StockItem.stock_uom)
+        if (create || (update && r::changed(old.as_ref(), row, &["stock_uom"]))) && !r::holds(&r::le(r::length(r::field(row, "stock_uom")), r::Val::Num(20.0_f64))) {
+            shadow.push(Violation::new("stock_uom", "max_length", "stock_uom must be at most 20 characters").with_param("max", 20_i64));
+        }
+        // `reorder_level_non_negative` (@non_negative on StockItem.reorder_level)
+        if (create || (update && r::changed(old.as_ref(), row, &["reorder_level"]))) && !r::holds(&r::ge(r::field(row, "reorder_level"), r::Val::Num(0.0_f64))) {
+            shadow.push(Violation::new("reorder_level", "non_negative", "reorder_level must not be negative"));
+        }
+        // `weight_per_unit_non_negative` (@non_negative on StockItem.weight_per_unit)
+        if (create || (update && r::changed(old.as_ref(), row, &["weight_per_unit"]))) && !r::holds(&r::ge(r::field(row, "weight_per_unit"), r::Val::Num(0.0_f64))) {
+            shadow.push(Violation::new("weight_per_unit", "non_negative", "weight_per_unit must not be negative"));
+        }
+        GuardOutcome { refuse, shadow }
+    }
+}
+

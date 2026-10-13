@@ -67,9 +67,6 @@ pub use application::service::PackageService;
 pub use application::service::WarehouseService;
 pub use application::service::StockItemService;
 
-// Re-exports - Validation
-pub use application::validator::{ValidationError, ValidationResult};
-
 use std::sync::Arc;
 use axum::Router;
 use sqlx::PgPool;
@@ -349,7 +346,7 @@ impl InventoryModuleBuilder {
 
         // PickingBatch service
         let picking_batch_repository = Arc::new(PickingBatchRepository::new(db_pool.clone()));
-        let picking_batch_service = Arc::new(PickingBatchService::with_repository(picking_batch_repository.clone()));
+        let picking_batch_service = Arc::new(PickingBatchService::with_repository(picking_batch_repository.clone()).with_guard(Arc::new(crate::application::service::PickingBatchRowRules)));
 
         // DeliveryNote service
         let delivery_note_repository = Arc::new(DeliveryNoteRepository::new(db_pool.clone()));
@@ -357,7 +354,7 @@ impl InventoryModuleBuilder {
 
         // DeliveryNoteItem service
         let delivery_note_item_repository = Arc::new(DeliveryNoteItemRepository::new(db_pool.clone()));
-        let delivery_note_item_service = Arc::new(DeliveryNoteItemService::with_repository(delivery_note_item_repository.clone()));
+        let delivery_note_item_service = Arc::new(DeliveryNoteItemService::with_repository(delivery_note_item_repository.clone()).with_guard(Arc::new(crate::application::service::DeliveryNoteItemRowRules)));
 
         // InventoryCompanySetting service
         let inventory_company_setting_repository = Arc::new(InventoryCompanySettingRepository::new(db_pool.clone()));
@@ -365,19 +362,19 @@ impl InventoryModuleBuilder {
 
         // LandedCost service
         let landed_cost_repository = Arc::new(LandedCostRepository::new(db_pool.clone()));
-        let landed_cost_service = Arc::new(LandedCostService::with_repository(landed_cost_repository.clone()));
+        let landed_cost_service = Arc::new(LandedCostService::with_repository(landed_cost_repository.clone()).with_guard(Arc::new(crate::application::service::LandedCostRowRules)));
 
         // LandedCostLine service
         let landed_cost_line_repository = Arc::new(LandedCostLineRepository::new(db_pool.clone()));
-        let landed_cost_line_service = Arc::new(LandedCostLineService::with_repository(landed_cost_line_repository.clone()));
+        let landed_cost_line_service = Arc::new(LandedCostLineService::with_repository(landed_cost_line_repository.clone()).with_guard(Arc::new(crate::application::service::LandedCostLineRowRules)));
 
         // LandedCostAdjustmentLine service
         let landed_cost_adjustment_line_repository = Arc::new(LandedCostAdjustmentLineRepository::new(db_pool.clone()));
-        let landed_cost_adjustment_line_service = Arc::new(LandedCostAdjustmentLineService::with_repository(landed_cost_adjustment_line_repository.clone()));
+        let landed_cost_adjustment_line_service = Arc::new(LandedCostAdjustmentLineService::with_repository(landed_cost_adjustment_line_repository.clone()).with_guard(Arc::new(crate::application::service::LandedCostAdjustmentLineRowRules)));
 
         // Location service
         let location_repository = Arc::new(LocationRepository::new(db_pool.clone()));
-        let location_service = Arc::new(LocationService::with_repository(location_repository.clone()));
+        let location_service = Arc::new(LocationService::with_repository(location_repository.clone()).with_guard(Arc::new(crate::application::service::LocationRowRules)));
 
         // StockMove service
         let stock_move_repository = Arc::new(StockMoveRepository::new(db_pool.clone()));
@@ -385,27 +382,27 @@ impl InventoryModuleBuilder {
 
         // StockMoveLine service
         let stock_move_line_repository = Arc::new(StockMoveLineRepository::new(db_pool.clone()));
-        let stock_move_line_service = Arc::new(StockMoveLineService::with_repository(stock_move_line_repository.clone()));
+        let stock_move_line_service = Arc::new(StockMoveLineService::with_repository(stock_move_line_repository.clone()).with_guard(Arc::new(crate::application::service::StockMoveLineRowRules)));
 
         // OperationType service
         let operation_type_repository = Arc::new(OperationTypeRepository::new(db_pool.clone()));
-        let operation_type_service = Arc::new(OperationTypeService::with_repository(operation_type_repository.clone()));
+        let operation_type_service = Arc::new(OperationTypeService::with_repository(operation_type_repository.clone()).with_guard(Arc::new(crate::application::service::OperationTypeRowRules)));
 
         // Transfer service
         let transfer_repository = Arc::new(TransferRepository::new(db_pool.clone()));
-        let transfer_service = Arc::new(TransferService::with_repository(transfer_repository.clone()));
+        let transfer_service = Arc::new(TransferService::with_repository(transfer_repository.clone()).with_guard(Arc::new(crate::application::service::TransferRowRules)));
 
         // Route service
         let route_repository = Arc::new(RouteRepository::new(db_pool.clone()));
-        let route_service = Arc::new(RouteService::with_repository(route_repository.clone()));
+        let route_service = Arc::new(RouteService::with_repository(route_repository.clone()).with_guard(Arc::new(crate::application::service::RouteRowRules)));
 
         // RouteRule service
         let route_rule_repository = Arc::new(RouteRuleRepository::new(db_pool.clone()));
-        let route_rule_service = Arc::new(RouteRuleService::with_repository(route_rule_repository.clone()));
+        let route_rule_service = Arc::new(RouteRuleService::with_repository(route_rule_repository.clone()).with_guard(Arc::new(crate::application::service::RouteRuleRowRules)));
 
         // ReorderingRule service
         let reordering_rule_repository = Arc::new(ReorderingRuleRepository::new(db_pool.clone()));
-        let reordering_rule_service = Arc::new(ReorderingRuleService::with_repository(reordering_rule_repository.clone()));
+        let reordering_rule_service = Arc::new(ReorderingRuleService::with_repository(reordering_rule_repository.clone()).with_guard(Arc::new(crate::application::service::ReorderingRuleRowRules)));
 
         // PurchaseReceipt service
         let purchase_receipt_repository = Arc::new(PurchaseReceiptRepository::new(db_pool.clone()));
@@ -413,35 +410,35 @@ impl InventoryModuleBuilder {
 
         // PurchaseReceiptItem service
         let purchase_receipt_item_repository = Arc::new(PurchaseReceiptItemRepository::new(db_pool.clone()));
-        let purchase_receipt_item_service = Arc::new(PurchaseReceiptItemService::with_repository(purchase_receipt_item_repository.clone()));
+        let purchase_receipt_item_service = Arc::new(PurchaseReceiptItemService::with_repository(purchase_receipt_item_repository.clone()).with_guard(Arc::new(crate::application::service::PurchaseReceiptItemRowRules)));
 
         // Quant service
         let quant_repository = Arc::new(QuantRepository::new(db_pool.clone()));
-        let quant_service = Arc::new(QuantService::with_repository(quant_repository.clone()));
+        let quant_service = Arc::new(QuantService::with_repository(quant_repository.clone()).with_guard(Arc::new(crate::application::service::QuantRowRules)));
 
         // Scrap service
         let scrap_repository = Arc::new(ScrapRepository::new(db_pool.clone()));
-        let scrap_service = Arc::new(ScrapService::with_repository(scrap_repository.clone()));
+        let scrap_service = Arc::new(ScrapService::with_repository(scrap_repository.clone()).with_guard(Arc::new(crate::application::service::ScrapRowRules)));
 
         // ScrapReasonTag service
         let scrap_reason_tag_repository = Arc::new(ScrapReasonTagRepository::new(db_pool.clone()));
-        let scrap_reason_tag_service = Arc::new(ScrapReasonTagService::with_repository(scrap_reason_tag_repository.clone()));
+        let scrap_reason_tag_service = Arc::new(ScrapReasonTagService::with_repository(scrap_reason_tag_repository.clone()).with_guard(Arc::new(crate::application::service::ScrapReasonTagRowRules)));
 
         // StockEntry service
         let stock_entry_repository = Arc::new(StockEntryRepository::new(db_pool.clone()));
-        let stock_entry_service = Arc::new(StockEntryService::with_repository(stock_entry_repository.clone()));
+        let stock_entry_service = Arc::new(StockEntryService::with_repository(stock_entry_repository.clone()).with_guard(Arc::new(crate::application::service::StockEntryRowRules)));
 
         // StockEntryItem service
         let stock_entry_item_repository = Arc::new(StockEntryItemRepository::new(db_pool.clone()));
-        let stock_entry_item_service = Arc::new(StockEntryItemService::with_repository(stock_entry_item_repository.clone()));
+        let stock_entry_item_service = Arc::new(StockEntryItemService::with_repository(stock_entry_item_repository.clone()).with_guard(Arc::new(crate::application::service::StockEntryItemRowRules)));
 
         // StockLedgerEntry service
         let stock_ledger_entry_repository = Arc::new(StockLedgerEntryRepository::new(db_pool.clone()));
-        let stock_ledger_entry_service = Arc::new(StockLedgerEntryService::with_repository(stock_ledger_entry_repository.clone()));
+        let stock_ledger_entry_service = Arc::new(StockLedgerEntryService::with_repository(stock_ledger_entry_repository.clone()).with_guard(Arc::new(crate::application::service::StockLedgerEntryRowRules)));
 
         // Bin service
         let bin_repository = Arc::new(BinRepository::new(db_pool.clone()));
-        let bin_service = Arc::new(BinService::with_repository(bin_repository.clone()));
+        let bin_service = Arc::new(BinService::with_repository(bin_repository.clone()).with_guard(Arc::new(crate::application::service::BinRowRules)));
 
         // StockReconciliation service
         let stock_reconciliation_repository = Arc::new(StockReconciliationRepository::new(db_pool.clone()));
@@ -449,39 +446,39 @@ impl InventoryModuleBuilder {
 
         // StockReconciliationItem service
         let stock_reconciliation_item_repository = Arc::new(StockReconciliationItemRepository::new(db_pool.clone()));
-        let stock_reconciliation_item_service = Arc::new(StockReconciliationItemService::with_repository(stock_reconciliation_item_repository.clone()));
+        let stock_reconciliation_item_service = Arc::new(StockReconciliationItemService::with_repository(stock_reconciliation_item_repository.clone()).with_guard(Arc::new(crate::application::service::StockReconciliationItemRowRules)));
 
         // PackageType service
         let package_type_repository = Arc::new(PackageTypeRepository::new(db_pool.clone()));
-        let package_type_service = Arc::new(PackageTypeService::with_repository(package_type_repository.clone()));
+        let package_type_service = Arc::new(PackageTypeService::with_repository(package_type_repository.clone()).with_guard(Arc::new(crate::application::service::PackageTypeRowRules)));
 
         // StorageCategory service
         let storage_category_repository = Arc::new(StorageCategoryRepository::new(db_pool.clone()));
-        let storage_category_service = Arc::new(StorageCategoryService::with_repository(storage_category_repository.clone()));
+        let storage_category_service = Arc::new(StorageCategoryService::with_repository(storage_category_repository.clone()).with_guard(Arc::new(crate::application::service::StorageCategoryRowRules)));
 
         // StorageCategoryCapacity service
         let storage_category_capacity_repository = Arc::new(StorageCategoryCapacityRepository::new(db_pool.clone()));
-        let storage_category_capacity_service = Arc::new(StorageCategoryCapacityService::with_repository(storage_category_capacity_repository.clone()));
+        let storage_category_capacity_service = Arc::new(StorageCategoryCapacityService::with_repository(storage_category_capacity_repository.clone()).with_guard(Arc::new(crate::application::service::StorageCategoryCapacityRowRules)));
 
         // PutawayRule service
         let putaway_rule_repository = Arc::new(PutawayRuleRepository::new(db_pool.clone()));
-        let putaway_rule_service = Arc::new(PutawayRuleService::with_repository(putaway_rule_repository.clone()));
+        let putaway_rule_service = Arc::new(PutawayRuleService::with_repository(putaway_rule_repository.clone()).with_guard(Arc::new(crate::application::service::PutawayRuleRowRules)));
 
         // Lot service
         let lot_repository = Arc::new(LotRepository::new(db_pool.clone()));
-        let lot_service = Arc::new(LotService::with_repository(lot_repository.clone()));
+        let lot_service = Arc::new(LotService::with_repository(lot_repository.clone()).with_guard(Arc::new(crate::application::service::LotRowRules)));
 
         // Package service
         let package_repository = Arc::new(PackageRepository::new(db_pool.clone()));
-        let package_service = Arc::new(PackageService::with_repository(package_repository.clone()));
+        let package_service = Arc::new(PackageService::with_repository(package_repository.clone()).with_guard(Arc::new(crate::application::service::PackageRowRules)));
 
         // Warehouse service
         let warehouse_repository = Arc::new(WarehouseRepository::new(db_pool.clone()));
-        let warehouse_service = Arc::new(WarehouseService::with_repository(warehouse_repository.clone()));
+        let warehouse_service = Arc::new(WarehouseService::with_repository(warehouse_repository.clone()).with_guard(Arc::new(crate::application::service::WarehouseRowRules)));
 
         // StockItem service
         let stock_item_repository = Arc::new(StockItemRepository::new(db_pool.clone()));
-        let stock_item_service = Arc::new(StockItemService::with_repository(stock_item_repository.clone()));
+        let stock_item_service = Arc::new(StockItemService::with_repository(stock_item_repository.clone()).with_guard(Arc::new(crate::application::service::StockItemRowRules)));
 
 
         Ok(InventoryModule {

@@ -32,3 +32,49 @@ pub type BinService = GenericCrudService<
     BinRepository,
 >;
 
+/// The rules the schema declares for Bin, checked against the row a create or update
+/// would store. The generated build attaches it to [`BinService`]. A refusing rule's
+/// break answers 422; a rule in shadow is logged under `backbone::write_guard` and the
+/// write goes ahead.
+pub struct BinRowRules;
+
+#[async_trait::async_trait]
+impl backbone_core::write_guard::WriteGuard<Bin> for BinRowRules {
+    async fn check(
+        &self,
+        ctx: &backbone_core::write_guard::WriteCtx<'_, Bin>,
+    ) -> backbone_core::write_guard::GuardOutcome {
+        use backbone_core::row_rule as r;
+        use backbone_core::violation::Violation;
+        use backbone_core::write_guard::{GuardOutcome, WriteKind};
+        let (create, update) = (ctx.kind == WriteKind::Create, ctx.kind == WriteKind::Update);
+        let Some(after) = ctx.after.filter(|_| create || update) else {
+            return GuardOutcome::allow();
+        };
+        let Ok(row) = serde_json::to_value(after) else {
+            return GuardOutcome::allow();
+        };
+        let row = &row;
+        let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
+        let mut shadow = Vec::new();
+        let mut refuse = Vec::new();
+        // `item_id_required` (@required on Bin.item_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["item_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "item_id")), r::not(r::is_empty(r::trim(r::field(row, "item_id")))))) {
+            refuse.push(Violation::new("item_id", "required", "item_id is required"));
+        }
+        // `warehouse_id_required` (@required on Bin.warehouse_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["warehouse_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "warehouse_id")), r::not(r::is_empty(r::trim(r::field(row, "warehouse_id")))))) {
+            refuse.push(Violation::new("warehouse_id", "required", "warehouse_id is required"));
+        }
+        // `reserved_qty_non_negative` (@non_negative on Bin.reserved_qty)
+        if (create || (update && r::changed(old.as_ref(), row, &["reserved_qty"]))) && !r::holds(&r::ge(r::field(row, "reserved_qty"), r::Val::Num(0.0_f64))) {
+            shadow.push(Violation::new("reserved_qty", "non_negative", "reserved_qty must not be negative"));
+        }
+        // `valuation_rate_non_negative` (@non_negative on Bin.valuation_rate)
+        if (create || (update && r::changed(old.as_ref(), row, &["valuation_rate"]))) && !r::holds(&r::ge(r::field(row, "valuation_rate"), r::Val::Num(0.0_f64))) {
+            shadow.push(Violation::new("valuation_rate", "non_negative", "valuation_rate must not be negative"));
+        }
+        GuardOutcome { refuse, shadow }
+    }
+}
+

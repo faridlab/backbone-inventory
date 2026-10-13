@@ -32,9 +32,10 @@ pub type DeliveryNoteService = GenericCrudService<
     DeliveryNoteRepository,
 >;
 
-/// The row rules the schema declares for DeliveryNote, checked against the row a create or
-/// update would store. The generated build attaches it to [`DeliveryNoteService`]. Every rule
-/// runs in shadow: a break is logged under `backbone::write_guard` and the write goes ahead.
+/// The rules the schema declares for DeliveryNote, checked against the row a create or update
+/// would store. The generated build attaches it to [`DeliveryNoteService`]. A refusing rule's
+/// break answers 422; a rule in shadow is logged under `backbone::write_guard` and the
+/// write goes ahead.
 pub struct DeliveryNoteRowRules;
 
 #[async_trait::async_trait]
@@ -56,11 +57,44 @@ impl backbone_core::write_guard::WriteGuard<DeliveryNote> for DeliveryNoteRowRul
         let row = &row;
         let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
         let mut shadow = Vec::new();
+        let mut refuse = Vec::new();
         // `status` belongs to a state machine: only its verbs move it
         if update && ctx.transition.is_none() && r::changed(old.as_ref(), row, &["status"]) {
             shadow.push(Violation::new("status", "state_field_verbs_only", "the state field moves only through its verbs"));
         }
-        GuardOutcome { refuse: Vec::new(), shadow }
+        // `delivery_number_required` (@required on DeliveryNote.delivery_number)
+        if (create || (update && r::changed(old.as_ref(), row, &["delivery_number"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "delivery_number")), r::not(r::is_empty(r::trim(r::field(row, "delivery_number")))))) {
+            refuse.push(Violation::new("delivery_number", "required", "delivery_number is required"));
+        }
+        // `delivery_number_max_length` (@max(40) on DeliveryNote.delivery_number)
+        if (create || (update && r::changed(old.as_ref(), row, &["delivery_number"]))) && !r::holds(&r::le(r::length(r::field(row, "delivery_number")), r::Val::Num(40.0_f64))) {
+            shadow.push(Violation::new("delivery_number", "max_length", "delivery_number must be at most 40 characters").with_param("max", 40_i64));
+        }
+        // `customer_id_required` (@required on DeliveryNote.customer_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["customer_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "customer_id")), r::not(r::is_empty(r::trim(r::field(row, "customer_id")))))) {
+            refuse.push(Violation::new("customer_id", "required", "customer_id is required"));
+        }
+        // `warehouse_id_required` (@required on DeliveryNote.warehouse_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["warehouse_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "warehouse_id")), r::not(r::is_empty(r::trim(r::field(row, "warehouse_id")))))) {
+            refuse.push(Violation::new("warehouse_id", "required", "warehouse_id is required"));
+        }
+        // `total_cogs_non_negative` (@non_negative on DeliveryNote.total_cogs)
+        if (create || (update && r::changed(old.as_ref(), row, &["total_cogs"]))) && !r::holds(&r::ge(r::field(row, "total_cogs"), r::Val::Num(0.0_f64))) {
+            shadow.push(Violation::new("total_cogs", "non_negative", "total_cogs must not be negative"));
+        }
+        // `cogs_account_id_required` (@required on DeliveryNote.cogs_account_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["cogs_account_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "cogs_account_id")), r::not(r::is_empty(r::trim(r::field(row, "cogs_account_id")))))) {
+            refuse.push(Violation::new("cogs_account_id", "required", "cogs_account_id is required"));
+        }
+        // `inventory_account_id_required` (@required on DeliveryNote.inventory_account_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["inventory_account_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "inventory_account_id")), r::not(r::is_empty(r::trim(r::field(row, "inventory_account_id")))))) {
+            refuse.push(Violation::new("inventory_account_id", "required", "inventory_account_id is required"));
+        }
+        // `notes_max_length` (@max(1000) on DeliveryNote.notes)
+        if (create || (update && r::changed(old.as_ref(), row, &["notes"]))) && !r::holds(&r::le(r::length(r::field(row, "notes")), r::Val::Num(1000.0_f64))) {
+            shadow.push(Violation::new("notes", "max_length", "notes must be at most 1000 characters").with_param("max", 1000_i64));
+        }
+        GuardOutcome { refuse, shadow }
     }
 }
 

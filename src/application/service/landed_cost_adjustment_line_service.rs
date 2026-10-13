@@ -32,3 +32,45 @@ pub type LandedCostAdjustmentLineService = GenericCrudService<
     LandedCostAdjustmentLineRepository,
 >;
 
+/// The rules the schema declares for LandedCostAdjustmentLine, checked against the row a create or update
+/// would store. The generated build attaches it to [`LandedCostAdjustmentLineService`]. A refusing rule's
+/// break answers 422; a rule in shadow is logged under `backbone::write_guard` and the
+/// write goes ahead.
+pub struct LandedCostAdjustmentLineRowRules;
+
+#[async_trait::async_trait]
+impl backbone_core::write_guard::WriteGuard<LandedCostAdjustmentLine> for LandedCostAdjustmentLineRowRules {
+    async fn check(
+        &self,
+        ctx: &backbone_core::write_guard::WriteCtx<'_, LandedCostAdjustmentLine>,
+    ) -> backbone_core::write_guard::GuardOutcome {
+        use backbone_core::row_rule as r;
+        use backbone_core::violation::Violation;
+        use backbone_core::write_guard::{GuardOutcome, WriteKind};
+        let (create, update) = (ctx.kind == WriteKind::Create, ctx.kind == WriteKind::Update);
+        let Some(after) = ctx.after.filter(|_| create || update) else {
+            return GuardOutcome::allow();
+        };
+        let Ok(row) = serde_json::to_value(after) else {
+            return GuardOutcome::allow();
+        };
+        let row = &row;
+        let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
+        let shadow = Vec::new();
+        let mut refuse = Vec::new();
+        // `lc_id_required` (@required on LandedCostAdjustmentLine.lc_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["lc_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "lc_id")), r::not(r::is_empty(r::trim(r::field(row, "lc_id")))))) {
+            refuse.push(Violation::new("lc_id", "required", "lc_id is required"));
+        }
+        // `move_line_id_required` (@required on LandedCostAdjustmentLine.move_line_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["move_line_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "move_line_id")), r::not(r::is_empty(r::trim(r::field(row, "move_line_id")))))) {
+            refuse.push(Violation::new("move_line_id", "required", "move_line_id is required"));
+        }
+        // `cost_line_id_required` (@required on LandedCostAdjustmentLine.cost_line_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["cost_line_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "cost_line_id")), r::not(r::is_empty(r::trim(r::field(row, "cost_line_id")))))) {
+            refuse.push(Violation::new("cost_line_id", "required", "cost_line_id is required"));
+        }
+        GuardOutcome { refuse, shadow }
+    }
+}
+

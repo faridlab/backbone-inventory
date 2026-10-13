@@ -32,9 +32,10 @@ pub type PurchaseReceiptService = GenericCrudService<
     PurchaseReceiptRepository,
 >;
 
-/// The row rules the schema declares for PurchaseReceipt, checked against the row a create or
-/// update would store. The generated build attaches it to [`PurchaseReceiptService`]. Every rule
-/// runs in shadow: a break is logged under `backbone::write_guard` and the write goes ahead.
+/// The rules the schema declares for PurchaseReceipt, checked against the row a create or update
+/// would store. The generated build attaches it to [`PurchaseReceiptService`]. A refusing rule's
+/// break answers 422; a rule in shadow is logged under `backbone::write_guard` and the
+/// write goes ahead.
 pub struct PurchaseReceiptRowRules;
 
 #[async_trait::async_trait]
@@ -56,11 +57,48 @@ impl backbone_core::write_guard::WriteGuard<PurchaseReceipt> for PurchaseReceipt
         let row = &row;
         let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
         let mut shadow = Vec::new();
+        let mut refuse = Vec::new();
         // `status` belongs to a state machine: only its verbs move it
         if update && ctx.transition.is_none() && r::changed(old.as_ref(), row, &["status"]) {
             shadow.push(Violation::new("status", "state_field_verbs_only", "the state field moves only through its verbs"));
         }
-        GuardOutcome { refuse: Vec::new(), shadow }
+        // `receipt_number_required` (@required on PurchaseReceipt.receipt_number)
+        if (create || (update && r::changed(old.as_ref(), row, &["receipt_number"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "receipt_number")), r::not(r::is_empty(r::trim(r::field(row, "receipt_number")))))) {
+            refuse.push(Violation::new("receipt_number", "required", "receipt_number is required"));
+        }
+        // `receipt_number_max_length` (@max(40) on PurchaseReceipt.receipt_number)
+        if (create || (update && r::changed(old.as_ref(), row, &["receipt_number"]))) && !r::holds(&r::le(r::length(r::field(row, "receipt_number")), r::Val::Num(40.0_f64))) {
+            shadow.push(Violation::new("receipt_number", "max_length", "receipt_number must be at most 40 characters").with_param("max", 40_i64));
+        }
+        // `supplier_id_required` (@required on PurchaseReceipt.supplier_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["supplier_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "supplier_id")), r::not(r::is_empty(r::trim(r::field(row, "supplier_id")))))) {
+            refuse.push(Violation::new("supplier_id", "required", "supplier_id is required"));
+        }
+        // `warehouse_id_required` (@required on PurchaseReceipt.warehouse_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["warehouse_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "warehouse_id")), r::not(r::is_empty(r::trim(r::field(row, "warehouse_id")))))) {
+            refuse.push(Violation::new("warehouse_id", "required", "warehouse_id is required"));
+        }
+        // `currency_max_length` (@max(3) on PurchaseReceipt.currency)
+        if (create || (update && r::changed(old.as_ref(), row, &["currency"]))) && !r::holds(&r::le(r::length(r::field(row, "currency")), r::Val::Num(3.0_f64))) {
+            shadow.push(Violation::new("currency", "max_length", "currency must be at most 3 characters").with_param("max", 3_i64));
+        }
+        // `total_value_non_negative` (@non_negative on PurchaseReceipt.total_value)
+        if (create || (update && r::changed(old.as_ref(), row, &["total_value"]))) && !r::holds(&r::ge(r::field(row, "total_value"), r::Val::Num(0.0_f64))) {
+            shadow.push(Violation::new("total_value", "non_negative", "total_value must not be negative"));
+        }
+        // `inventory_account_id_required` (@required on PurchaseReceipt.inventory_account_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["inventory_account_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "inventory_account_id")), r::not(r::is_empty(r::trim(r::field(row, "inventory_account_id")))))) {
+            refuse.push(Violation::new("inventory_account_id", "required", "inventory_account_id is required"));
+        }
+        // `grir_account_id_required` (@required on PurchaseReceipt.grir_account_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["grir_account_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "grir_account_id")), r::not(r::is_empty(r::trim(r::field(row, "grir_account_id")))))) {
+            refuse.push(Violation::new("grir_account_id", "required", "grir_account_id is required"));
+        }
+        // `notes_max_length` (@max(1000) on PurchaseReceipt.notes)
+        if (create || (update && r::changed(old.as_ref(), row, &["notes"]))) && !r::holds(&r::le(r::length(r::field(row, "notes")), r::Val::Num(1000.0_f64))) {
+            shadow.push(Violation::new("notes", "max_length", "notes must be at most 1000 characters").with_param("max", 1000_i64));
+        }
+        GuardOutcome { refuse, shadow }
     }
 }
 

@@ -32,9 +32,10 @@ pub type StockMoveService = GenericCrudService<
     StockMoveRepository,
 >;
 
-/// The row rules the schema declares for StockMove, checked against the row a create or
-/// update would store. The generated build attaches it to [`StockMoveService`]. Every rule
-/// runs in shadow: a break is logged under `backbone::write_guard` and the write goes ahead.
+/// The rules the schema declares for StockMove, checked against the row a create or update
+/// would store. The generated build attaches it to [`StockMoveService`]. A refusing rule's
+/// break answers 422; a rule in shadow is logged under `backbone::write_guard` and the
+/// write goes ahead.
 pub struct StockMoveRowRules;
 
 #[async_trait::async_trait]
@@ -56,11 +57,44 @@ impl backbone_core::write_guard::WriteGuard<StockMove> for StockMoveRowRules {
         let row = &row;
         let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
         let mut shadow = Vec::new();
+        let mut refuse = Vec::new();
         // `state` belongs to a state machine: only its verbs move it
         if update && ctx.transition.is_none() && r::changed(old.as_ref(), row, &["state"]) {
             shadow.push(Violation::new("state", "state_field_verbs_only", "the state field moves only through its verbs"));
         }
-        GuardOutcome { refuse: Vec::new(), shadow }
+        // `name_required` (@required on StockMove.name)
+        if (create || (update && r::changed(old.as_ref(), row, &["name"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "name")), r::not(r::is_empty(r::trim(r::field(row, "name")))))) {
+            refuse.push(Violation::new("name", "required", "name is required"));
+        }
+        // `name_max_length` (@max(400) on StockMove.name)
+        if (create || (update && r::changed(old.as_ref(), row, &["name"]))) && !r::holds(&r::le(r::length(r::field(row, "name")), r::Val::Num(400.0_f64))) {
+            shadow.push(Violation::new("name", "max_length", "name must be at most 400 characters").with_param("max", 400_i64));
+        }
+        // `item_id_required` (@required on StockMove.item_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["item_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "item_id")), r::not(r::is_empty(r::trim(r::field(row, "item_id")))))) {
+            refuse.push(Violation::new("item_id", "required", "item_id is required"));
+        }
+        // `demand_qty_non_negative` (@non_negative on StockMove.demand_qty)
+        if (create || (update && r::changed(old.as_ref(), row, &["demand_qty"]))) && !r::holds(&r::ge(r::field(row, "demand_qty"), r::Val::Num(0.0_f64))) {
+            shadow.push(Violation::new("demand_qty", "non_negative", "demand_qty must not be negative"));
+        }
+        // `quantity_non_negative` (@non_negative on StockMove.quantity)
+        if (create || (update && r::changed(old.as_ref(), row, &["quantity"]))) && !r::holds(&r::ge(r::field(row, "quantity"), r::Val::Num(0.0_f64))) {
+            shadow.push(Violation::new("quantity", "non_negative", "quantity must not be negative"));
+        }
+        // `origin_max_length` (@max(200) on StockMove.origin)
+        if (create || (update && r::changed(old.as_ref(), row, &["origin"]))) && !r::holds(&r::le(r::length(r::field(row, "origin")), r::Val::Num(200.0_f64))) {
+            shadow.push(Violation::new("origin", "max_length", "origin must be at most 200 characters").with_param("max", 200_i64));
+        }
+        // `location_id_required` (@required on StockMove.location_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["location_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "location_id")), r::not(r::is_empty(r::trim(r::field(row, "location_id")))))) {
+            refuse.push(Violation::new("location_id", "required", "location_id is required"));
+        }
+        // `location_dest_id_required` (@required on StockMove.location_dest_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["location_dest_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "location_dest_id")), r::not(r::is_empty(r::trim(r::field(row, "location_dest_id")))))) {
+            refuse.push(Violation::new("location_dest_id", "required", "location_dest_id is required"));
+        }
+        GuardOutcome { refuse, shadow }
     }
 }
 
