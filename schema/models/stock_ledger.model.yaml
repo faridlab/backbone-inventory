@@ -78,7 +78,7 @@ models:
 
       voucher_no:
         type: string
-        attributes: ["@required", "@max(40)"]
+        attributes: ["@required", "@max(120)"]
         description: "Human voucher reference"
 
       sle_no:

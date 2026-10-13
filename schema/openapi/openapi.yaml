@@ -17120,7 +17120,7 @@ components:
           format: uuid
         voucher_no:
           type: string
-          maxLength: 40
+          maxLength: 120
         sle_no:
           type: integer
           format: int32
@@ -17189,7 +17189,7 @@ components:
           format: uuid
         voucher_no:
           type: string
-          maxLength: 40
+          maxLength: 120
         sle_no:
           type: integer
           format: int32
@@ -17245,7 +17245,7 @@ components:
           format: uuid
         voucher_no:
           type: string
-          maxLength: 40
+          maxLength: 120
         sle_no:
           type: integer
           format: int32
@@ -17285,7 +17285,7 @@ components:
           format: uuid
         voucher_no:
           type: string
-          maxLength: 40
+          maxLength: 120
         sle_no:
           type: integer
           format: int32
