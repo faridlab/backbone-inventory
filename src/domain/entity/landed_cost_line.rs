@@ -215,7 +215,7 @@ impl backbone_orm::EntityRepoMeta for LandedCostLine {
         &["name"]
     }
     fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
-        &[("landedCost", "landed_costs", "lcId")]
+        &[("landedCost", "landed_costs", "lcId"), ("lc", "landed_costs", "lcId")]
     }
 }
 

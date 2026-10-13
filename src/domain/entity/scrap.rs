@@ -309,6 +309,9 @@ impl backbone_orm::EntityRepoMeta for Scrap {
     fn search_fields() -> &'static [&'static str] {
         &["name"]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("location", "locations", "locationId"), ("scrapLocation", "locations", "scrapLocationId"), ("lot", "lots", "lotId"), ("package", "packages", "packageId"), ("picking", "transfers", "pickingId"), ("move", "stock_moves", "moveId")]
+    }
 }
 
 /// Builder for Scrap entity

@@ -217,6 +217,9 @@ impl backbone_orm::EntityRepoMeta for LandedCostAdjustmentLine {
     fn search_fields() -> &'static [&'static str] {
         &[]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("lc", "landed_costs", "lcId")]
+    }
 }
 
 /// Builder for LandedCostAdjustmentLine entity

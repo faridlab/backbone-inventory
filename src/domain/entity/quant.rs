@@ -307,6 +307,9 @@ impl backbone_orm::EntityRepoMeta for Quant {
     fn search_fields() -> &'static [&'static str] {
         &[]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("location", "locations", "locationId"), ("lot", "lots", "lotId"), ("package", "packages", "packageId")]
+    }
 }
 
 /// Builder for Quant entity

@@ -271,6 +271,9 @@ impl backbone_orm::EntityRepoMeta for StockLedgerEntry {
     fn search_fields() -> &'static [&'static str] {
         &["voucher_no"]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("warehouse", "warehouses", "warehouseId")]
+    }
 }
 
 /// Builder for StockLedgerEntry entity

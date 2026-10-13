@@ -304,6 +304,9 @@ impl backbone_orm::EntityRepoMeta for LandedCost {
     fn search_fields() -> &'static [&'static str] {
         &["lc_number", "currency"]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("transfer", "transfers", "transferId")]
+    }
 }
 
 /// Builder for LandedCost entity

@@ -281,6 +281,9 @@ impl backbone_orm::EntityRepoMeta for OperationType {
     fn search_fields() -> &'static [&'static str] {
         &["name", "sequence_code"]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("warehouse", "warehouses", "warehouseId"), ("defaultLocationSrc", "locations", "defaultLocationSrcId"), ("defaultLocationDest", "locations", "defaultLocationDestId")]
+    }
 }
 
 /// Builder for OperationType entity

@@ -334,6 +334,9 @@ impl backbone_orm::EntityRepoMeta for DeliveryNote {
     fn search_fields() -> &'static [&'static str] {
         &["delivery_number"]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("warehouse", "warehouses", "warehouseId"), ("transfer", "transfers", "transferId")]
+    }
 }
 
 /// Builder for DeliveryNote entity

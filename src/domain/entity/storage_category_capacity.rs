@@ -223,6 +223,9 @@ impl backbone_orm::EntityRepoMeta for StorageCategoryCapacity {
     fn search_fields() -> &'static [&'static str] {
         &[]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("storageCategory", "storage_categories", "storageCategoryId"), ("packageType", "package_types", "packageTypeId")]
+    }
 }
 
 /// Builder for StorageCategoryCapacity entity

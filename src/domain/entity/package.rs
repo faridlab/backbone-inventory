@@ -250,6 +250,9 @@ impl backbone_orm::EntityRepoMeta for Package {
     fn search_fields() -> &'static [&'static str] {
         &["name", "complete_name", "parent_path"]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("location", "locations", "locationId"), ("parentPackage", "packages", "parentPackageId"), ("packageType", "package_types", "packageTypeId")]
+    }
 }
 
 /// Builder for Package entity

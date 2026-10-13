@@ -265,6 +265,9 @@ impl backbone_orm::EntityRepoMeta for PutawayRule {
     fn search_fields() -> &'static [&'static str] {
         &[]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("locationIn", "locations", "locationInId"), ("locationOut", "locations", "locationOutId"), ("packageType", "package_types", "packageTypeId"), ("storageCategory", "storage_categories", "storageCategoryId")]
+    }
 }
 
 /// Builder for PutawayRule entity

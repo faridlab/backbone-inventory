@@ -219,6 +219,9 @@ impl backbone_orm::EntityRepoMeta for Bin {
     fn search_fields() -> &'static [&'static str] {
         &[]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("warehouse", "warehouses", "warehouseId")]
+    }
 }
 
 /// Builder for Bin entity

@@ -303,6 +303,9 @@ impl backbone_orm::EntityRepoMeta for Location {
     fn search_fields() -> &'static [&'static str] {
         &["name", "complete_name", "parent_path"]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("location", "locations", "locationId"), ("warehouse", "warehouses", "warehouseId"), ("storageCategory", "storage_categories", "storageCategoryId")]
+    }
 }
 
 /// Builder for Location entity

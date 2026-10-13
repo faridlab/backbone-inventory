@@ -339,6 +339,9 @@ impl backbone_orm::EntityRepoMeta for PurchaseReceipt {
     fn search_fields() -> &'static [&'static str] {
         &["receipt_number", "currency"]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("warehouse", "warehouses", "warehouseId"), ("transfer", "transfers", "transferId")]
+    }
 }
 
 /// Builder for PurchaseReceipt entity

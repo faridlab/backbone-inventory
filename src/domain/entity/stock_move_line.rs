@@ -312,7 +312,7 @@ impl backbone_orm::EntityRepoMeta for StockMoveLine {
         &[]
     }
     fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
-        &[("move", "stock_moves", "moveId"), ("picking", "transfers", "pickingId")]
+        &[("move", "stock_moves", "moveId"), ("picking", "transfers", "pickingId"), ("lot", "lots", "lotId"), ("package", "packages", "packageId"), ("resultPackage", "packages", "resultPackageId"), ("location", "locations", "locationId"), ("locationDest", "locations", "locationDestId")]
     }
 }
 

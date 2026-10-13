@@ -328,6 +328,9 @@ impl backbone_orm::EntityRepoMeta for Transfer {
     fn search_fields() -> &'static [&'static str] {
         &["name"]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("pickingType", "operation_types", "pickingTypeId"), ("location", "locations", "locationId"), ("locationDest", "locations", "locationDestId"), ("backorder", "transfers", "backorderId"), ("return", "transfers", "returnId")]
+    }
 }
 
 /// Builder for Transfer entity

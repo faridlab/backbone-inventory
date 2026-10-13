@@ -277,7 +277,7 @@ impl backbone_orm::EntityRepoMeta for RouteRule {
         &["name"]
     }
     fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
-        &[("route", "routes", "routeId")]
+        &[("route", "routes", "routeId"), ("locationSrc", "locations", "locationSrcId"), ("locationDest", "locations", "locationDestId"), ("pickingType", "operation_types", "pickingTypeId"), ("warehouse", "warehouses", "warehouseId")]
     }
 }
 

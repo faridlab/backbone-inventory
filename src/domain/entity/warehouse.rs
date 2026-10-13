@@ -222,6 +222,9 @@ impl backbone_orm::EntityRepoMeta for Warehouse {
     fn search_fields() -> &'static [&'static str] {
         &["code", "name"]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("parentWarehouse", "warehouses", "parentWarehouseId")]
+    }
 }
 
 /// Builder for Warehouse entity

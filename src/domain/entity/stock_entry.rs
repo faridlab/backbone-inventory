@@ -275,6 +275,9 @@ impl backbone_orm::EntityRepoMeta for StockEntry {
     fn search_fields() -> &'static [&'static str] {
         &["entry_number"]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("fromWarehouse", "warehouses", "fromWarehouseId"), ("toWarehouse", "warehouses", "toWarehouseId"), ("transfer", "transfers", "transferId")]
+    }
 }
 
 /// Builder for StockEntry entity

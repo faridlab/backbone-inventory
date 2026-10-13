@@ -238,6 +238,9 @@ impl backbone_orm::EntityRepoMeta for Lot {
     fn search_fields() -> &'static [&'static str] {
         &["name"]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("location", "locations", "locationId")]
+    }
 }
 
 /// Builder for Lot entity
