@@ -4,7 +4,7 @@
 # invariants, and the quant/route/orderpoint guards. IDs below are the
 # stock-convergence register flags (docs/odoo/inventory/stock §11 guards,
 # §12 triggers) — they intentionally do NOT collide with the voucher-pipeline
-# R1-R7 in inventory.hook.yaml (separate rule namespace per file).
+# R1-R6 in inventory.hook.yaml (separate rule namespace per file).
 #
 # The StockMove machine is THE only state machine in the converged model:
 # Transfer.state is a stored-compute projection of its moves (T1) and has NO
@@ -60,11 +60,12 @@ rules:
   - id: T2-avail
     name: available_is_read
     entity: Quant
-    when: always
-    assert: "quant.available_quantity == quant.quantity - quant.reserved_quantity (stored compute; never hand-written)"
+    # Stored compute: available is quantity minus reserved, never hand-written.
+    when: [create, update]
+    assert: "available_quantity == quantity - reserved_quantity"
     error_code: available_mismatch
     enforcement: service
-    justification: "Available is a derivation, not a stored decision: it is quantity minus reserved and is never written by hand. A CHECK could only compare it to the two columns after someone had already written a third; the rule is that nothing writes it at all, which is a property of the write paths rather than of a row."
+    justification: "Compiled into the generated write guard, so every create and update of a quant whose available quantity disagrees with quantity minus reserved is refused with available_mismatch. Available is a derivation the engine writes alongside the two columns it is derived from; the guard catches a write that sets one without the others."
   # -- quant invariants ----------------------------------------------------------
   - id: R12
     name: one_quant_per_dimension
@@ -121,11 +122,12 @@ rules:
   - id: T6
     name: done_moves_immutable
     entity: StockMove
-    when: update
-    assert: "no field of a done move is edited; corrections are reversal moves (returns)"
+    # No field of a done move is edited; corrections are reversal moves (returns).
+    when: [update]
+    assert: "$old.state != 'done'"
     error_code: done_move_immutable
     enforcement: service
-    justification: "The rule names a CORRECTION POLICY, not a column: a done move is never edited, and a mistake is fixed by a reversal move that leaves both facts on record. A database guard could freeze the row, and the module does keep one, but the policy this rule states is what the service offers instead of an edit."
+    justification: "Compiled into the generated write guard, which reads the stored row: every update of a move already done, the generic move update included, is refused with done_move_immutable. A mistake is fixed by a reversal move that leaves both facts on record."
   - id: R23
     name: validate_requires_reserved_or_forced
     entity: StockMove
@@ -217,9 +219,6 @@ events:
   BackorderCreated:
     when: "a partial validate mints the backorder transfer"
     payload: [backorder_id, company_id, origin_id]
-  QuantAdjusted:
-    when: "an inventory count applies through _apply_inventory (T4)"
-    payload: [quant_id, company_id, item_id, location_id, diff_qty, adjustment_move_id]
   OrderpointTriggered:
     when: "the scheduler orders on a reordering rule (T11)"
     payload: [orderpoint_id, company_id, item_id, qty_to_order, forecast_qty]

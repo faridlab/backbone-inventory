@@ -111,5 +111,277 @@ pub use package_service::PackageRowRules;
 pub use warehouse_service::WarehouseRowRules;
 pub use stock_item_service::StockItemRowRules;
 
+/// A `PickingBatchService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_picking_batch_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::PickingBatchRepository>,
+) -> PickingBatchService {
+    PickingBatchService::with_repository(repository).with_guard(std::sync::Arc::new(PickingBatchRowRules))
+}
+
+/// A `DeliveryNoteService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_delivery_note_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::DeliveryNoteRepository>,
+) -> DeliveryNoteService {
+    DeliveryNoteService::with_repository(repository).with_guard(std::sync::Arc::new(DeliveryNoteRowRules))
+}
+
+/// A `DeliveryNoteItemService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_delivery_note_item_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::DeliveryNoteItemRepository>,
+) -> DeliveryNoteItemService {
+    DeliveryNoteItemService::with_repository(repository).with_guard(std::sync::Arc::new(DeliveryNoteItemRowRules))
+}
+
+/// A `InventoryCompanySettingService` over `repository`: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_inventory_company_setting_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::InventoryCompanySettingRepository>,
+) -> InventoryCompanySettingService {
+    InventoryCompanySettingService::with_repository(repository)
+}
+
+/// A `LandedCostService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_landed_cost_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::LandedCostRepository>,
+) -> LandedCostService {
+    LandedCostService::with_repository(repository).with_guard(std::sync::Arc::new(LandedCostRowRules))
+}
+
+/// A `LandedCostLineService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_landed_cost_line_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::LandedCostLineRepository>,
+) -> LandedCostLineService {
+    LandedCostLineService::with_repository(repository).with_guard(std::sync::Arc::new(LandedCostLineRowRules))
+}
+
+/// A `LandedCostAdjustmentLineService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_landed_cost_adjustment_line_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::LandedCostAdjustmentLineRepository>,
+) -> LandedCostAdjustmentLineService {
+    LandedCostAdjustmentLineService::with_repository(repository).with_guard(std::sync::Arc::new(LandedCostAdjustmentLineRowRules))
+}
+
+/// A `LocationService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_location_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::LocationRepository>,
+) -> LocationService {
+    LocationService::with_repository(repository).with_guard(std::sync::Arc::new(LocationRowRules))
+}
+
+/// A `StockMoveService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_stock_move_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::StockMoveRepository>,
+) -> StockMoveService {
+    StockMoveService::with_repository(repository).with_guard(std::sync::Arc::new(StockMoveRowRules))
+}
+
+/// A `StockMoveLineService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_stock_move_line_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::StockMoveLineRepository>,
+) -> StockMoveLineService {
+    StockMoveLineService::with_repository(repository).with_guard(std::sync::Arc::new(StockMoveLineRowRules))
+}
+
+/// A `OperationTypeService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_operation_type_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::OperationTypeRepository>,
+) -> OperationTypeService {
+    OperationTypeService::with_repository(repository).with_guard(std::sync::Arc::new(OperationTypeRowRules))
+}
+
+/// A `TransferService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_transfer_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::TransferRepository>,
+) -> TransferService {
+    TransferService::with_repository(repository).with_guard(std::sync::Arc::new(TransferRowRules))
+}
+
+/// A `RouteService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_route_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::RouteRepository>,
+) -> RouteService {
+    RouteService::with_repository(repository).with_guard(std::sync::Arc::new(RouteRowRules))
+}
+
+/// A `RouteRuleService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_route_rule_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::RouteRuleRepository>,
+) -> RouteRuleService {
+    RouteRuleService::with_repository(repository).with_guard(std::sync::Arc::new(RouteRuleRowRules))
+}
+
+/// A `ReorderingRuleService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_reordering_rule_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::ReorderingRuleRepository>,
+) -> ReorderingRuleService {
+    ReorderingRuleService::with_repository(repository).with_guard(std::sync::Arc::new(ReorderingRuleRowRules))
+}
+
+/// A `PurchaseReceiptService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_purchase_receipt_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::PurchaseReceiptRepository>,
+) -> PurchaseReceiptService {
+    PurchaseReceiptService::with_repository(repository).with_guard(std::sync::Arc::new(PurchaseReceiptRowRules))
+}
+
+/// A `PurchaseReceiptItemService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_purchase_receipt_item_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::PurchaseReceiptItemRepository>,
+) -> PurchaseReceiptItemService {
+    PurchaseReceiptItemService::with_repository(repository).with_guard(std::sync::Arc::new(PurchaseReceiptItemRowRules))
+}
+
+/// A `QuantService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_quant_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::QuantRepository>,
+) -> QuantService {
+    QuantService::with_repository(repository).with_guard(std::sync::Arc::new(QuantRowRules))
+}
+
+/// A `ScrapService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_scrap_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::ScrapRepository>,
+) -> ScrapService {
+    ScrapService::with_repository(repository).with_guard(std::sync::Arc::new(ScrapRowRules))
+}
+
+/// A `ScrapReasonTagService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_scrap_reason_tag_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::ScrapReasonTagRepository>,
+) -> ScrapReasonTagService {
+    ScrapReasonTagService::with_repository(repository).with_guard(std::sync::Arc::new(ScrapReasonTagRowRules))
+}
+
+/// A `StockEntryService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_stock_entry_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::StockEntryRepository>,
+) -> StockEntryService {
+    StockEntryService::with_repository(repository).with_guard(std::sync::Arc::new(StockEntryRowRules))
+}
+
+/// A `StockEntryItemService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_stock_entry_item_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::StockEntryItemRepository>,
+) -> StockEntryItemService {
+    StockEntryItemService::with_repository(repository).with_guard(std::sync::Arc::new(StockEntryItemRowRules))
+}
+
+/// A `StockLedgerEntryService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_stock_ledger_entry_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::StockLedgerEntryRepository>,
+) -> StockLedgerEntryService {
+    StockLedgerEntryService::with_repository(repository).with_guard(std::sync::Arc::new(StockLedgerEntryRowRules))
+}
+
+/// A `BinService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_bin_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::BinRepository>,
+) -> BinService {
+    BinService::with_repository(repository).with_guard(std::sync::Arc::new(BinRowRules))
+}
+
+/// A `StockReconciliationService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_stock_reconciliation_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::StockReconciliationRepository>,
+) -> StockReconciliationService {
+    StockReconciliationService::with_repository(repository).with_guard(std::sync::Arc::new(StockReconciliationRowRules))
+}
+
+/// A `StockReconciliationItemService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_stock_reconciliation_item_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::StockReconciliationItemRepository>,
+) -> StockReconciliationItemService {
+    StockReconciliationItemService::with_repository(repository).with_guard(std::sync::Arc::new(StockReconciliationItemRowRules))
+}
+
+/// A `PackageTypeService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_package_type_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::PackageTypeRepository>,
+) -> PackageTypeService {
+    PackageTypeService::with_repository(repository).with_guard(std::sync::Arc::new(PackageTypeRowRules))
+}
+
+/// A `StorageCategoryService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_storage_category_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::StorageCategoryRepository>,
+) -> StorageCategoryService {
+    StorageCategoryService::with_repository(repository).with_guard(std::sync::Arc::new(StorageCategoryRowRules))
+}
+
+/// A `StorageCategoryCapacityService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_storage_category_capacity_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::StorageCategoryCapacityRepository>,
+) -> StorageCategoryCapacityService {
+    StorageCategoryCapacityService::with_repository(repository).with_guard(std::sync::Arc::new(StorageCategoryCapacityRowRules))
+}
+
+/// A `PutawayRuleService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_putaway_rule_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::PutawayRuleRepository>,
+) -> PutawayRuleService {
+    PutawayRuleService::with_repository(repository).with_guard(std::sync::Arc::new(PutawayRuleRowRules))
+}
+
+/// A `LotService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_lot_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::LotRepository>,
+) -> LotService {
+    LotService::with_repository(repository).with_guard(std::sync::Arc::new(LotRowRules))
+}
+
+/// A `PackageService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_package_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::PackageRepository>,
+) -> PackageService {
+    PackageService::with_repository(repository).with_guard(std::sync::Arc::new(PackageRowRules))
+}
+
+/// A `WarehouseService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_warehouse_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::WarehouseRepository>,
+) -> WarehouseService {
+    WarehouseService::with_repository(repository).with_guard(std::sync::Arc::new(WarehouseRowRules))
+}
+
+/// A `StockItemService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_stock_item_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::StockItemRepository>,
+) -> StockItemService {
+    StockItemService::with_repository(repository).with_guard(std::sync::Arc::new(StockItemRowRules))
+}
+
 // This directory's extension (hand-written; ADR-0031).
 include!("mod.ext.rs");

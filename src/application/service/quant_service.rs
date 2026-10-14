@@ -70,6 +70,10 @@ impl backbone_core::write_guard::WriteGuard<Quant> for QuantRowRules {
         if (create || (update && r::changed(old.as_ref(), row, &["reserved_quantity"]))) && !r::holds(&r::ge(r::field(row, "reserved_quantity"), r::Val::Num(0.0_f64))) {
             refuse.push(Violation::new("reserved_quantity", "non_negative", "reserved_quantity must not be negative"));
         }
+        // `available_is_read` (stock.hook.yaml:60)
+        if (create || update) && !r::holds(&r::eq(r::field(row, "available_quantity"), r::sub(r::field(row, "quantity"), r::field(row, "reserved_quantity")))) {
+            refuse.push(Violation::new("available_quantity", "available_mismatch", "breaks the rule `available_is_read`: available_quantity == quantity - reserved_quantity"));
+        }
         GuardOutcome { refuse, shadow }
     }
 }

@@ -81,13 +81,6 @@ rules:
     when: submit
     assert: "receipt blends rate = value/qty; outflow keeps rate, cogs = qty*rate"
     error_code: null
-  - id: R7
-    name: balanced_post
-    entity: StockMove
-    justification: "NOT ENFORCED in a release build: every posting envelope is balanced by construction, and the only check is a debug_assert! in inventory_write_service.rs emit_and_reconcile and inventory_move_engine.rs action_done, which release builds compile out."
-    when: submit
-    assert: "sum(lines.debit) == sum(lines.credit)"
-    error_code: unbalanced
 
 # -----------------------------------------------------------------------------
 # Domain events (emitted via InventoryEventSink after commit).
