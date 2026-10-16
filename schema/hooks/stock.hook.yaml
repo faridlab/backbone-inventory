@@ -70,7 +70,8 @@ rules:
   - id: R12
     name: one_quant_per_dimension
     entity: Quant
-    justification: "PARTLY: the unique index idx_stock_quants_item_id_location_id_lot_id_package_id_owner_id does not dedup NULL dimensions, and stock_adjustment_repository.rs init_quant inserts without the advisory lock lock_or_init takes."
+    enforced_by: "src/infrastructure/persistence/quant_repository.rs::lock_or_init_on"
+    justification: "Every path that creates a quant goes through lock_or_init_on: a transaction-scoped advisory lock on the dimension key, then an insert guarded by NOT EXISTS with NULL-safe comparisons, so NULL dimensions dedup too; the count bootstrap init_quant calls it (tests/move_engine_cases.rs concurrent_first_counts_make_one_quant). The unique index idx_stock_quants_item_id_location_id_lot_id_package_id_owner_id cannot dedup NULL dimensions on its own."
     when: write
     assert: "exactly one quant per (item, location, lot, package, owner) — NULL dimensions dedup in the engine, not in the table"
     error_code: duplicate_quant
@@ -118,7 +119,8 @@ rules:
     assert: "cancelling a move with move_dest_ids and propagate_cancel propagates the cancellation downstream (never into done moves)"
     error_code: null
     enforcement: service
-    justification: "Propagation walks a chain of linked moves and stops at the ones already done. That is a traversal with a rule about where to stop, not a predicate over a row, and a trigger doing it would recurse through the chain on every cancellation."
+    enforced_by: "src/application/service/inventory_move_engine.rs::action_cancel"
+    justification: "action_cancel walks the whole chain in the cancel's transaction: every live descendant frees its reservation and cancels, a child that does not propagate stops its branch, a done move is never touched, and a chain that loops back is cancelled once (tests/move_engine_cases.rs cancel_frees_every_descendants_reservation). A traversal with a rule about where to stop, not a predicate over a row."
   - id: T6
     name: done_moves_immutable
     entity: StockMove
@@ -133,9 +135,10 @@ rules:
     entity: StockMove
     when: validate
     assert: "outgoing moves validate from assigned, or forced from confirmed with an explicit backorder policy decision"
-    error_code: not_reserved
+    error_code: wrong_move_state
     enforcement: service
-    justification: "The gate reads a reservation state and, when it is absent, a deliberate backorder decision the caller makes at that moment. The second half exists nowhere in the data until the caller supplies it, so no constraint can stand in for it."
+    enforced_by: "src/application/service/inventory_move_engine.rs::action_done"
+    justification: "action_done validates a move only from assigned, partially_available or confirmed, and every call carries the caller's BackorderPolicy, the explicit decision a confirmed move validates under; any other state refuses with wrong_move_state. The decision exists nowhere in the data until the caller supplies it, so no constraint can stand in for it."
   # -- uniqueness guards (org-scoped by the composing decorator's indexes) --------
   # Tenancy is composition-installed (ADR-0029): the module's tables carry no
   # tenant column, so these uniques are declared here WITHOUT a tenant arm and

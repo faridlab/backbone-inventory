@@ -535,3 +535,58 @@ async fn virtual_counterparts_carry_no_quant_rows() {
     let (hq, hr) = quant_at(&pool, item, shelf).await;
     assert_eq!((hq, hr), (d("5"), d("0")), "internal destination materialized the supply");
 }
+
+/// MEC-7b: a cancel goes all the way down a propagating chain: every live descendant frees its own
+/// reservation and cancels, a grandchild included.
+#[tokio::test]
+async fn cancel_frees_every_descendants_reservation() {
+    let pool = pool().await;
+    let w = InventoryWriteService::new(pool.clone());
+    let item = Uuid::new_v4();
+    let wh = warehouse(&w).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
+    let customer = loc(&pool, "customer", None).await;
+    seed_quant(&pool, item, stock, "10").await;
+
+    let grandchild = w.create_move(new_move(item, stock, customer, "1")).await.unwrap();
+    w.action_confirm(grandchild).await.unwrap();
+    let mut child_input = new_move(item, stock, customer, "4");
+    child_input.move_dest_ids = vec![grandchild];
+    let child = w.create_move(child_input).await.unwrap();
+    w.action_confirm(child).await.unwrap();
+    w.action_assign(child).await.unwrap();
+    assert_eq!(quant_at(&pool, item, stock).await.1, d("4"), "the child holds its reservation");
+    let mut parent_input = new_move(item, stock, customer, "2");
+    parent_input.move_dest_ids = vec![child];
+    let parent = w.create_move(parent_input).await.unwrap();
+    w.action_confirm(parent).await.unwrap();
+
+    w.action_cancel(parent).await.unwrap();
+    assert_eq!(move_state(&pool, child).await, "cancel");
+    assert_eq!(move_state(&pool, grandchild).await, "cancel", "the cancel reaches the grandchild");
+    assert_eq!(quant_at(&pool, item, stock).await, (d("10"), d("0")), "the child's reservation is freed");
+}
+
+/// MEC-7c: counts staged at once on a location with no stock yet make one quant between them.
+#[tokio::test]
+async fn concurrent_first_counts_make_one_quant() {
+    let pool = pool().await;
+    let w = std::sync::Arc::new(InventoryWriteService::new(pool.clone()));
+    let item = Uuid::new_v4();
+    let wh = warehouse(&w).await;
+    let stock = loc(&pool, "internal", Some(wh)).await;
+    let counts: Vec<_> = (0..10)
+        .map(|i| {
+            let w = w.clone();
+            tokio::spawn(async move { w.stage_quant_count(item, stock, Decimal::from(i)).await })
+        })
+        .collect();
+    for c in counts {
+        c.await.unwrap().unwrap();
+    }
+    let quants: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM inventory.stock_quants WHERE item_id=$1 AND location_id=$2 AND (metadata->>'deleted_at') IS NULL",
+    )
+    .bind(item).bind(stock).fetch_one(&pool).await.unwrap();
+    assert_eq!(quants, 1, "one quant per (item, location)");
+}

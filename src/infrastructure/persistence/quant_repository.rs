@@ -107,6 +107,15 @@ impl QuantRepository {
         conn: &mut sqlx::PgConnection,
         dims: QuantDims,
     ) -> Result<QuantRow, sqlx::Error> {
+        Self::lock_or_init_on(conn, dims).await
+    }
+
+    /// [`Self::lock_or_init`] for a caller that holds no repository: every path that may create
+    /// a quant goes through this one, so they all take the same creation lock.
+    pub async fn lock_or_init_on(
+        conn: &mut sqlx::PgConnection,
+        dims: QuantDims,
+    ) -> Result<QuantRow, sqlx::Error> {
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
             .bind(dims.lock_key())
             .execute(&mut *conn)

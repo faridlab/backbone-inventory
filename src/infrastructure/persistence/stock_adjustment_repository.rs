@@ -106,28 +106,18 @@ impl StockAdjustmentRepository {
         }))
     }
 
-    /// Initialize the zeroed quant for (item, location) — the count surface exists
-    /// even before any stock does. Returns its id; the caller has already verified
-    /// the location is internal (R13).
+    /// The quant for (item, location) with no lot, package or owner, created zeroed when there is
+    /// none yet — the count surface exists even before any stock does. Returns its id; the caller
+    /// has already verified the location is internal (R13). Created through the quant
+    /// repository's creation lock, so two counts that both found no quant still make one.
     pub async fn init_quant(
         &self,
         conn: &mut PgConnection,
         item_id: Uuid,
         location_id: Uuid,
     ) -> Result<Uuid, sqlx::Error> {
-        let id = Uuid::new_v4();
-        sqlx::query(
-            r#"INSERT INTO inventory.stock_quants
-                 (id, item_id, location_id, quantity, reserved_quantity, available_quantity,
-                  inventory_quantity_set, sn_duplicated)
-               VALUES ($1, $2, $3, 0, 0, 0, FALSE, FALSE)"#,
-        )
-        .bind(id)
-        .bind(item_id)
-        .bind(location_id)
-        .execute(conn)
-        .await?;
-        Ok(id)
+        let dims = super::quant_repository::QuantDims { item_id, location_id, lot_id: None, package_id: None, owner_id: None };
+        Ok(super::quant_repository::QuantRepository::lock_or_init_on(conn, dims).await?.id)
     }
 
     /// Stage a counted quantity on a quant (T4): record the count and its stored

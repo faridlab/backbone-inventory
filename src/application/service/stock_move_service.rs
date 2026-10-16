@@ -95,7 +95,7 @@ impl backbone_core::write_guard::WriteGuard<StockMove> for StockMoveRowRules {
         if (create || (update && r::changed(old.as_ref(), row, &["location_dest_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "location_dest_id")), r::not(r::is_empty(r::trim(r::field(row, "location_dest_id")))))) {
             refuse.push(Violation::new("location_dest_id", "required", "location_dest_id is required"));
         }
-        // `done_moves_immutable` (stock.hook.yaml:122)
+        // `done_moves_immutable` (stock.hook.yaml:124)
         if (update) && !r::holds(&r::ne(r::field(old_row, "state"), r::text("done"))) {
             refuse.push(Violation::new("state", "done_move_immutable", "breaks the rule `done_moves_immutable`: $old.state != 'done'"));
         }

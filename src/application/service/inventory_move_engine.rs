@@ -723,21 +723,42 @@ impl InventoryWriteService {
             return Err(InventoryError::WrongMoveState { move_id, action: "cancel", current: "raced".into() });
         }
         self.move_lines.mirror_state(&mut tx, move_id, "cancel").await?;
-        if mv.propagate_cancel && !mv.move_dest_ids.is_empty() {
-            let children = self.moves.fetch_moves(&mut tx, &mv.move_dest_ids).await?;
+        // Down the chain: every live descendant frees its own reservation and cancels, and goes on
+        // to its own children while it propagates. A done move stops the walk on its branch; the
+        // visited set keeps a chain that loops back from cancelling a move twice.
+        let mut pickings: std::collections::BTreeSet<Uuid> = mv.picking_id.into_iter().collect();
+        let mut cancelled_children: Vec<(Uuid, Decimal)> = Vec::new();
+        let mut visited: std::collections::HashSet<Uuid> = std::collections::HashSet::from([move_id]);
+        let mut frontier: Vec<Uuid> = if mv.propagate_cancel { mv.move_dest_ids.clone() } else { Vec::new() };
+        while !frontier.is_empty() {
+            frontier.retain(|id| visited.insert(*id));
+            if frontier.is_empty() { break; }
+            let children = self.moves.fetch_moves(&mut tx, &frontier).await?;
+            frontier = Vec::new();
             for ch in children {
                 if matches!(ch.state.as_str(), "done" | "cancel") { continue; }
-                let _ = self.moves.transition_state(&mut tx, ch.id, ch.state.as_str(), "cancel").await?;
+                let freed = self.unreserve_lines(&mut tx, &ch).await?;
+                if !self.moves.transition_state(&mut tx, ch.id, ch.state.as_str(), "cancel").await? {
+                    return Err(InventoryError::WrongMoveState { move_id: ch.id, action: "cancel", current: "raced".into() });
+                }
                 self.move_lines.mirror_state(&mut tx, ch.id, "cancel").await?;
+                pickings.extend(ch.picking_id);
+                cancelled_children.push((ch.id, freed));
+                if ch.propagate_cancel { frontier.extend(ch.move_dest_ids.iter().copied()); }
             }
         }
-        if let Some(picking) = mv.picking_id {
+        for picking in pickings {
             self.moves.reproject_picking(&mut tx, picking).await?;
         }
         tx.commit().await?;
         self.sink.publish(InventoryEvent::MoveCancelled(MoveCancelled {
             move_id, company_id: legacy_company_echo(), released_qty: released,
         }));
+        for (child, freed) in cancelled_children {
+            self.sink.publish(InventoryEvent::MoveCancelled(MoveCancelled {
+                move_id: child, company_id: legacy_company_echo(), released_qty: freed,
+            }));
+        }
         Ok(released)
     }
 
