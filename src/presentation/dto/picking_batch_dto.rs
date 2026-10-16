@@ -33,7 +33,6 @@ pub struct CreatePickingBatchDto {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    pub state: PickingBatchState,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(alias = "is_wave")]
     pub is_wave: bool,
@@ -243,7 +242,7 @@ impl From<CreatePickingBatchDto> for PickingBatch {
             id: Uuid::new_v4(),
             name: dto.name,
             note: dto.note,
-            state: dto.state,
+            state: PickingBatchState::Draft,
             is_wave: dto.is_wave,
             user_id: dto.user_id,
             scheduled_date: dto.scheduled_date,

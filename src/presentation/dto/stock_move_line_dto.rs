@@ -43,7 +43,6 @@ pub struct CreateStockMoveLineDto {
     pub result_package_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "owner_id")]
     pub owner_id: Option<Uuid>,
-    pub state: MoveState,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
     pub date: DateTime<Utc>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -309,7 +308,7 @@ impl From<CreateStockMoveLineDto> for StockMoveLine {
             package_id: dto.package_id,
             result_package_id: dto.result_package_id,
             owner_id: dto.owner_id,
-            state: dto.state,
+            state: MoveState::Draft,
             date: dto.date,
             move_id: dto.move_id,
             picking_id: dto.picking_id,

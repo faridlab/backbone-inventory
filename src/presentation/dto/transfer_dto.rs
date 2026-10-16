@@ -56,7 +56,6 @@ pub struct CreateTransferDto {
     pub scheduled_date: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "date_done")]
     pub date_done: Option<DateTime<Utc>>,
-    pub state: TransferState,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(alias = "is_locked")]
     pub is_locked: bool,
@@ -332,7 +331,7 @@ impl From<CreateTransferDto> for Transfer {
             move_type: dto.move_type,
             scheduled_date: dto.scheduled_date,
             date_done: dto.date_done,
-            state: dto.state,
+            state: TransferState::Draft,
             is_locked: dto.is_locked,
             backorder_id: dto.backorder_id,
             return_id: dto.return_id,

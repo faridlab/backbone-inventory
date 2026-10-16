@@ -63,7 +63,6 @@ pub struct CreateStockLedgerEntryDto {
     #[cfg_attr(feature = "openapi", schema(example = 42))]
     #[serde(alias = "sle_no")]
     pub sle_no: i32,
-    pub status: StockLedgerStatus,
 }
 
 // =============================================================================
@@ -303,7 +302,7 @@ impl From<CreateStockLedgerEntryDto> for StockLedgerEntry {
             voucher_id: dto.voucher_id,
             voucher_no: dto.voucher_no,
             sle_no: dto.sle_no,
-            status: dto.status,
+            status: StockLedgerStatus::Active,
             metadata: AuditMetadata::default(),
         }
     }

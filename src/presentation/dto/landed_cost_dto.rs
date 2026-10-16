@@ -46,7 +46,6 @@ pub struct CreateLandedCostDto {
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01"))]
     #[serde(alias = "posting_date")]
     pub posting_date: NaiveDate,
-    pub state: LandedCostState,
     #[serde(alias = "amount_total")]
     pub amount_total: Decimal,
     #[serde(alias = "posting_state")]
@@ -297,7 +296,7 @@ impl From<CreateLandedCostDto> for LandedCost {
             transfer_id: dto.transfer_id,
             currency: dto.currency,
             posting_date: dto.posting_date,
-            state: dto.state,
+            state: LandedCostState::Draft,
             amount_total: dto.amount_total,
             posting_state: dto.posting_state,
             journal_id: dto.journal_id,

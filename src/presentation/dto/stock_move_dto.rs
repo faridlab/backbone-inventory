@@ -35,7 +35,6 @@ use crate::domain::entity::ProcureMethod;
 pub struct CreateStockMoveDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub name: String,
-    pub state: MoveState,
     #[serde(alias = "posting_state")]
     pub posting_state: GlPostingState,
     pub priority: Priority,
@@ -402,7 +401,7 @@ impl From<CreateStockMoveDto> for StockMove {
         Self {
             id: Uuid::new_v4(),
             name: dto.name,
-            state: dto.state,
+            state: MoveState::Draft,
             posting_state: dto.posting_state,
             priority: dto.priority,
             create_date: dto.create_date,

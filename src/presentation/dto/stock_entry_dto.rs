@@ -45,7 +45,6 @@ pub struct CreateStockEntryDto {
     pub posting_date: NaiveDate,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "transfer_id")]
     pub transfer_id: Option<Uuid>,
-    pub status: DocStatus,
     #[serde(alias = "posting_state")]
     pub posting_state: GlPostingState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -259,7 +258,7 @@ impl From<CreateStockEntryDto> for StockEntry {
             to_warehouse_id: dto.to_warehouse_id,
             posting_date: dto.posting_date,
             transfer_id: dto.transfer_id,
-            status: dto.status,
+            status: DocStatus::Draft,
             posting_state: dto.posting_state,
             notes: dto.notes,
             metadata: AuditMetadata::default(),

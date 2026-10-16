@@ -50,7 +50,6 @@ pub struct CreateStockReconciliationDto {
     pub adjustment_account_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "transfer_id")]
     pub transfer_id: Option<Uuid>,
-    pub status: DocStatus,
     #[serde(alias = "posting_state")]
     pub posting_state: GlPostingState,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "journal_id")]
@@ -296,7 +295,7 @@ impl From<CreateStockReconciliationDto> for StockReconciliation {
             inventory_account_id: dto.inventory_account_id,
             adjustment_account_id: dto.adjustment_account_id,
             transfer_id: dto.transfer_id,
-            status: dto.status,
+            status: DocStatus::Draft,
             posting_state: dto.posting_state,
             journal_id: dto.journal_id,
             accounting_post_id: dto.accounting_post_id,

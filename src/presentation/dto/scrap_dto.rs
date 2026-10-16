@@ -32,7 +32,6 @@ use crate::domain::entity::ScrapState;
 pub struct CreateScrapDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub name: String,
-    pub state: ScrapState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
@@ -303,7 +302,7 @@ impl From<CreateScrapDto> for Scrap {
         Self {
             id: Uuid::new_v4(),
             name: dto.name,
-            state: dto.state,
+            state: ScrapState::Draft,
             origin: dto.origin,
             date_expected: dto.date_expected,
             item_id: dto.item_id,
