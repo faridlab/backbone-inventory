@@ -94,14 +94,9 @@ rules:
     error_code: quant_reserved
     enforcement: service
     justification: "Cross-row: the count is refused because OTHER documents hold reservations on the same quant. The verb reads that state at the moment it stages the count, and refuses with a message the counter can act on, which a constraint violation on an unrelated row would not give them."
-  - id: T5
-    name: serial_unique
-    entity: Quant
-    when: write
-    assert: "a serial-tracked lot appears on at most one quant with quantity > 0 (sn_duplicated flags the attempt)"
-    error_code: sn_duplicated
-    enforcement: service
-    justification: "A serial may exist on many quants over its life, and at most one of them may hold it at a time, so uniqueness is over the rows with a positive quantity rather than over the column. Postgres can express that as a partial unique index, and the engine still checks it first so the attempt is reported as a duplicated serial rather than as a raw constraint error."
+  # Serial uniqueness (a serial on at most one quant with quantity above zero) waits for serial
+  # tracking: no model says which lots are serials yet. When a lot carries a tracking mode, it is
+  # declared again and held by a partial unique index on the quants of serial lots.
   # -- move lifecycle guards ------------------------------------------------------
   - id: R9
     name: location_change_required

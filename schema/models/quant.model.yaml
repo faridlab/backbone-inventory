@@ -13,8 +13,8 @@
 # and `_apply_inventory` mints an `is_inventory` move through the normal
 # move pipeline (guard R24 blocks the stage while reservations exist).
 #
-# Serial uniqueness (T5): sn_duplicated flags a serial appearing in more
-# than one quant so the constraint can raise at write time.
+# Serial uniqueness waits for serial tracking: nothing yet says which lots are
+# serials, so sn_duplicated is reserved and nothing sets it to true.
 #
 # Tenancy: none, by design (ADR-0029). The module is tenant-agnostic; the
 # composing service's decorator owns org scoping. A quant's org anchor
@@ -102,7 +102,7 @@ models:
       sn_duplicated:
         type: bool
         attributes: ["@default(false)"]
-        description: "True when the serial already exists on another quant (T5) — the write-time serial-uniqueness signal"
+        description: "Reserved for serial tracking: would mark a serial already held by another quant. Nothing sets it to true until lots carry a tracking mode."
 
 
       metadata:
