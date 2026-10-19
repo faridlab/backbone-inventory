@@ -177,6 +177,12 @@ impl super::Entity for LandedCostAdjustmentLine {
 }
 
 impl backbone_core::PersistentEntity for LandedCostAdjustmentLine {
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("lc_id", "inventory.landed_costs", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

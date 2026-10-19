@@ -36,7 +36,7 @@ pub struct CreateLotDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
-    #[serde(alias = "product_qty")]
+    #[serde(default, alias = "product_qty")]
     pub product_qty: Decimal,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "location_id")]
     pub location_id: Option<Uuid>,
@@ -86,17 +86,17 @@ pub struct PatchLotDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reference: Option<String>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option")]
+    pub reference: Option<Option<String>>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "item_id")]
     pub item_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "product_qty")]
     pub product_qty: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "location_id")]
-    pub location_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "location_id")]
+    pub location_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option")]
+    pub note: Option<Option<String>>,
 }
 
 impl PatchLotDto {
@@ -270,12 +270,4 @@ impl backbone_core::ApplyUpdateDto<UpdateLotDto> for Lot {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to Lot here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

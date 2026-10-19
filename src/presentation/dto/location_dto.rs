@@ -35,7 +35,9 @@ pub struct CreateLocationDto {
     #[serde(alias = "complete_name")]
     pub complete_name: String,
     #[cfg_attr(feature = "openapi", schema(example = true))]
+    #[serde(default = "default_create_location_active")]
     pub active: bool,
+    #[serde(default = "default_create_location_usage")]
     pub usage: LocationUsage,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "location_id")]
     pub location_id: Option<Uuid>,
@@ -47,7 +49,7 @@ pub struct CreateLocationDto {
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
     pub warehouse_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
-    #[serde(alias = "cyclic_inventory_frequency")]
+    #[serde(default, alias = "cyclic_inventory_frequency")]
     pub cyclic_inventory_frequency: i32,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "last_inventory_date")]
     pub last_inventory_date: Option<NaiveDate>,
@@ -57,6 +59,14 @@ pub struct CreateLocationDto {
     pub valuation_account_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "storage_category_id")]
     pub storage_category_id: Option<Uuid>,
+}
+
+fn default_create_location_active() -> bool {
+    true
+}
+
+fn default_create_location_usage() -> LocationUsage {
+    LocationUsage::Internal
 }
 
 // =============================================================================
@@ -124,26 +134,26 @@ pub struct PatchLocationDto {
     pub active: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<LocationUsage>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "location_id")]
-    pub location_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "location_id")]
+    pub location_id: Option<Option<Uuid>>,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "parent_path")]
     pub parent_path: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub barcode: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
-    pub warehouse_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option")]
+    pub barcode: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "warehouse_id")]
+    pub warehouse_id: Option<Option<Uuid>>,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "cyclic_inventory_frequency")]
     pub cyclic_inventory_frequency: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "last_inventory_date")]
-    pub last_inventory_date: Option<NaiveDate>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "next_inventory_date")]
-    pub next_inventory_date: Option<NaiveDate>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "valuation_account_id")]
-    pub valuation_account_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "storage_category_id")]
-    pub storage_category_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "last_inventory_date")]
+    pub last_inventory_date: Option<Option<NaiveDate>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "next_inventory_date")]
+    pub next_inventory_date: Option<Option<NaiveDate>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "valuation_account_id")]
+    pub valuation_account_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "storage_category_id")]
+    pub storage_category_id: Option<Option<Uuid>>,
 }
 
 impl PatchLocationDto {
@@ -355,12 +365,4 @@ impl backbone_core::ApplyUpdateDto<UpdateLocationDto> for Location {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to Location here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

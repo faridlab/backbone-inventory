@@ -36,9 +36,9 @@ pub struct CreateDeliveryNoteItemDto {
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
     pub quantity: Decimal,
-    #[serde(alias = "valuation_rate")]
+    #[serde(default, alias = "valuation_rate")]
     pub valuation_rate: Decimal,
-    #[serde(alias = "cogs_amount")]
+    #[serde(default, alias = "cogs_amount")]
     pub cogs_amount: Decimal,
 }
 
@@ -259,12 +259,4 @@ impl backbone_core::ApplyUpdateDto<UpdateDeliveryNoteItemDto> for DeliveryNoteIt
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to DeliveryNoteItem here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

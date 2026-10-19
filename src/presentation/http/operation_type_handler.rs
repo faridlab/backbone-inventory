@@ -80,6 +80,13 @@ impl axum::response::IntoResponse for OperationTypeError {
 // Route Configuration
 // =============================================================================
 
+/// The permissions this entity's generic routes require: `operation_type:<action>` for `read`, `create`,
+/// `update`, `delete`, `restore` and `purge`, with any rename the schema's `requires:` declares.
+pub fn operation_type_permissions() -> backbone_core::http::CrudPermissions {
+    backbone_core::http::CrudPermissions::new("operation_type")
+        .in_module("inventory")
+}
+
 /// Create Axum router with all 16 Backbone endpoints for OperationType.
 ///
 /// # Routes
@@ -109,21 +116,23 @@ impl axum::response::IntoResponse for OperationTypeError {
 /// let router = create_operation_type_routes(service);
 /// ```
 pub fn create_operation_type_routes(service: Arc<OperationTypeService>) -> Router {
-    BackboneCrudHandler::<OperationTypeService, OperationType, CreateOperationTypeDto, UpdateOperationTypeDto, OperationTypeResponseDto>::routes(
+    BackboneCrudHandler::<OperationTypeService, OperationType, CreateOperationTypeDto, UpdateOperationTypeDto, OperationTypeResponseDto>::routes_guarded(
         service,
         "/operation_types",
+        operation_type_permissions(),
     )
 }
 
 /// Create Axum router with only the read (GET) endpoints for OperationType.
 ///
-/// Safe for public, unauthenticated exposure (e.g., reference data).
+/// Each route requires the entity's `read` permission, so it needs an authenticated caller.
 /// Mutations must be served separately via `create_operation_type_write_routes`,
 /// typically wrapped in an auth middleware layer.
 pub fn create_operation_type_read_routes(service: Arc<OperationTypeService>) -> Router {
-    BackboneCrudHandler::<OperationTypeService, OperationType, CreateOperationTypeDto, UpdateOperationTypeDto, OperationTypeResponseDto>::read_routes(
+    BackboneCrudHandler::<OperationTypeService, OperationType, CreateOperationTypeDto, UpdateOperationTypeDto, OperationTypeResponseDto>::read_routes_guarded(
         service,
         "/operation_types",
+        operation_type_permissions(),
     )
 }
 
@@ -139,9 +148,10 @@ pub fn create_operation_type_read_routes(service: Arc<OperationTypeService>) -> 
 /// service (e.g. a command router over its domain engine), serve THAT instead
 /// for any mutation that must respect domain rules.
 pub fn create_operation_type_write_routes(service: Arc<OperationTypeService>) -> Router {
-    BackboneCrudHandler::<OperationTypeService, OperationType, CreateOperationTypeDto, UpdateOperationTypeDto, OperationTypeResponseDto>::write_routes(
+    BackboneCrudHandler::<OperationTypeService, OperationType, CreateOperationTypeDto, UpdateOperationTypeDto, OperationTypeResponseDto>::write_routes_guarded(
         service,
         "/operation_types",
+        operation_type_permissions(),
     )
 }
 

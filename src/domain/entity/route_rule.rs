@@ -231,6 +231,16 @@ impl super::Entity for RouteRule {
 }
 
 impl backbone_core::PersistentEntity for RouteRule {
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("route_id", "inventory.routes", "id"),
+            backbone_core::Reference::new("location_src_id", "inventory.locations", "id"),
+            backbone_core::Reference::new("location_dest_id", "inventory.locations", "id"),
+            backbone_core::Reference::new("picking_type_id", "inventory.operation_types", "id"),
+            backbone_core::Reference::new("warehouse_id", "inventory.warehouses", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

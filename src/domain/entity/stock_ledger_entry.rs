@@ -228,6 +228,12 @@ impl backbone_core::PersistentEntity for StockLedgerEntry {
     fn write_protected_fields() -> &'static [&'static str] {
         &["qty_after_txn", "valuation_rate", "stock_value", "stock_value_difference", "status"]
     }
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("warehouse_id", "inventory.warehouses", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

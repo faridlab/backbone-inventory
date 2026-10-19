@@ -183,6 +183,12 @@ impl super::Entity for Warehouse {
 }
 
 impl backbone_core::PersistentEntity for Warehouse {
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("parent_warehouse_id", "inventory.warehouses", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

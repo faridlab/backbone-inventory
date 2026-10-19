@@ -30,10 +30,12 @@ use crate::domain::entity::MoveState;
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CreateStockMoveLineDto {
+    #[serde(default)]
     pub quantity: Decimal,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "quantity_product_uom_id")]
     pub quantity_product_uom_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
+    #[serde(default)]
     pub picked: bool,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "lot_id")]
     pub lot_id: Option<Uuid>,
@@ -44,6 +46,7 @@ pub struct CreateStockMoveLineDto {
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "owner_id")]
     pub owner_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
+    #[serde(default = "default_create_stock_move_line_date")]
     pub date: DateTime<Utc>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "move_id")]
@@ -59,6 +62,10 @@ pub struct CreateStockMoveLineDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
+}
+
+fn default_create_stock_move_line_date() -> DateTime<Utc> {
+    Utc::now()
 }
 
 // =============================================================================
@@ -119,19 +126,19 @@ pub struct UpdateStockMoveLineDto {
 pub struct PatchStockMoveLineDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quantity: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "quantity_product_uom_id")]
-    pub quantity_product_uom_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "quantity_product_uom_id")]
+    pub quantity_product_uom_id: Option<Option<Uuid>>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub picked: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "lot_id")]
-    pub lot_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "package_id")]
-    pub package_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "result_package_id")]
-    pub result_package_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "owner_id")]
-    pub owner_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "lot_id")]
+    pub lot_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "package_id")]
+    pub package_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "result_package_id")]
+    pub result_package_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "owner_id")]
+    pub owner_id: Option<Option<Uuid>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<MoveState>,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
@@ -140,8 +147,8 @@ pub struct PatchStockMoveLineDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "move_id")]
     pub move_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "picking_id")]
-    pub picking_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "picking_id")]
+    pub picking_id: Option<Option<Uuid>>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "location_id")]
     pub location_id: Option<Uuid>,
@@ -368,12 +375,4 @@ impl backbone_core::ApplyUpdateDto<UpdateStockMoveLineDto> for StockMoveLine {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to StockMoveLine here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

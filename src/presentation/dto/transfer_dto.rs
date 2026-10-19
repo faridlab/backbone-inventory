@@ -32,11 +32,13 @@ use crate::domain::entity::TransferState;
 #[serde(rename_all = "camelCase")]
 pub struct CreateTransferDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
+    #[serde(default = "default_create_transfer_name")]
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    #[serde(default = "default_create_transfer_priority")]
     pub priority: Priority,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "picking_type_id")]
@@ -49,15 +51,15 @@ pub struct CreateTransferDto {
     pub location_dest_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "partner_id")]
     pub partner_id: Option<Uuid>,
-    #[serde(alias = "move_type")]
+    #[serde(default = "default_create_transfer_move_type", alias = "move_type")]
     pub move_type: MoveType,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
-    #[serde(alias = "scheduled_date")]
+    #[serde(default = "default_create_transfer_scheduled_date", alias = "scheduled_date")]
     pub scheduled_date: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "date_done")]
     pub date_done: Option<DateTime<Utc>>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "is_locked")]
+    #[serde(default = "default_create_transfer_is_locked", alias = "is_locked")]
     pub is_locked: bool,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "backorder_id")]
     pub backorder_id: Option<Uuid>,
@@ -65,6 +67,26 @@ pub struct CreateTransferDto {
     pub return_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "batch_id")]
     pub batch_id: Option<Uuid>,
+}
+
+fn default_create_transfer_name() -> String {
+    "/".to_string()
+}
+
+fn default_create_transfer_priority() -> Priority {
+    Priority::Normal
+}
+
+fn default_create_transfer_move_type() -> MoveType {
+    MoveType::Direct
+}
+
+fn default_create_transfer_scheduled_date() -> DateTime<Utc> {
+    Utc::now()
+}
+
+fn default_create_transfer_is_locked() -> bool {
+    true
 }
 
 // =============================================================================
@@ -131,10 +153,10 @@ pub struct PatchTransferDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub origin: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option")]
+    pub origin: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option")]
+    pub note: Option<Option<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub priority: Option<Priority>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
@@ -146,26 +168,26 @@ pub struct PatchTransferDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "location_dest_id")]
     pub location_dest_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "partner_id")]
-    pub partner_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "partner_id")]
+    pub partner_id: Option<Option<Uuid>>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "move_type")]
     pub move_type: Option<MoveType>,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "scheduled_date")]
     pub scheduled_date: Option<DateTime<Utc>>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "date_done")]
-    pub date_done: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "date_done")]
+    pub date_done: Option<Option<DateTime<Utc>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<TransferState>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "is_locked")]
     pub is_locked: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "backorder_id")]
-    pub backorder_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "return_id")]
-    pub return_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "batch_id")]
-    pub batch_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "backorder_id")]
+    pub backorder_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "return_id")]
+    pub return_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "batch_id")]
+    pub batch_id: Option<Option<Uuid>>,
 }
 
 impl PatchTransferDto {
@@ -393,12 +415,4 @@ impl backbone_core::ApplyUpdateDto<UpdateTransferDto> for Transfer {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to Transfer here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

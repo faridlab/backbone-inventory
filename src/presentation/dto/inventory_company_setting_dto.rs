@@ -30,15 +30,23 @@ use crate::domain::entity::ValuationPolicy;
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CreateInventoryCompanySettingDto {
-    #[serde(alias = "cost_method")]
+    #[serde(default = "default_create_inventory_company_setting_cost_method", alias = "cost_method")]
     pub cost_method: InventoryCostMethod,
-    #[serde(alias = "valuation_policy")]
+    #[serde(default = "default_create_inventory_company_setting_valuation_policy", alias = "valuation_policy")]
     pub valuation_policy: ValuationPolicy,
     #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "anglo_saxon_accounting")]
+    #[serde(default, alias = "anglo_saxon_accounting")]
     pub anglo_saxon_accounting: bool,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "stock_interim_delivered_account_id")]
     pub stock_interim_delivered_account_id: Option<Uuid>,
+}
+
+fn default_create_inventory_company_setting_cost_method() -> InventoryCostMethod {
+    InventoryCostMethod::Average
+}
+
+fn default_create_inventory_company_setting_valuation_policy() -> ValuationPolicy {
+    ValuationPolicy::Perpetual
 }
 
 // =============================================================================
@@ -83,8 +91,8 @@ pub struct PatchInventoryCompanySettingDto {
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "anglo_saxon_accounting")]
     pub anglo_saxon_accounting: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "stock_interim_delivered_account_id")]
-    pub stock_interim_delivered_account_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "stock_interim_delivered_account_id")]
+    pub stock_interim_delivered_account_id: Option<Option<Uuid>>,
 }
 
 impl PatchInventoryCompanySettingDto {
@@ -247,12 +255,4 @@ impl backbone_core::ApplyUpdateDto<UpdateInventoryCompanySettingDto> for Invento
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to InventoryCompanySetting here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

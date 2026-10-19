@@ -259,6 +259,14 @@ impl super::Entity for Location {
 }
 
 impl backbone_core::PersistentEntity for Location {
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("location_id", "inventory.locations", "id"),
+            backbone_core::Reference::new("warehouse_id", "inventory.warehouses", "id"),
+            backbone_core::Reference::new("storage_category_id", "inventory.storage_categories", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

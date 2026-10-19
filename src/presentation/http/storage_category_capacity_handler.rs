@@ -81,6 +81,13 @@ impl axum::response::IntoResponse for StorageCategoryCapacityError {
 // Route Configuration
 // =============================================================================
 
+/// The permissions this entity's generic routes require: `storage_category_capacity:<action>` for `read`, `create`,
+/// `update`, `delete`, `restore` and `purge`, with any rename the schema's `requires:` declares.
+pub fn storage_category_capacity_permissions() -> backbone_core::http::CrudPermissions {
+    backbone_core::http::CrudPermissions::new("storage_category_capacity")
+        .in_module("inventory")
+}
+
 /// Create Axum router with all 16 Backbone endpoints for StorageCategoryCapacity.
 ///
 /// # Routes
@@ -110,21 +117,23 @@ impl axum::response::IntoResponse for StorageCategoryCapacityError {
 /// let router = create_storage_category_capacity_routes(service);
 /// ```
 pub fn create_storage_category_capacity_routes(service: Arc<StorageCategoryCapacityService>) -> Router {
-    BackboneCrudHandler::<StorageCategoryCapacityService, StorageCategoryCapacity, CreateStorageCategoryCapacityDto, UpdateStorageCategoryCapacityDto, StorageCategoryCapacityResponseDto>::routes(
+    BackboneCrudHandler::<StorageCategoryCapacityService, StorageCategoryCapacity, CreateStorageCategoryCapacityDto, UpdateStorageCategoryCapacityDto, StorageCategoryCapacityResponseDto>::routes_guarded(
         service,
         "/storage_category_capacities",
+        storage_category_capacity_permissions(),
     )
 }
 
 /// Create Axum router with only the read (GET) endpoints for StorageCategoryCapacity.
 ///
-/// Safe for public, unauthenticated exposure (e.g., reference data).
+/// Each route requires the entity's `read` permission, so it needs an authenticated caller.
 /// Mutations must be served separately via `create_storage_category_capacity_write_routes`,
 /// typically wrapped in an auth middleware layer.
 pub fn create_storage_category_capacity_read_routes(service: Arc<StorageCategoryCapacityService>) -> Router {
-    BackboneCrudHandler::<StorageCategoryCapacityService, StorageCategoryCapacity, CreateStorageCategoryCapacityDto, UpdateStorageCategoryCapacityDto, StorageCategoryCapacityResponseDto>::read_routes(
+    BackboneCrudHandler::<StorageCategoryCapacityService, StorageCategoryCapacity, CreateStorageCategoryCapacityDto, UpdateStorageCategoryCapacityDto, StorageCategoryCapacityResponseDto>::read_routes_guarded(
         service,
         "/storage_category_capacities",
+        storage_category_capacity_permissions(),
     )
 }
 
@@ -140,9 +149,10 @@ pub fn create_storage_category_capacity_read_routes(service: Arc<StorageCategory
 /// service (e.g. a command router over its domain engine), serve THAT instead
 /// for any mutation that must respect domain rules.
 pub fn create_storage_category_capacity_write_routes(service: Arc<StorageCategoryCapacityService>) -> Router {
-    BackboneCrudHandler::<StorageCategoryCapacityService, StorageCategoryCapacity, CreateStorageCategoryCapacityDto, UpdateStorageCategoryCapacityDto, StorageCategoryCapacityResponseDto>::write_routes(
+    BackboneCrudHandler::<StorageCategoryCapacityService, StorageCategoryCapacity, CreateStorageCategoryCapacityDto, UpdateStorageCategoryCapacityDto, StorageCategoryCapacityResponseDto>::write_routes_guarded(
         service,
         "/storage_category_capacities",
+        storage_category_capacity_permissions(),
     )
 }
 

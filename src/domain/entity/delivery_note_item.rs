@@ -172,6 +172,12 @@ impl super::Entity for DeliveryNoteItem {
 }
 
 impl backbone_core::PersistentEntity for DeliveryNoteItem {
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("delivery_id", "inventory.delivery_notes", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

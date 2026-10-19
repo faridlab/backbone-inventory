@@ -37,9 +37,10 @@ pub struct CreatePurchaseReceiptItemDto {
     pub item_id: Uuid,
     pub quantity: Decimal,
     pub rate: Decimal,
+    #[serde(default)]
     pub amount: Decimal,
     #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "is_landed_costs_line")]
+    #[serde(default, alias = "is_landed_costs_line")]
     pub is_landed_costs_line: bool,
 }
 
@@ -270,12 +271,4 @@ impl backbone_core::ApplyUpdateDto<UpdatePurchaseReceiptItemDto> for PurchaseRec
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to PurchaseReceiptItem here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

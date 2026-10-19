@@ -31,7 +31,12 @@ pub struct CreateScrapReasonTagDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub name: String,
     #[cfg_attr(feature = "openapi", schema(example = true))]
+    #[serde(default = "default_create_scrap_reason_tag_active")]
     pub active: bool,
+}
+
+fn default_create_scrap_reason_tag_active() -> bool {
+    true
 }
 
 // =============================================================================
@@ -221,12 +226,4 @@ impl backbone_core::ApplyUpdateDto<UpdateScrapReasonTagDto> for ScrapReasonTag {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to ScrapReasonTag here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

@@ -162,6 +162,12 @@ impl super::Entity for StockEntryItem {
 }
 
 impl backbone_core::PersistentEntity for StockEntryItem {
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("entry_id", "inventory.stock_entries", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

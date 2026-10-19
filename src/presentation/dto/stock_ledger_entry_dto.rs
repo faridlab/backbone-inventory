@@ -44,11 +44,11 @@ pub struct CreateStockLedgerEntryDto {
     pub actual_qty: Decimal,
     #[serde(alias = "qty_after_txn")]
     pub qty_after_txn: Decimal,
-    #[serde(alias = "incoming_rate")]
+    #[serde(default, alias = "incoming_rate")]
     pub incoming_rate: Decimal,
-    #[serde(alias = "valuation_rate")]
+    #[serde(default, alias = "valuation_rate")]
     pub valuation_rate: Decimal,
-    #[serde(alias = "stock_value")]
+    #[serde(default, alias = "stock_value")]
     pub stock_value: Decimal,
     #[serde(alias = "stock_value_difference")]
     pub stock_value_difference: Decimal,
@@ -351,12 +351,4 @@ impl backbone_core::ApplyUpdateDto<UpdateStockLedgerEntryDto> for StockLedgerEnt
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to StockLedgerEntry here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

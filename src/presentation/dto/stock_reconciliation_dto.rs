@@ -40,7 +40,7 @@ pub struct CreateStockReconciliationDto {
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01"))]
     #[serde(alias = "posting_date")]
     pub posting_date: NaiveDate,
-    #[serde(alias = "net_difference")]
+    #[serde(default, alias = "net_difference")]
     pub net_difference: Decimal,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "inventory_account_id")]
@@ -50,7 +50,7 @@ pub struct CreateStockReconciliationDto {
     pub adjustment_account_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "transfer_id")]
     pub transfer_id: Option<Uuid>,
-    #[serde(alias = "posting_state")]
+    #[serde(default = "default_create_stock_reconciliation_posting_state", alias = "posting_state")]
     pub posting_state: GlPostingState,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "journal_id")]
     pub journal_id: Option<Uuid>,
@@ -58,6 +58,10 @@ pub struct CreateStockReconciliationDto {
     pub accounting_post_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "posted_at")]
     pub posted_at: Option<DateTime<Utc>>,
+}
+
+fn default_create_stock_reconciliation_posting_state() -> GlPostingState {
+    GlPostingState::Pending
 }
 
 // =============================================================================
@@ -131,18 +135,18 @@ pub struct PatchStockReconciliationDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "adjustment_account_id")]
     pub adjustment_account_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "transfer_id")]
-    pub transfer_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "transfer_id")]
+    pub transfer_id: Option<Option<Uuid>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<DocStatus>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "posting_state")]
     pub posting_state: Option<GlPostingState>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "journal_id")]
-    pub journal_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "accounting_post_id")]
-    pub accounting_post_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "posted_at")]
-    pub posted_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "journal_id")]
+    pub journal_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "accounting_post_id")]
+    pub accounting_post_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "posted_at")]
+    pub posted_at: Option<Option<DateTime<Utc>>>,
 }
 
 impl PatchStockReconciliationDto {
@@ -349,12 +353,4 @@ impl backbone_core::ApplyUpdateDto<UpdateStockReconciliationDto> for StockReconc
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to StockReconciliation here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

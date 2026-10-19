@@ -231,6 +231,14 @@ impl backbone_core::PersistentEntity for StockEntry {
     fn write_protected_fields() -> &'static [&'static str] {
         &["status"]
     }
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("from_warehouse_id", "inventory.warehouses", "id"),
+            backbone_core::Reference::new("to_warehouse_id", "inventory.warehouses", "id"),
+            backbone_core::Reference::new("transfer_id", "inventory.transfers", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

@@ -31,18 +31,24 @@ pub struct CreateRouteDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub name: String,
     #[cfg_attr(feature = "openapi", schema(example = true))]
+    #[serde(default)]
     pub active: bool,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
+    #[serde(default)]
     pub sequence: i32,
     #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "product_selectable")]
+    #[serde(default = "default_create_route_product_selectable", alias = "product_selectable")]
     pub product_selectable: bool,
     #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "product_categ_selectable")]
+    #[serde(default, alias = "product_categ_selectable")]
     pub product_categ_selectable: bool,
     #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "warehouse_selectable")]
+    #[serde(default, alias = "warehouse_selectable")]
     pub warehouse_selectable: bool,
+}
+
+fn default_create_route_product_selectable() -> bool {
+    true
 }
 
 // =============================================================================
@@ -281,12 +287,4 @@ impl backbone_core::ApplyUpdateDto<UpdateRouteDto> for Route {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to Route here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

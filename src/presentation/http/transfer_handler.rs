@@ -81,6 +81,13 @@ impl axum::response::IntoResponse for TransferError {
 // Route Configuration
 // =============================================================================
 
+/// The permissions this entity's generic routes require: `transfer:<action>` for `read`, `create`,
+/// `update`, `delete`, `restore` and `purge`, with any rename the schema's `requires:` declares.
+pub fn transfer_permissions() -> backbone_core::http::CrudPermissions {
+    backbone_core::http::CrudPermissions::new("transfer")
+        .in_module("inventory")
+}
+
 /// Create Axum router with all 16 Backbone endpoints for Transfer.
 ///
 /// # Routes
@@ -110,21 +117,23 @@ impl axum::response::IntoResponse for TransferError {
 /// let router = create_transfer_routes(service);
 /// ```
 pub fn create_transfer_routes(service: Arc<TransferService>) -> Router {
-    BackboneCrudHandler::<TransferService, Transfer, CreateTransferDto, UpdateTransferDto, TransferResponseDto>::routes(
+    BackboneCrudHandler::<TransferService, Transfer, CreateTransferDto, UpdateTransferDto, TransferResponseDto>::routes_guarded(
         service,
         "/transfers",
+        transfer_permissions(),
     )
 }
 
 /// Create Axum router with only the read (GET) endpoints for Transfer.
 ///
-/// Safe for public, unauthenticated exposure (e.g., reference data).
+/// Each route requires the entity's `read` permission, so it needs an authenticated caller.
 /// Mutations must be served separately via `create_transfer_write_routes`,
 /// typically wrapped in an auth middleware layer.
 pub fn create_transfer_read_routes(service: Arc<TransferService>) -> Router {
-    BackboneCrudHandler::<TransferService, Transfer, CreateTransferDto, UpdateTransferDto, TransferResponseDto>::read_routes(
+    BackboneCrudHandler::<TransferService, Transfer, CreateTransferDto, UpdateTransferDto, TransferResponseDto>::read_routes_guarded(
         service,
         "/transfers",
+        transfer_permissions(),
     )
 }
 
@@ -140,9 +149,10 @@ pub fn create_transfer_read_routes(service: Arc<TransferService>) -> Router {
 /// service (e.g. a command router over its domain engine), serve THAT instead
 /// for any mutation that must respect domain rules.
 pub fn create_transfer_write_routes(service: Arc<TransferService>) -> Router {
-    BackboneCrudHandler::<TransferService, Transfer, CreateTransferDto, UpdateTransferDto, TransferResponseDto>::write_routes(
+    BackboneCrudHandler::<TransferService, Transfer, CreateTransferDto, UpdateTransferDto, TransferResponseDto>::write_routes_guarded(
         service,
         "/transfers",
+        transfer_permissions(),
     )
 }
 

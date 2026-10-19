@@ -35,25 +35,28 @@ use crate::domain::entity::ProcureMethod;
 pub struct CreateStockMoveDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub name: String,
-    #[serde(alias = "posting_state")]
+    #[serde(default = "default_create_stock_move_posting_state", alias = "posting_state")]
     pub posting_state: GlPostingState,
+    #[serde(default = "default_create_stock_move_priority")]
     pub priority: Priority,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
-    #[serde(alias = "create_date")]
+    #[serde(default = "default_create_stock_move_create_date", alias = "create_date")]
     pub create_date: DateTime<Utc>,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
+    #[serde(default = "default_create_stock_move_date")]
     pub date: DateTime<Utc>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
-    #[serde(alias = "demand_qty")]
+    #[serde(default, alias = "demand_qty")]
     pub demand_qty: Decimal,
+    #[serde(default)]
     pub quantity: Decimal,
-    #[serde(alias = "price_unit")]
+    #[serde(default, alias = "price_unit")]
     pub price_unit: Decimal,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "forced_value")]
     pub forced_value: Option<Decimal>,
-    #[serde(alias = "procure_method")]
+    #[serde(default = "default_create_stock_move_procure_method", alias = "procure_method")]
     pub procure_method: ProcureMethod,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "picking_id")]
     pub picking_id: Option<Uuid>,
@@ -78,13 +81,38 @@ pub struct CreateStockMoveDto {
     #[serde(alias = "move_dest_ids")]
     pub move_dest_ids: Vec<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "is_inventory")]
+    #[serde(default, alias = "is_inventory")]
     pub is_inventory: bool,
     #[cfg_attr(feature = "openapi", schema(example = true))]
+    #[serde(default)]
     pub scrapped: bool,
     #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "propagate_cancel")]
+    #[serde(default = "default_create_stock_move_propagate_cancel", alias = "propagate_cancel")]
     pub propagate_cancel: bool,
+}
+
+fn default_create_stock_move_posting_state() -> GlPostingState {
+    GlPostingState::NotApplicable
+}
+
+fn default_create_stock_move_priority() -> Priority {
+    Priority::Normal
+}
+
+fn default_create_stock_move_create_date() -> DateTime<Utc> {
+    Utc::now()
+}
+
+fn default_create_stock_move_date() -> DateTime<Utc> {
+    Utc::now()
+}
+
+fn default_create_stock_move_procure_method() -> ProcureMethod {
+    ProcureMethod::MakeToStock
+}
+
+fn default_create_stock_move_propagate_cancel() -> bool {
+    true
 }
 
 // =============================================================================
@@ -190,28 +218,28 @@ pub struct PatchStockMoveDto {
     pub quantity: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "price_unit")]
     pub price_unit: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "forced_value")]
-    pub forced_value: Option<Decimal>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "forced_value")]
+    pub forced_value: Option<Option<Decimal>>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "procure_method")]
     pub procure_method: Option<ProcureMethod>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "picking_id")]
-    pub picking_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub origin: Option<String>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "picking_id")]
+    pub picking_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option")]
+    pub origin: Option<Option<String>>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "location_id")]
     pub location_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "location_dest_id")]
     pub location_dest_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "partner_id")]
-    pub partner_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "rule_id")]
-    pub rule_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
-    pub warehouse_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "orderpoint_id")]
-    pub orderpoint_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "partner_id")]
+    pub partner_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "rule_id")]
+    pub rule_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "warehouse_id")]
+    pub warehouse_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "orderpoint_id")]
+    pub orderpoint_id: Option<Option<Uuid>>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "move_orig_ids")]
     pub move_orig_ids: Option<Vec<Uuid>>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "move_dest_ids")]
@@ -500,12 +528,4 @@ impl backbone_core::ApplyUpdateDto<UpdateStockMoveDto> for StockMove {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to StockMove here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

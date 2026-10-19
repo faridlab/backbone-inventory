@@ -38,9 +38,13 @@ pub struct CreateLandedCostLineDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "account_id")]
     pub account_id: Uuid,
-    #[serde(alias = "split_method")]
+    #[serde(default = "default_create_landed_cost_line_split_method", alias = "split_method")]
     pub split_method: LandedCostSplitMethod,
     pub amount: Decimal,
+}
+
+fn default_create_landed_cost_line_split_method() -> LandedCostSplitMethod {
+    LandedCostSplitMethod::Quantity
 }
 
 // =============================================================================
@@ -262,12 +266,4 @@ impl backbone_core::ApplyUpdateDto<UpdateLandedCostLineDto> for LandedCostLine {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to LandedCostLine here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

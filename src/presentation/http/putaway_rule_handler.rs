@@ -80,6 +80,13 @@ impl axum::response::IntoResponse for PutawayRuleError {
 // Route Configuration
 // =============================================================================
 
+/// The permissions this entity's generic routes require: `putaway_rule:<action>` for `read`, `create`,
+/// `update`, `delete`, `restore` and `purge`, with any rename the schema's `requires:` declares.
+pub fn putaway_rule_permissions() -> backbone_core::http::CrudPermissions {
+    backbone_core::http::CrudPermissions::new("putaway_rule")
+        .in_module("inventory")
+}
+
 /// Create Axum router with all 16 Backbone endpoints for PutawayRule.
 ///
 /// # Routes
@@ -109,21 +116,23 @@ impl axum::response::IntoResponse for PutawayRuleError {
 /// let router = create_putaway_rule_routes(service);
 /// ```
 pub fn create_putaway_rule_routes(service: Arc<PutawayRuleService>) -> Router {
-    BackboneCrudHandler::<PutawayRuleService, PutawayRule, CreatePutawayRuleDto, UpdatePutawayRuleDto, PutawayRuleResponseDto>::routes(
+    BackboneCrudHandler::<PutawayRuleService, PutawayRule, CreatePutawayRuleDto, UpdatePutawayRuleDto, PutawayRuleResponseDto>::routes_guarded(
         service,
         "/putaway_rules",
+        putaway_rule_permissions(),
     )
 }
 
 /// Create Axum router with only the read (GET) endpoints for PutawayRule.
 ///
-/// Safe for public, unauthenticated exposure (e.g., reference data).
+/// Each route requires the entity's `read` permission, so it needs an authenticated caller.
 /// Mutations must be served separately via `create_putaway_rule_write_routes`,
 /// typically wrapped in an auth middleware layer.
 pub fn create_putaway_rule_read_routes(service: Arc<PutawayRuleService>) -> Router {
-    BackboneCrudHandler::<PutawayRuleService, PutawayRule, CreatePutawayRuleDto, UpdatePutawayRuleDto, PutawayRuleResponseDto>::read_routes(
+    BackboneCrudHandler::<PutawayRuleService, PutawayRule, CreatePutawayRuleDto, UpdatePutawayRuleDto, PutawayRuleResponseDto>::read_routes_guarded(
         service,
         "/putaway_rules",
+        putaway_rule_permissions(),
     )
 }
 
@@ -139,9 +148,10 @@ pub fn create_putaway_rule_read_routes(service: Arc<PutawayRuleService>) -> Rout
 /// service (e.g. a command router over its domain engine), serve THAT instead
 /// for any mutation that must respect domain rules.
 pub fn create_putaway_rule_write_routes(service: Arc<PutawayRuleService>) -> Router {
-    BackboneCrudHandler::<PutawayRuleService, PutawayRule, CreatePutawayRuleDto, UpdatePutawayRuleDto, PutawayRuleResponseDto>::write_routes(
+    BackboneCrudHandler::<PutawayRuleService, PutawayRule, CreatePutawayRuleDto, UpdatePutawayRuleDto, PutawayRuleResponseDto>::write_routes_guarded(
         service,
         "/putaway_rules",
+        putaway_rule_permissions(),
     )
 }
 

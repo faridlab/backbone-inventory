@@ -41,10 +41,11 @@ pub struct CreateQuantDto {
     pub package_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "owner_id")]
     pub owner_id: Option<Uuid>,
+    #[serde(default)]
     pub quantity: Decimal,
-    #[serde(alias = "reserved_quantity")]
+    #[serde(default, alias = "reserved_quantity")]
     pub reserved_quantity: Decimal,
-    #[serde(alias = "available_quantity")]
+    #[serde(default, alias = "available_quantity")]
     pub available_quantity: Decimal,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "in_date")]
     pub in_date: Option<DateTime<Utc>>,
@@ -53,12 +54,12 @@ pub struct CreateQuantDto {
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "inventory_diff_quantity")]
     pub inventory_diff_quantity: Option<Decimal>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "inventory_quantity_set")]
+    #[serde(default, alias = "inventory_quantity_set")]
     pub inventory_quantity_set: bool,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "inventory_date")]
     pub inventory_date: Option<NaiveDate>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "sn_duplicated")]
+    #[serde(default, alias = "sn_duplicated")]
     pub sn_duplicated: bool,
 }
 
@@ -125,29 +126,29 @@ pub struct PatchQuantDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "location_id")]
     pub location_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "lot_id")]
-    pub lot_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "package_id")]
-    pub package_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "owner_id")]
-    pub owner_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "lot_id")]
+    pub lot_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "package_id")]
+    pub package_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "owner_id")]
+    pub owner_id: Option<Option<Uuid>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quantity: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "reserved_quantity")]
     pub reserved_quantity: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "available_quantity")]
     pub available_quantity: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "in_date")]
-    pub in_date: Option<DateTime<Utc>>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "inventory_quantity")]
-    pub inventory_quantity: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "inventory_diff_quantity")]
-    pub inventory_diff_quantity: Option<Decimal>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "in_date")]
+    pub in_date: Option<Option<DateTime<Utc>>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "inventory_quantity")]
+    pub inventory_quantity: Option<Option<Decimal>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "inventory_diff_quantity")]
+    pub inventory_diff_quantity: Option<Option<Decimal>>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "inventory_quantity_set")]
     pub inventory_quantity_set: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "inventory_date")]
-    pub inventory_date: Option<NaiveDate>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "inventory_date")]
+    pub inventory_date: Option<Option<NaiveDate>>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "sn_duplicated")]
     pub sn_duplicated: Option<bool>,
@@ -366,12 +367,4 @@ impl backbone_core::ApplyUpdateDto<UpdateQuantDto> for Quant {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to Quant here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

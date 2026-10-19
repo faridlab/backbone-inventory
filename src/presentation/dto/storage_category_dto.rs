@@ -34,10 +34,19 @@ pub struct CreateStorageCategoryDto {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "max_weight")]
     pub max_weight: Option<Decimal>,
-    #[serde(alias = "allow_new_product")]
+    #[serde(default = "default_create_storage_category_allow_new_product", alias = "allow_new_product")]
     pub allow_new_product: StorageAllowNewProduct,
     #[cfg_attr(feature = "openapi", schema(example = true))]
+    #[serde(default = "default_create_storage_category_active")]
     pub active: bool,
+}
+
+fn default_create_storage_category_allow_new_product() -> StorageAllowNewProduct {
+    StorageAllowNewProduct::Mixed
+}
+
+fn default_create_storage_category_active() -> bool {
+    true
 }
 
 // =============================================================================
@@ -77,8 +86,8 @@ pub struct PatchStorageCategoryDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "max_weight")]
-    pub max_weight: Option<Decimal>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "max_weight")]
+    pub max_weight: Option<Option<Decimal>>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "allow_new_product")]
     pub allow_new_product: Option<StorageAllowNewProduct>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
@@ -247,12 +256,4 @@ impl backbone_core::ApplyUpdateDto<UpdateStorageCategoryDto> for StorageCategory
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to StorageCategory here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

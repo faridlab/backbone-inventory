@@ -37,10 +37,13 @@ pub struct CreateOperationTypeDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "sequence_code")]
     pub sequence_code: String,
+    #[serde(default = "default_create_operation_type_code")]
     pub code: PickingCode,
     #[cfg_attr(feature = "openapi", schema(example = true))]
+    #[serde(default = "default_create_operation_type_active")]
     pub active: bool,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
+    #[serde(default = "default_create_operation_type_sequence")]
     pub sequence: i32,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
     pub warehouse_id: Option<Uuid>,
@@ -50,20 +53,52 @@ pub struct CreateOperationTypeDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "default_location_dest_id")]
     pub default_location_dest_id: Uuid,
-    #[serde(alias = "reservation_method")]
+    #[serde(default = "default_create_operation_type_reservation_method", alias = "reservation_method")]
     pub reservation_method: ReservationMethod,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "reservation_days_before")]
     pub reservation_days_before: Option<i32>,
-    #[serde(alias = "move_type")]
+    #[serde(default = "default_create_operation_type_move_type", alias = "move_type")]
     pub move_type: MoveType,
-    #[serde(alias = "create_backorder")]
+    #[serde(default = "default_create_operation_type_create_backorder", alias = "create_backorder")]
     pub create_backorder: CreateBackorder,
     #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "use_create_lots")]
+    #[serde(default = "default_create_operation_type_use_create_lots", alias = "use_create_lots")]
     pub use_create_lots: bool,
     #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "use_existing_lots")]
+    #[serde(default = "default_create_operation_type_use_existing_lots", alias = "use_existing_lots")]
     pub use_existing_lots: bool,
+}
+
+fn default_create_operation_type_code() -> PickingCode {
+    PickingCode::Incoming
+}
+
+fn default_create_operation_type_active() -> bool {
+    true
+}
+
+fn default_create_operation_type_sequence() -> i32 {
+    10
+}
+
+fn default_create_operation_type_reservation_method() -> ReservationMethod {
+    ReservationMethod::AtConfirm
+}
+
+fn default_create_operation_type_move_type() -> MoveType {
+    MoveType::Direct
+}
+
+fn default_create_operation_type_create_backorder() -> CreateBackorder {
+    CreateBackorder::Ask
+}
+
+fn default_create_operation_type_use_create_lots() -> bool {
+    true
+}
+
+fn default_create_operation_type_use_existing_lots() -> bool {
+    true
 }
 
 // =============================================================================
@@ -138,8 +173,8 @@ pub struct PatchOperationTypeDto {
     #[cfg_attr(feature = "openapi", schema(example = 42))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sequence: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
-    pub warehouse_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "warehouse_id")]
+    pub warehouse_id: Option<Option<Uuid>>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "default_location_src_id")]
     pub default_location_src_id: Option<Uuid>,
@@ -148,8 +183,8 @@ pub struct PatchOperationTypeDto {
     pub default_location_dest_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "reservation_method")]
     pub reservation_method: Option<ReservationMethod>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "reservation_days_before")]
-    pub reservation_days_before: Option<i32>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "reservation_days_before")]
+    pub reservation_days_before: Option<Option<i32>>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "move_type")]
     pub move_type: Option<MoveType>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "create_backorder")]
@@ -379,12 +414,4 @@ impl backbone_core::ApplyUpdateDto<UpdateOperationTypeDto> for OperationType {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to OperationType here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

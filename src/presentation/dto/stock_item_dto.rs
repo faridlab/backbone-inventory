@@ -38,23 +38,35 @@ pub struct CreateStockItemDto {
     #[serde(alias = "stock_uom")]
     pub stock_uom: String,
     #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "is_stock_item")]
+    #[serde(default = "default_create_stock_item_is_stock_item", alias = "is_stock_item")]
     pub is_stock_item: bool,
     #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "has_batch")]
+    #[serde(default, alias = "has_batch")]
     pub has_batch: bool,
-    #[serde(alias = "valuation_method")]
+    #[serde(default = "default_create_stock_item_valuation_method", alias = "valuation_method")]
     pub valuation_method: ValuationMethod,
-    #[serde(alias = "reorder_level")]
+    #[serde(default, alias = "reorder_level")]
     pub reorder_level: Decimal,
-    #[serde(alias = "weight_per_unit")]
+    #[serde(default, alias = "weight_per_unit")]
     pub weight_per_unit: Decimal,
-    #[serde(alias = "service_tracking")]
+    #[serde(default = "default_create_stock_item_service_tracking", alias = "service_tracking")]
     pub service_tracking: ServiceTrackingType,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "service_project_id")]
     pub service_project_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "service_project_template_id")]
     pub service_project_template_id: Option<Uuid>,
+}
+
+fn default_create_stock_item_is_stock_item() -> bool {
+    true
+}
+
+fn default_create_stock_item_valuation_method() -> ValuationMethod {
+    ValuationMethod::MovingAverage
+}
+
+fn default_create_stock_item_service_tracking() -> ServiceTrackingType {
+    ServiceTrackingType::Manual
 }
 
 // =============================================================================
@@ -127,10 +139,10 @@ pub struct PatchStockItemDto {
     pub weight_per_unit: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "service_tracking")]
     pub service_tracking: Option<ServiceTrackingType>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "service_project_id")]
-    pub service_project_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "service_project_template_id")]
-    pub service_project_template_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "service_project_id")]
+    pub service_project_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "service_project_template_id")]
+    pub service_project_template_id: Option<Option<Uuid>>,
 }
 
 impl PatchStockItemDto {
@@ -326,12 +338,4 @@ impl backbone_core::ApplyUpdateDto<UpdateStockItemDto> for StockItem {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to StockItem here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

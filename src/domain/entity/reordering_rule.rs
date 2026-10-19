@@ -251,6 +251,14 @@ impl super::Entity for ReorderingRule {
 }
 
 impl backbone_core::PersistentEntity for ReorderingRule {
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("location_id", "inventory.locations", "id"),
+            backbone_core::Reference::new("warehouse_id", "inventory.warehouses", "id"),
+            backbone_core::Reference::new("route_id", "inventory.routes", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

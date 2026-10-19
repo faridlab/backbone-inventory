@@ -209,6 +209,14 @@ impl super::Entity for Package {
 }
 
 impl backbone_core::PersistentEntity for Package {
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("location_id", "inventory.locations", "id"),
+            backbone_core::Reference::new("parent_package_id", "inventory.packages", "id"),
+            backbone_core::Reference::new("package_type_id", "inventory.package_types", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

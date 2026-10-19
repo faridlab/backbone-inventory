@@ -31,16 +31,17 @@ use crate::domain::entity::ScrapState;
 #[serde(rename_all = "camelCase")]
 pub struct CreateScrapDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
+    #[serde(default = "default_create_scrap_name")]
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
-    #[serde(alias = "date_expected")]
+    #[serde(default = "default_create_scrap_date_expected", alias = "date_expected")]
     pub date_expected: DateTime<Utc>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "item_id")]
     pub item_id: Uuid,
-    #[serde(alias = "scrap_qty")]
+    #[serde(default = "default_create_scrap_scrap_qty", alias = "scrap_qty")]
     pub scrap_qty: Decimal,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "location_id")]
@@ -60,6 +61,18 @@ pub struct CreateScrapDto {
     pub move_id: Option<Uuid>,
     #[serde(alias = "scrap_reason_tag_ids")]
     pub scrap_reason_tag_ids: Vec<Uuid>,
+}
+
+fn default_create_scrap_name() -> String {
+    "/".to_string()
+}
+
+fn default_create_scrap_date_expected() -> DateTime<Utc> {
+    Utc::now()
+}
+
+fn default_create_scrap_scrap_qty() -> Decimal {
+    Decimal::from(1_i64)
 }
 
 // =============================================================================
@@ -124,8 +137,8 @@ pub struct PatchScrapDto {
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<ScrapState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub origin: Option<String>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option")]
+    pub origin: Option<Option<String>>,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "date_expected")]
     pub date_expected: Option<DateTime<Utc>>,
@@ -140,16 +153,16 @@ pub struct PatchScrapDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "scrap_location_id")]
     pub scrap_location_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "lot_id")]
-    pub lot_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "package_id")]
-    pub package_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "owner_id")]
-    pub owner_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "picking_id")]
-    pub picking_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "move_id")]
-    pub move_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "lot_id")]
+    pub lot_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "package_id")]
+    pub package_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "owner_id")]
+    pub owner_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "picking_id")]
+    pub picking_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "move_id")]
+    pub move_id: Option<Option<Uuid>>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "scrap_reason_tag_ids")]
     pub scrap_reason_tag_ids: Option<Vec<Uuid>>,
 }
@@ -368,12 +381,4 @@ impl backbone_core::ApplyUpdateDto<UpdateScrapDto> for Scrap {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to Scrap here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

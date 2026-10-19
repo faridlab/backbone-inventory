@@ -34,7 +34,7 @@ pub struct CreateStockEntryDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "entry_number")]
     pub entry_number: String,
-    #[serde(alias = "stock_entry_type")]
+    #[serde(default = "default_create_stock_entry_stock_entry_type", alias = "stock_entry_type")]
     pub stock_entry_type: StockEntryType,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "from_warehouse_id")]
     pub from_warehouse_id: Option<Uuid>,
@@ -45,10 +45,18 @@ pub struct CreateStockEntryDto {
     pub posting_date: NaiveDate,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "transfer_id")]
     pub transfer_id: Option<Uuid>,
-    #[serde(alias = "posting_state")]
+    #[serde(default = "default_create_stock_entry_posting_state", alias = "posting_state")]
     pub posting_state: GlPostingState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+}
+
+fn default_create_stock_entry_stock_entry_type() -> StockEntryType {
+    StockEntryType::Transfer
+}
+
+fn default_create_stock_entry_posting_state() -> GlPostingState {
+    GlPostingState::NotApplicable
 }
 
 // =============================================================================
@@ -101,21 +109,21 @@ pub struct PatchStockEntryDto {
     pub entry_number: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "stock_entry_type")]
     pub stock_entry_type: Option<StockEntryType>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "from_warehouse_id")]
-    pub from_warehouse_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "to_warehouse_id")]
-    pub to_warehouse_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "from_warehouse_id")]
+    pub from_warehouse_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "to_warehouse_id")]
+    pub to_warehouse_id: Option<Option<Uuid>>,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "posting_date")]
     pub posting_date: Option<NaiveDate>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "transfer_id")]
-    pub transfer_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "transfer_id")]
+    pub transfer_id: Option<Option<Uuid>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<DocStatus>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "posting_state")]
     pub posting_state: Option<GlPostingState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub notes: Option<String>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option")]
+    pub notes: Option<Option<String>>,
 }
 
 impl PatchStockEntryDto {
@@ -304,12 +312,4 @@ impl backbone_core::ApplyUpdateDto<UpdateStockEntryDto> for StockEntry {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to StockEntry here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

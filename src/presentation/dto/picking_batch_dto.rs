@@ -30,20 +30,29 @@ use crate::domain::entity::PickingBatchState;
 #[serde(rename_all = "camelCase")]
 pub struct CreatePickingBatchDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
+    #[serde(default = "default_create_picking_batch_name")]
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "is_wave")]
+    #[serde(default, alias = "is_wave")]
     pub is_wave: bool,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "user_id")]
     pub user_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
-    #[serde(alias = "scheduled_date")]
+    #[serde(default = "default_create_picking_batch_scheduled_date", alias = "scheduled_date")]
     pub scheduled_date: DateTime<Utc>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "had_members")]
+    #[serde(default, alias = "had_members")]
     pub had_members: bool,
+}
+
+fn default_create_picking_batch_name() -> String {
+    "/".to_string()
+}
+
+fn default_create_picking_batch_scheduled_date() -> DateTime<Utc> {
+    Utc::now()
 }
 
 // =============================================================================
@@ -91,15 +100,15 @@ pub struct PatchPickingBatchDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option")]
+    pub note: Option<Option<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<PickingBatchState>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "is_wave")]
     pub is_wave: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "user_id")]
-    pub user_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "user_id")]
+    pub user_id: Option<Option<Uuid>>,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "scheduled_date")]
     pub scheduled_date: Option<DateTime<Utc>>,
@@ -286,12 +295,4 @@ impl backbone_core::ApplyUpdateDto<UpdatePickingBatchDto> for PickingBatch {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to PickingBatch here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

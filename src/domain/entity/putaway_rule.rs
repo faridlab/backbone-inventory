@@ -221,6 +221,15 @@ impl super::Entity for PutawayRule {
 }
 
 impl backbone_core::PersistentEntity for PutawayRule {
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("location_in_id", "inventory.locations", "id"),
+            backbone_core::Reference::new("location_out_id", "inventory.locations", "id"),
+            backbone_core::Reference::new("package_type_id", "inventory.package_types", "id"),
+            backbone_core::Reference::new("storage_category_id", "inventory.storage_categories", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

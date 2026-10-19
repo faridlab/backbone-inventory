@@ -32,8 +32,10 @@ use crate::domain::entity::OrderpointTrigger;
 pub struct CreateReorderingRuleDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub name: String,
+    #[serde(default = "default_create_reordering_rule_trigger")]
     pub trigger: OrderpointTrigger,
     #[cfg_attr(feature = "openapi", schema(example = true))]
+    #[serde(default = "default_create_reordering_rule_active")]
     pub active: bool,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "snoozed_until")]
     pub snoozed_until: Option<NaiveDate>,
@@ -46,24 +48,32 @@ pub struct CreateReorderingRuleDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "warehouse_id")]
     pub warehouse_id: Uuid,
-    #[serde(alias = "item_min_qty")]
+    #[serde(default, alias = "item_min_qty")]
     pub item_min_qty: Decimal,
-    #[serde(alias = "item_max_qty")]
+    #[serde(default, alias = "item_max_qty")]
     pub item_max_qty: Decimal,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "route_id")]
     pub route_id: Option<Uuid>,
-    #[serde(alias = "qty_on_hand")]
+    #[serde(default, alias = "qty_on_hand")]
     pub qty_on_hand: Decimal,
-    #[serde(alias = "qty_forecast")]
+    #[serde(default, alias = "qty_forecast")]
     pub qty_forecast: Decimal,
-    #[serde(alias = "qty_to_order")]
+    #[serde(default, alias = "qty_to_order")]
     pub qty_to_order: Decimal,
-    #[serde(alias = "qty_to_order_manual")]
+    #[serde(default, alias = "qty_to_order_manual")]
     pub qty_to_order_manual: Decimal,
-    #[serde(alias = "lead_days")]
+    #[serde(default, alias = "lead_days")]
     pub lead_days: Decimal,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "deadline_date")]
     pub deadline_date: Option<NaiveDate>,
+}
+
+fn default_create_reordering_rule_trigger() -> OrderpointTrigger {
+    OrderpointTrigger::Auto
+}
+
+fn default_create_reordering_rule_active() -> bool {
+    true
 }
 
 // =============================================================================
@@ -134,8 +144,8 @@ pub struct PatchReorderingRuleDto {
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "snoozed_until")]
-    pub snoozed_until: Option<NaiveDate>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "snoozed_until")]
+    pub snoozed_until: Option<Option<NaiveDate>>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "item_id")]
     pub item_id: Option<Uuid>,
@@ -149,8 +159,8 @@ pub struct PatchReorderingRuleDto {
     pub item_min_qty: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "item_max_qty")]
     pub item_max_qty: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "route_id")]
-    pub route_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "route_id")]
+    pub route_id: Option<Option<Uuid>>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "qty_on_hand")]
     pub qty_on_hand: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "qty_forecast")]
@@ -161,8 +171,8 @@ pub struct PatchReorderingRuleDto {
     pub qty_to_order_manual: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "lead_days")]
     pub lead_days: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "deadline_date")]
-    pub deadline_date: Option<NaiveDate>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "deadline_date")]
+    pub deadline_date: Option<Option<NaiveDate>>,
 }
 
 impl PatchReorderingRuleDto {
@@ -389,12 +399,4 @@ impl backbone_core::ApplyUpdateDto<UpdateReorderingRuleDto> for ReorderingRule {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to ReorderingRule here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

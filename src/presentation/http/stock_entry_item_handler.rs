@@ -81,6 +81,13 @@ impl axum::response::IntoResponse for StockEntryItemError {
 // Route Configuration
 // =============================================================================
 
+/// The permissions this entity's generic routes require: `stock_entry_item:<action>` for `read`, `create`,
+/// `update`, `delete`, `restore` and `purge`, with any rename the schema's `requires:` declares.
+pub fn stock_entry_item_permissions() -> backbone_core::http::CrudPermissions {
+    backbone_core::http::CrudPermissions::new("stock_entry_item")
+        .in_module("inventory")
+}
+
 /// Create Axum router with all 16 Backbone endpoints for StockEntryItem.
 ///
 /// # Routes
@@ -110,21 +117,23 @@ impl axum::response::IntoResponse for StockEntryItemError {
 /// let router = create_stock_entry_item_routes(service);
 /// ```
 pub fn create_stock_entry_item_routes(service: Arc<StockEntryItemService>) -> Router {
-    BackboneCrudHandler::<StockEntryItemService, StockEntryItem, CreateStockEntryItemDto, UpdateStockEntryItemDto, StockEntryItemResponseDto>::routes(
+    BackboneCrudHandler::<StockEntryItemService, StockEntryItem, CreateStockEntryItemDto, UpdateStockEntryItemDto, StockEntryItemResponseDto>::routes_guarded(
         service,
         "/stock_entry_items",
+        stock_entry_item_permissions(),
     )
 }
 
 /// Create Axum router with only the read (GET) endpoints for StockEntryItem.
 ///
-/// Safe for public, unauthenticated exposure (e.g., reference data).
+/// Each route requires the entity's `read` permission, so it needs an authenticated caller.
 /// Mutations must be served separately via `create_stock_entry_item_write_routes`,
 /// typically wrapped in an auth middleware layer.
 pub fn create_stock_entry_item_read_routes(service: Arc<StockEntryItemService>) -> Router {
-    BackboneCrudHandler::<StockEntryItemService, StockEntryItem, CreateStockEntryItemDto, UpdateStockEntryItemDto, StockEntryItemResponseDto>::read_routes(
+    BackboneCrudHandler::<StockEntryItemService, StockEntryItem, CreateStockEntryItemDto, UpdateStockEntryItemDto, StockEntryItemResponseDto>::read_routes_guarded(
         service,
         "/stock_entry_items",
+        stock_entry_item_permissions(),
     )
 }
 
@@ -140,9 +149,10 @@ pub fn create_stock_entry_item_read_routes(service: Arc<StockEntryItemService>) 
 /// service (e.g. a command router over its domain engine), serve THAT instead
 /// for any mutation that must respect domain rules.
 pub fn create_stock_entry_item_write_routes(service: Arc<StockEntryItemService>) -> Router {
-    BackboneCrudHandler::<StockEntryItemService, StockEntryItem, CreateStockEntryItemDto, UpdateStockEntryItemDto, StockEntryItemResponseDto>::write_routes(
+    BackboneCrudHandler::<StockEntryItemService, StockEntryItem, CreateStockEntryItemDto, UpdateStockEntryItemDto, StockEntryItemResponseDto>::write_routes_guarded(
         service,
         "/stock_entry_items",
+        stock_entry_item_permissions(),
     )
 }
 

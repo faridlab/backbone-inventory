@@ -37,11 +37,11 @@ pub struct CreateStockReconciliationItemDto {
     pub item_id: Uuid,
     #[serde(alias = "counted_qty")]
     pub counted_qty: Decimal,
-    #[serde(alias = "counted_rate")]
+    #[serde(default, alias = "counted_rate")]
     pub counted_rate: Decimal,
-    #[serde(alias = "qty_difference")]
+    #[serde(default, alias = "qty_difference")]
     pub qty_difference: Decimal,
-    #[serde(alias = "value_difference")]
+    #[serde(default, alias = "value_difference")]
     pub value_difference: Decimal,
 }
 
@@ -272,12 +272,4 @@ impl backbone_core::ApplyUpdateDto<UpdateStockReconciliationItemDto> for StockRe
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to StockReconciliationItem here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

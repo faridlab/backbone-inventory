@@ -237,6 +237,14 @@ impl super::Entity for OperationType {
 }
 
 impl backbone_core::PersistentEntity for OperationType {
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("warehouse_id", "inventory.warehouses", "id"),
+            backbone_core::Reference::new("default_location_src_id", "inventory.locations", "id"),
+            backbone_core::Reference::new("default_location_dest_id", "inventory.locations", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

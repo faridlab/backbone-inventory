@@ -94,17 +94,17 @@ pub struct PatchPackageDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "complete_name")]
     pub complete_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "location_id")]
-    pub location_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "parent_package_id")]
-    pub parent_package_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "location_id")]
+    pub location_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "parent_package_id")]
+    pub parent_package_id: Option<Option<Uuid>>,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "parent_path")]
     pub parent_path: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "pack_date")]
-    pub pack_date: Option<NaiveDate>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "package_type_id")]
-    pub package_type_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "pack_date")]
+    pub pack_date: Option<Option<NaiveDate>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "package_type_id")]
+    pub package_type_id: Option<Option<Uuid>>,
 }
 
 impl PatchPackageDto {
@@ -284,12 +284,4 @@ impl backbone_core::ApplyUpdateDto<UpdatePackageDto> for Package {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to Package here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

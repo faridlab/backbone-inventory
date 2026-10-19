@@ -279,6 +279,17 @@ impl backbone_core::PersistentEntity for Transfer {
     fn write_protected_fields() -> &'static [&'static str] {
         &["state"]
     }
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("batch_id", "inventory.picking_batches", "id"),
+            backbone_core::Reference::new("picking_type_id", "inventory.operation_types", "id"),
+            backbone_core::Reference::new("location_id", "inventory.locations", "id"),
+            backbone_core::Reference::new("location_dest_id", "inventory.locations", "id"),
+            backbone_core::Reference::new("backorder_id", "inventory.transfers", "id"),
+            backbone_core::Reference::new("return_id", "inventory.transfers", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

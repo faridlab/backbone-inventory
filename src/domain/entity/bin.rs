@@ -180,6 +180,12 @@ impl backbone_core::PersistentEntity for Bin {
     fn write_protected_fields() -> &'static [&'static str] {
         &["actual_qty", "reserved_qty", "valuation_rate", "stock_value"]
     }
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("warehouse_id", "inventory.warehouses", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

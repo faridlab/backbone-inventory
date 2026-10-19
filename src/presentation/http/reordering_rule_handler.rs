@@ -82,6 +82,13 @@ impl axum::response::IntoResponse for ReorderingRuleError {
 // Route Configuration
 // =============================================================================
 
+/// The permissions this entity's generic routes require: `reordering_rule:<action>` for `read`, `create`,
+/// `update`, `delete`, `restore` and `purge`, with any rename the schema's `requires:` declares.
+pub fn reordering_rule_permissions() -> backbone_core::http::CrudPermissions {
+    backbone_core::http::CrudPermissions::new("reordering_rule")
+        .in_module("inventory")
+}
+
 /// Create Axum router with all 16 Backbone endpoints for ReorderingRule.
 ///
 /// # Routes
@@ -111,21 +118,23 @@ impl axum::response::IntoResponse for ReorderingRuleError {
 /// let router = create_reordering_rule_routes(service);
 /// ```
 pub fn create_reordering_rule_routes(service: Arc<ReorderingRuleService>) -> Router {
-    BackboneCrudHandler::<ReorderingRuleService, ReorderingRule, CreateReorderingRuleDto, UpdateReorderingRuleDto, ReorderingRuleResponseDto>::routes(
+    BackboneCrudHandler::<ReorderingRuleService, ReorderingRule, CreateReorderingRuleDto, UpdateReorderingRuleDto, ReorderingRuleResponseDto>::routes_guarded(
         service,
         "/reordering_rules",
+        reordering_rule_permissions(),
     )
 }
 
 /// Create Axum router with only the read (GET) endpoints for ReorderingRule.
 ///
-/// Safe for public, unauthenticated exposure (e.g., reference data).
+/// Each route requires the entity's `read` permission, so it needs an authenticated caller.
 /// Mutations must be served separately via `create_reordering_rule_write_routes`,
 /// typically wrapped in an auth middleware layer.
 pub fn create_reordering_rule_read_routes(service: Arc<ReorderingRuleService>) -> Router {
-    BackboneCrudHandler::<ReorderingRuleService, ReorderingRule, CreateReorderingRuleDto, UpdateReorderingRuleDto, ReorderingRuleResponseDto>::read_routes(
+    BackboneCrudHandler::<ReorderingRuleService, ReorderingRule, CreateReorderingRuleDto, UpdateReorderingRuleDto, ReorderingRuleResponseDto>::read_routes_guarded(
         service,
         "/reordering_rules",
+        reordering_rule_permissions(),
     )
 }
 
@@ -141,9 +150,10 @@ pub fn create_reordering_rule_read_routes(service: Arc<ReorderingRuleService>) -
 /// service (e.g. a command router over its domain engine), serve THAT instead
 /// for any mutation that must respect domain rules.
 pub fn create_reordering_rule_write_routes(service: Arc<ReorderingRuleService>) -> Router {
-    BackboneCrudHandler::<ReorderingRuleService, ReorderingRule, CreateReorderingRuleDto, UpdateReorderingRuleDto, ReorderingRuleResponseDto>::write_routes(
+    BackboneCrudHandler::<ReorderingRuleService, ReorderingRule, CreateReorderingRuleDto, UpdateReorderingRuleDto, ReorderingRuleResponseDto>::write_routes_guarded(
         service,
         "/reordering_rules",
+        reordering_rule_permissions(),
     )
 }
 

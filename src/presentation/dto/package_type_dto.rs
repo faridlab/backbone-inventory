@@ -34,9 +34,10 @@ pub struct CreatePackageTypeDto {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub barcode: Option<String>,
-    #[serde(alias = "package_use")]
+    #[serde(default = "default_create_package_type_package_use", alias = "package_use")]
     pub package_use: PackageUse,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
+    #[serde(default)]
     pub sequence: i32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub length: Option<Decimal>,
@@ -47,7 +48,16 @@ pub struct CreatePackageTypeDto {
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "max_weight")]
     pub max_weight: Option<Decimal>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
+    #[serde(default = "default_create_package_type_active")]
     pub active: bool,
+}
+
+fn default_create_package_type_package_use() -> PackageUse {
+    PackageUse::Disposable
+}
+
+fn default_create_package_type_active() -> bool {
+    true
 }
 
 // =============================================================================
@@ -97,21 +107,21 @@ pub struct PatchPackageTypeDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub barcode: Option<String>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option")]
+    pub barcode: Option<Option<String>>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "package_use")]
     pub package_use: Option<PackageUse>,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sequence: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub length: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub width: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub height: Option<Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "max_weight")]
-    pub max_weight: Option<Decimal>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option")]
+    pub length: Option<Option<Decimal>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option")]
+    pub width: Option<Option<Decimal>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option")]
+    pub height: Option<Option<Decimal>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "max_weight")]
+    pub max_weight: Option<Option<Decimal>>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active: Option<bool>,
@@ -304,12 +314,4 @@ impl backbone_core::ApplyUpdateDto<UpdatePackageTypeDto> for PackageType {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to PackageType here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

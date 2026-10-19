@@ -39,9 +39,9 @@ pub struct CreateLandedCostAdjustmentLineDto {
     #[serde(alias = "cost_line_id")]
     pub cost_line_id: Uuid,
     pub share: Decimal,
-    #[serde(alias = "additional_landed_cost")]
+    #[serde(default, alias = "additional_landed_cost")]
     pub additional_landed_cost: Decimal,
-    #[serde(alias = "remaining_qty")]
+    #[serde(default, alias = "remaining_qty")]
     pub remaining_qty: Decimal,
 }
 
@@ -274,12 +274,4 @@ impl backbone_core::ApplyUpdateDto<UpdateLandedCostAdjustmentLineDto> for Landed
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to LandedCostAdjustmentLine here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

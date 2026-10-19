@@ -33,13 +33,17 @@ pub struct CreateWarehouseDto {
     pub code: String,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub name: String,
-    #[serde(alias = "warehouse_type")]
+    #[serde(default = "default_create_warehouse_warehouse_type", alias = "warehouse_type")]
     pub warehouse_type: WarehouseType,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "parent_warehouse_id")]
     pub parent_warehouse_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "is_group")]
+    #[serde(default, alias = "is_group")]
     pub is_group: bool,
+}
+
+fn default_create_warehouse_warehouse_type() -> WarehouseType {
+    WarehouseType::Stock
 }
 
 // =============================================================================
@@ -87,8 +91,8 @@ pub struct PatchWarehouseDto {
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "warehouse_type")]
     pub warehouse_type: Option<WarehouseType>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "parent_warehouse_id")]
-    pub parent_warehouse_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "parent_warehouse_id")]
+    pub parent_warehouse_id: Option<Option<Uuid>>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "is_group")]
     pub is_group: Option<bool>,
@@ -261,12 +265,4 @@ impl backbone_core::ApplyUpdateDto<UpdateWarehouseDto> for Warehouse {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to Warehouse here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

@@ -81,6 +81,13 @@ impl axum::response::IntoResponse for PackageTypeError {
 // Route Configuration
 // =============================================================================
 
+/// The permissions this entity's generic routes require: `package_type:<action>` for `read`, `create`,
+/// `update`, `delete`, `restore` and `purge`, with any rename the schema's `requires:` declares.
+pub fn package_type_permissions() -> backbone_core::http::CrudPermissions {
+    backbone_core::http::CrudPermissions::new("package_type")
+        .in_module("inventory")
+}
+
 /// Create Axum router with all 16 Backbone endpoints for PackageType.
 ///
 /// # Routes
@@ -110,21 +117,23 @@ impl axum::response::IntoResponse for PackageTypeError {
 /// let router = create_package_type_routes(service);
 /// ```
 pub fn create_package_type_routes(service: Arc<PackageTypeService>) -> Router {
-    BackboneCrudHandler::<PackageTypeService, PackageType, CreatePackageTypeDto, UpdatePackageTypeDto, PackageTypeResponseDto>::routes(
+    BackboneCrudHandler::<PackageTypeService, PackageType, CreatePackageTypeDto, UpdatePackageTypeDto, PackageTypeResponseDto>::routes_guarded(
         service,
         "/package_types",
+        package_type_permissions(),
     )
 }
 
 /// Create Axum router with only the read (GET) endpoints for PackageType.
 ///
-/// Safe for public, unauthenticated exposure (e.g., reference data).
+/// Each route requires the entity's `read` permission, so it needs an authenticated caller.
 /// Mutations must be served separately via `create_package_type_write_routes`,
 /// typically wrapped in an auth middleware layer.
 pub fn create_package_type_read_routes(service: Arc<PackageTypeService>) -> Router {
-    BackboneCrudHandler::<PackageTypeService, PackageType, CreatePackageTypeDto, UpdatePackageTypeDto, PackageTypeResponseDto>::read_routes(
+    BackboneCrudHandler::<PackageTypeService, PackageType, CreatePackageTypeDto, UpdatePackageTypeDto, PackageTypeResponseDto>::read_routes_guarded(
         service,
         "/package_types",
+        package_type_permissions(),
     )
 }
 
@@ -140,9 +149,10 @@ pub fn create_package_type_read_routes(service: Arc<PackageTypeService>) -> Rout
 /// service (e.g. a command router over its domain engine), serve THAT instead
 /// for any mutation that must respect domain rules.
 pub fn create_package_type_write_routes(service: Arc<PackageTypeService>) -> Router {
-    BackboneCrudHandler::<PackageTypeService, PackageType, CreatePackageTypeDto, UpdatePackageTypeDto, PackageTypeResponseDto>::write_routes(
+    BackboneCrudHandler::<PackageTypeService, PackageType, CreatePackageTypeDto, UpdatePackageTypeDto, PackageTypeResponseDto>::write_routes_guarded(
         service,
         "/package_types",
+        package_type_permissions(),
     )
 }
 

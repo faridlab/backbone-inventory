@@ -34,14 +34,19 @@ pub struct CreateRouteRuleDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub name: String,
     #[cfg_attr(feature = "openapi", schema(example = true))]
+    #[serde(default = "default_create_route_rule_active")]
     pub active: bool,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
+    #[serde(default = "default_create_route_rule_sequence")]
     pub sequence: i32,
+    #[serde(default = "default_create_route_rule_action")]
     pub action: RuleAction,
+    #[serde(default = "default_create_route_rule_auto")]
     pub auto: RuleAuto,
-    #[serde(alias = "procure_method")]
+    #[serde(default = "default_create_route_rule_procure_method", alias = "procure_method")]
     pub procure_method: ProcureMethod,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
+    #[serde(default)]
     pub delay: i32,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "location_src_id")]
     pub location_src_id: Option<Uuid>,
@@ -57,8 +62,28 @@ pub struct CreateRouteRuleDto {
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
     pub warehouse_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
-    #[serde(alias = "propagate_cancel")]
+    #[serde(default, alias = "propagate_cancel")]
     pub propagate_cancel: bool,
+}
+
+fn default_create_route_rule_active() -> bool {
+    true
+}
+
+fn default_create_route_rule_sequence() -> i32 {
+    20
+}
+
+fn default_create_route_rule_action() -> RuleAction {
+    RuleAction::Pull
+}
+
+fn default_create_route_rule_auto() -> RuleAuto {
+    RuleAuto::Manual
+}
+
+fn default_create_route_rule_procure_method() -> ProcureMethod {
+    ProcureMethod::MakeToStock
 }
 
 // =============================================================================
@@ -133,8 +158,8 @@ pub struct PatchRouteRuleDto {
     #[cfg_attr(feature = "openapi", schema(example = 42))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delay: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "location_src_id")]
-    pub location_src_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "location_src_id")]
+    pub location_src_id: Option<Option<Uuid>>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "location_dest_id")]
     pub location_dest_id: Option<Uuid>,
@@ -144,8 +169,8 @@ pub struct PatchRouteRuleDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "route_id")]
     pub route_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
-    pub warehouse_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "warehouse_id")]
+    pub warehouse_id: Option<Option<Uuid>>,
     #[cfg_attr(feature = "openapi", schema(example = true))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "propagate_cancel")]
     pub propagate_cancel: Option<bool>,
@@ -363,12 +388,4 @@ impl backbone_core::ApplyUpdateDto<UpdateRouteRuleDto> for RouteRule {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to RouteRule here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

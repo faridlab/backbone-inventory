@@ -177,6 +177,12 @@ impl super::Entity for PurchaseReceiptItem {
 }
 
 impl backbone_core::PersistentEntity for PurchaseReceiptItem {
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("receipt_id", "inventory.purchase_receipts", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

@@ -263,6 +263,14 @@ impl super::Entity for Quant {
 }
 
 impl backbone_core::PersistentEntity for Quant {
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("location_id", "inventory.locations", "id"),
+            backbone_core::Reference::new("lot_id", "inventory.lots", "id"),
+            backbone_core::Reference::new("package_id", "inventory.packages", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

@@ -35,13 +35,13 @@ pub struct CreateBinDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "warehouse_id")]
     pub warehouse_id: Uuid,
-    #[serde(alias = "actual_qty")]
+    #[serde(default, alias = "actual_qty")]
     pub actual_qty: Decimal,
-    #[serde(alias = "reserved_qty")]
+    #[serde(default, alias = "reserved_qty")]
     pub reserved_qty: Decimal,
-    #[serde(alias = "valuation_rate")]
+    #[serde(default, alias = "valuation_rate")]
     pub valuation_rate: Decimal,
-    #[serde(alias = "stock_value")]
+    #[serde(default, alias = "stock_value")]
     pub stock_value: Decimal,
 }
 
@@ -252,12 +252,4 @@ impl backbone_core::ApplyUpdateDto<UpdateBinDto> for Bin {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to Bin here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

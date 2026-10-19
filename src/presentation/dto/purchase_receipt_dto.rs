@@ -48,8 +48,9 @@ pub struct CreatePurchaseReceiptDto {
     #[serde(alias = "posting_date")]
     pub posting_date: NaiveDate,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
+    #[serde(default = "default_create_purchase_receipt_currency")]
     pub currency: String,
-    #[serde(alias = "total_value")]
+    #[serde(default, alias = "total_value")]
     pub total_value: Decimal,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "inventory_account_id")]
@@ -59,7 +60,7 @@ pub struct CreatePurchaseReceiptDto {
     pub grir_account_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "transfer_id")]
     pub transfer_id: Option<Uuid>,
-    #[serde(alias = "posting_state")]
+    #[serde(default = "default_create_purchase_receipt_posting_state", alias = "posting_state")]
     pub posting_state: GlPostingState,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "journal_id")]
     pub journal_id: Option<Uuid>,
@@ -69,6 +70,14 @@ pub struct CreatePurchaseReceiptDto {
     pub posted_at: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+}
+
+fn default_create_purchase_receipt_currency() -> String {
+    "IDR".to_string()
+}
+
+fn default_create_purchase_receipt_posting_state() -> GlPostingState {
+    GlPostingState::Pending
 }
 
 // =============================================================================
@@ -139,13 +148,13 @@ pub struct PatchPurchaseReceiptDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "receipt_number")]
     pub receipt_number: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "branch_id")]
-    pub branch_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "branch_id")]
+    pub branch_id: Option<Option<Uuid>>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "supplier_id")]
     pub supplier_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "source_po_id")]
-    pub source_po_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "source_po_id")]
+    pub source_po_id: Option<Option<Uuid>>,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "warehouse_id")]
     pub warehouse_id: Option<Uuid>,
@@ -163,20 +172,20 @@ pub struct PatchPurchaseReceiptDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "grir_account_id")]
     pub grir_account_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "transfer_id")]
-    pub transfer_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "transfer_id")]
+    pub transfer_id: Option<Option<Uuid>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<DocStatus>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "posting_state")]
     pub posting_state: Option<GlPostingState>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "journal_id")]
-    pub journal_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "accounting_post_id")]
-    pub accounting_post_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "posted_at")]
-    pub posted_at: Option<DateTime<Utc>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub notes: Option<String>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "journal_id")]
+    pub journal_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "accounting_post_id")]
+    pub accounting_post_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "posted_at")]
+    pub posted_at: Option<Option<DateTime<Utc>>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option")]
+    pub notes: Option<Option<String>>,
 }
 
 impl PatchPurchaseReceiptDto {
@@ -410,12 +419,4 @@ impl backbone_core::ApplyUpdateDto<UpdatePurchaseReceiptDto> for PurchaseReceipt
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to PurchaseReceipt here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

@@ -81,6 +81,13 @@ impl axum::response::IntoResponse for LotError {
 // Route Configuration
 // =============================================================================
 
+/// The permissions this entity's generic routes require: `lot:<action>` for `read`, `create`,
+/// `update`, `delete`, `restore` and `purge`, with any rename the schema's `requires:` declares.
+pub fn lot_permissions() -> backbone_core::http::CrudPermissions {
+    backbone_core::http::CrudPermissions::new("lot")
+        .in_module("inventory")
+}
+
 /// Create Axum router with all 16 Backbone endpoints for Lot.
 ///
 /// # Routes
@@ -110,21 +117,23 @@ impl axum::response::IntoResponse for LotError {
 /// let router = create_lot_routes(service);
 /// ```
 pub fn create_lot_routes(service: Arc<LotService>) -> Router {
-    BackboneCrudHandler::<LotService, Lot, CreateLotDto, UpdateLotDto, LotResponseDto>::routes(
+    BackboneCrudHandler::<LotService, Lot, CreateLotDto, UpdateLotDto, LotResponseDto>::routes_guarded(
         service,
         "/lots",
+        lot_permissions(),
     )
 }
 
 /// Create Axum router with only the read (GET) endpoints for Lot.
 ///
-/// Safe for public, unauthenticated exposure (e.g., reference data).
+/// Each route requires the entity's `read` permission, so it needs an authenticated caller.
 /// Mutations must be served separately via `create_lot_write_routes`,
 /// typically wrapped in an auth middleware layer.
 pub fn create_lot_read_routes(service: Arc<LotService>) -> Router {
-    BackboneCrudHandler::<LotService, Lot, CreateLotDto, UpdateLotDto, LotResponseDto>::read_routes(
+    BackboneCrudHandler::<LotService, Lot, CreateLotDto, UpdateLotDto, LotResponseDto>::read_routes_guarded(
         service,
         "/lots",
+        lot_permissions(),
     )
 }
 
@@ -140,9 +149,10 @@ pub fn create_lot_read_routes(service: Arc<LotService>) -> Router {
 /// service (e.g. a command router over its domain engine), serve THAT instead
 /// for any mutation that must respect domain rules.
 pub fn create_lot_write_routes(service: Arc<LotService>) -> Router {
-    BackboneCrudHandler::<LotService, Lot, CreateLotDto, UpdateLotDto, LotResponseDto>::write_routes(
+    BackboneCrudHandler::<LotService, Lot, CreateLotDto, UpdateLotDto, LotResponseDto>::write_routes_guarded(
         service,
         "/lots",
+        lot_permissions(),
     )
 }
 

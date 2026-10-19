@@ -262,6 +262,18 @@ impl backbone_core::PersistentEntity for StockMoveLine {
     fn write_protected_fields() -> &'static [&'static str] {
         &["state"]
     }
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("move_id", "inventory.stock_moves", "id"),
+            backbone_core::Reference::new("picking_id", "inventory.transfers", "id"),
+            backbone_core::Reference::new("lot_id", "inventory.lots", "id"),
+            backbone_core::Reference::new("package_id", "inventory.packages", "id"),
+            backbone_core::Reference::new("result_package_id", "inventory.packages", "id"),
+            backbone_core::Reference::new("location_id", "inventory.locations", "id"),
+            backbone_core::Reference::new("location_dest_id", "inventory.locations", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }
